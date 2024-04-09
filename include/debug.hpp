@@ -15,7 +15,7 @@ logger_state_t logger_state;
         std::unique_lock<std::mutex> lock(logger_state.log_mutex);\
 	if (logger_state.logger != nullptr)\
 	    (*logger_state.logger) << "[BENCHMARK " << t << "] [" << __FILE__ << ":" << __LINE__ << ":" << __FUNCTION__\
-				   << "] [time elapsed: " << d << " us] " << message << std::endl; \
+				   << "] [time elapsed: " << d << " ms] " << message << std::endl; \
     }
 #else
 #define TIMER_START(timer)
