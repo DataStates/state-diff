@@ -20,7 +20,6 @@
 #include <cstring>
 #include <string>
 #include <Kokkos_Core.hpp>
-// #include "map_helpers.hpp"
 
 // Portable Murmur3 implementation using Kokkos
 namespace kokkos_murmur3 {

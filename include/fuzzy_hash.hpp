@@ -5,6 +5,7 @@
 #include <iostream>
 #include "kokkos_murmur3.hpp"
 #include "MurmurHash3.h"
+#include "utils.hpp"
 
 #ifdef __USEKOKKOS
   #define KOKKOS_INLINE KOKKOS_INLINE_FUNCTION
@@ -33,14 +34,10 @@ struct DataTypeInfo<float> {
   static const MaskType MANTISSAMASK = 0x7FFFFF; // 23 bits
 };
 
-struct alignas(16) HashDigest {
-  uint8_t digest[16] = {0};
-};
-
 // Hashing approach tolerant to variations of floating point numbers
 template <typename T1, typename T2>
 KOKKOS_INLINE
-void processData(const T1* data, T2 combinedBytes, uint64_t len, float errorValue, HashDigest* digests, bool usekokkos);
+bool processData(const T1* data, T2 combinedBytes, uint64_t len, float errorValue, HashDigest* digests, bool usekokkos);
 
 template <typename T1, typename T2>
 KOKKOS_INLINE
@@ -66,14 +63,11 @@ KOKKOS_INLINE
 void printBits(T2 value);
 
 KOKKOS_INLINE
-bool digests_same(const HashDigest& lhs, const HashDigest& rhs);
-
-KOKKOS_INLINE
 void printMismatch(std::string prefix, const HashDigest& dig);
 
 // Main hash function used by the code
 KOKKOS_INLINE
-void fuzzyhash(const void* data, uint64_t len, const char dataType,
+bool fuzzyhash(const void* data, uint64_t len, const char dataType,
                 float errorValue, HashDigest* digests, bool usekokkos)  {
   if (dataType == *("d")) {
     const double* doubleData = static_cast<const double*>(data);
@@ -88,7 +82,7 @@ void fuzzyhash(const void* data, uint64_t len, const char dataType,
 
 template <typename T1, typename T2>
 KOKKOS_INLINE
-void processData(const T1* data, T2 bitsDataType, uint64_t len, float errorValue, HashDigest* digests, bool usekokkos) {
+bool processData(const T1* data, T2 bitsDataType, uint64_t len, float errorValue, HashDigest* digests, bool usekokkos) {
   // Given that every data point has two hashes, compute the modified
   // binary representations per data point and compute the hashes
   // for the entire chunk in a streaming fashion.
@@ -113,7 +107,7 @@ void processData(const T1* data, T2 bitsDataType, uint64_t len, float errorValue
 
     // Process each element
     for(uint32_t j=0; j<elementsPerBlock; j++) {
-      float tmp = dataLower[j];
+      //float tmp = dataLower[j];
       processElement(dataLower[j], dataUpper[j], bitsDataType, errorValue);
       // printf("Input Value: %.9f\n", tmp);
       // printf("After Truncation: %.9f & After Addition:: %.9f\n", dataLower[j], dataUpper[j]);
@@ -138,6 +132,11 @@ void processData(const T1* data, T2 bitsDataType, uint64_t len, float errorValue
     // printf("After Truncation: %lu and %lu\n", seedLower[0], seedLower[1]);
     // printf("After Addition: %lu and %lu\n", seedUpper[0], seedUpper[1]);
   }
+  if ( (seedUpper[0] != seedLower[0]) || (seedUpper[1] != seedLower[1]) ) {
+    // The hashes are not identical. We need them both to proceed.
+    return true;
+  }
+  return false;
 }
 
 // Hashing approach tolerant to variations of floating point numbers
@@ -146,8 +145,8 @@ KOKKOS_INLINE
 void processElement(T1& fpvalueLower, T1& fpvalueUpper, T2 bitsDataType, float errorValue) {
 
   using Info = DataTypeInfo<T1>;
-  T1 fpvalue = fpvalueLower;
-  T2* oribits = reinterpret_cast<T2 *>(&fpvalue);
+  //T1 fpvalue = fpvalueLower;
+  //T2* oribits = reinterpret_cast<T2 *>(&fpvalue);
   // Get the binary representation of the error value and its exponent
   T2* errorBits = reinterpret_cast<T2 *>(&errorValue);
   int errorExponent = (((*errorBits) >> Info::MANTISSABITS) & Info::EXPONENTMASK) - Info::BIAS;
@@ -266,19 +265,6 @@ void addBinary(T2 a, T2 b, T2* newFPbits) {
   (*newFPbits) |= (carry << (numofbits-1));
 }
 
-// Helper function for checking if two hash digests are identical
-KOKKOS_INLINE
-bool digests_same(const HashDigest& lhs, const HashDigest& rhs) {
-  uint64_t* l_ptr = (uint64_t*)(lhs.digest);
-  uint64_t* r_ptr = (uint64_t*)(rhs.digest);
-  for(size_t i=0; i<sizeof(HashDigest)/8; i++) {
-    if(l_ptr[i] != r_ptr[i]) {
-      return false;
-    }
-  }
-  return true;
-}
-
 KOKKOS_INLINE
 void printMismatch(const HashDigest& dig) {
   uint64_t* dig_ptr = (uint64_t*)(dig.digest);
@@ -290,7 +276,7 @@ void printMismatch(const HashDigest& dig) {
 
 int areAbsoluteEqual(const float* data_a, const float* data_b, int size, float error, int id) {
   int result = 0;
-  for (int i = 0; i < size & result < 1; ++i) {
+  for (int i = 0; (i < size) && (result < 1); ++i) {
     if (fabs(data_a[i] - data_b[i]) > error) {
       result = 1;
     }
