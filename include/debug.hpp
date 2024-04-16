@@ -4,19 +4,19 @@
 #include <cstring>
 #include "logger_state.hpp"
 
-logger_state_t logger_state;
+static logger_state_t logger_state;
 
 #ifdef __BENCHMARK
 #define TIMER_START(timer) auto timer = std::chrono::steady_clock::now();
 #define TIMER_STOP(timer, message) {\
-        auto now = std::chrono::steady_clock::now();\
+  auto now = std::chrono::steady_clock::now();\
 	auto d = std::chrono::duration_cast<std::chrono::milliseconds>(now - timer).count();\
-        auto t = std::chrono::duration_cast<std::chrono::seconds>(now - logger_state.beginning).count();\
-        std::unique_lock<std::mutex> lock(logger_state.log_mutex);\
+  auto t = std::chrono::duration_cast<std::chrono::seconds>(now - logger_state.beginning).count();\
+  std::unique_lock<std::mutex> lock(logger_state.log_mutex);\
 	if (logger_state.logger != nullptr)\
 	    (*logger_state.logger) << "[BENCHMARK " << t << "] [" << __FILE__ << ":" << __LINE__ << ":" << __FUNCTION__\
 				   << "] [time elapsed: " << d << " ms] " << message << std::endl; \
-    }
+  }
 #else
 #define TIMER_START(timer)
 #define TIMER_STOP(timer, message)

@@ -14,8 +14,8 @@
 
 // Microsoft Visual Studio
 
-#ifndef __KOKKOS_MURMUR3_HPP
-#define __KOKKOS_MURMUR3_HPP
+#ifndef KOKKOS_MURMUR3_HPP
+#define KOKKOS_MURMUR3_HPP
 
 #include <cstring>
 #include <string>
@@ -405,6 +405,7 @@ namespace kokkos_murmur3 {
 
   //-----------------------------------------------------------------------------
 
+  KOKKOS_FORCEINLINE_FUNCTION
   void MurmurHash3_x64_64(const void* key, uint64_t len, uint32_t seed, void* out) {
       const uint8_t * data = (const uint8_t*)key;
       const uint64_t nblocks = len / 16;
