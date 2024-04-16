@@ -6,6 +6,8 @@
 #include <argparse/argparse.hpp>
 #include "data_generation.hpp"
 
+//  logger_state_t logger_state;
+
 int main(int argc, char** argv) {
   Kokkos::initialize(argc, argv);
   {

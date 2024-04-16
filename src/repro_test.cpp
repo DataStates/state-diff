@@ -296,6 +296,7 @@ int main(int argc, char** argv) {
             Kokkos::deep_copy(data1_d, data1_h);
           }
         } else {
+          f32_comparer.block_size = blocksize;
           if(!enable_file_streaming) { // Copy data to device
             Kokkos::deep_copy(data0_d, data0_h);
           }
@@ -436,7 +437,8 @@ int main(int argc, char** argv) {
           outname = output_fname;
         }
         if(!comparing_runs) {
-          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
+//          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
+          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
           if (fd == -1) {
               FATAL("cannot open " << outname << ", error = " << strerror(errno));
           }
@@ -605,7 +607,8 @@ int main(int argc, char** argv) {
           outname = output_fname;
         }
         if(!comparing_runs) {
-          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
+//          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
+          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
           if (fd == -1) {
               FATAL("cannot open " << outname << ", error = " << strerror(errno));
           }

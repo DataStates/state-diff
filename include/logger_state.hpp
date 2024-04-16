@@ -5,6 +5,15 @@
 #include <chrono>
 #include <mutex>
 
+//struct logger_state_t {
+//    std::ostream *logger;
+//    std::chrono::time_point<std::chrono::steady_clock> beginning;
+//    std::mutex log_mutex;
+//
+//    logger_state_t();
+//    ~logger_state_t();
+//};
+
 struct logger_state_t {
     std::ostream *logger = &std::cout;
     std::chrono::time_point<std::chrono::steady_clock> beginning = std::chrono::steady_clock::now();

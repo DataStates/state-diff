@@ -4,6 +4,7 @@ project(state-diff VERSION 0.0.1 LANGUAGES CXX)
 
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}")
 
+#find_package(argparse REQUIRED)
 find_package(Kokkos REQUIRED)
 find_package(OpenSSL REQUIRED)
 
@@ -20,6 +21,8 @@ set_target_properties(StateDiff PROPERTIES PUBLIC_HEADER ${CMAKE_CURRENT_SOURCE_
 target_sources(StateDiff
   PRIVATE
     src/compare_tree_approach.cpp
+    src/logger_state.cpp
+    src/debug.cpp
 )
 target_include_directories(StateDiff 
   PUBLIC
@@ -58,11 +61,13 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/p-ranav/argparse.git
 )
 FetchContent_MakeAvailable(argparse)
+#add_library(argparse INTERFACE)
 
 add_executable(data_generator src/data_generation.cpp)
 target_include_directories(data_generator PUBLIC ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(data_generator PRIVATE Kokkos::kokkos)
 target_link_libraries(data_generator PRIVATE argparse)
+#target_include_directories(data_generator PRIVATE $<TARGET_PROPERTY:argparse,INTERFACE_INCLUDE_DIRECTORIES>)
 set_target_properties(data_generator PROPERTIES
     CXX_STANDARD 14
     CXX_STANDARD_REQUIRED YES
@@ -75,6 +80,7 @@ target_link_libraries(repro_test PRIVATE Kokkos::kokkos)
 target_link_libraries(repro_test PRIVATE OpenSSL::SSL)
 target_link_libraries(repro_test PRIVATE StateDiff)
 target_link_libraries(repro_test PRIVATE argparse)
+#target_include_directories(data_generator PRIVATE $<TARGET_PROPERTY:argparse,INTERFACE_INCLUDE_DIRECTORIES>)
 set_target_properties(repro_test PROPERTIES
     CXX_STANDARD 14
     CXX_STANDARD_REQUIRED YES

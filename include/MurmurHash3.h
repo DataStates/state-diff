@@ -94,6 +94,7 @@ namespace base_murmur3 {
 
   //-----------------------------------------------------------------------------
 
+  inline
   void MurmurHash3_x86_32 ( const void * key, int len,
                             uint32_t seed, void * out )
   {
@@ -150,6 +151,7 @@ namespace base_murmur3 {
 
   //-----------------------------------------------------------------------------
 
+  inline
   void MurmurHash3_x86_128 ( const void * key, const int len,
                             uint32_t seed, void * out )
   {
@@ -255,6 +257,7 @@ namespace base_murmur3 {
 
   //-----------------------------------------------------------------------------
 
+  inline
   void MurmurHash3_x64_128 ( const void * key, const int len,
                             const uint32_t seed, void * out )
   {
@@ -335,6 +338,7 @@ namespace base_murmur3 {
   }
 
 
+  inline
   void MurmurHash3_x64_128(const void* key, uint64_t len, uint64_t seed[2], void* out) {
       const uint8_t * data = (const uint8_t*)key;
       const uint64_t nblocks = len / 16;
@@ -417,6 +421,7 @@ namespace base_murmur3 {
 
   //-----------------------------------------------------------------------------
 
+  inline
   void MurmurHash3_x64_64(const void* key, uint64_t len, uint32_t seed, void* out) {
       const uint8_t * data = (const uint8_t*)key;
       const uint64_t nblocks = len / 16;

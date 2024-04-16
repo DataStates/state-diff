@@ -95,15 +95,23 @@ bool processData(const T1* data, T2 bitsDataType, uint64_t len, float errorValue
   uint64_t seedLower[2] = {0, 0};
   uint64_t seedUpper[2] = {0, 0};
 
-  for(uint32_t i=0; i<blocksPerChunk; i++) {
+  for(uint32_t offset=0; offset<len; offset+=blockSize) {
 
     // Declare the digest for the current block
     uint64_t* digestLower = (uint64_t*)&digests[0];
     uint64_t* digestUpper = (uint64_t*)&digests[1];
     
     // Create a copy of data for the current block
-    memcpy(dataLower, (const uint8_t*)(data)+i*blockSize, blockSize);
-    memcpy(dataUpper, (const uint8_t*)(data)+i*blockSize, blockSize);
+    size_t bytes_to_copy = blockSize;
+    if(bytes_to_copy+offset > len) {
+      digestLower[0] = 0;
+      digestLower[1] = 0;
+      digestUpper[0] = 0;
+      digestUpper[1] = 0;
+      bytes_to_copy = len - offset;
+    }
+    memcpy(dataLower, (const uint8_t*)(data)+offset, blockSize);
+    memcpy(dataUpper, (const uint8_t*)(data)+offset, blockSize);
 
     // Process each element
     for(uint32_t j=0; j<elementsPerBlock; j++) {
@@ -274,6 +282,7 @@ void printMismatch(const HashDigest& dig) {
   printf("\n--------------------------\n");
 }
 
+inline
 int areAbsoluteEqual(const float* data_a, const float* data_b, int size, float error, int id) {
   int result = 0;
   for (int i = 0; (i < size) && (result < 1); ++i) {
