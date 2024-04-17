@@ -15,6 +15,9 @@
 //#undef NDEBUG
 #include <cassert>
 #include <sys/stat.h>
+#include <sys/ioctl.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <liburing.h>
 #include <Kokkos_Core.hpp>
 #include "utils.hpp"
@@ -25,10 +28,10 @@
 
 template<typename DataType>
 class IOUringStream {
-  struct buff_state_t {
-    uint8_t *buff;
-    size_t size;
-  };
+//  struct buff_state_t {
+//    uint8_t *buff;
+//    size_t size;
+//  };
 
   public:
     size_t *host_offsets=NULL, *file_offsets=NULL; // Track where to make slice
@@ -39,9 +42,10 @@ class IOUringStream {
     size_t chunks_per_slice=0;
     bool async=true, full_transfer=true, done=false;
     std::string filename;
-    size_t filesize;
+    off_t filesize;
     int file;
     uint32_t ring_size=32768;
+    int num_cqe=0;
     struct io_uring ring;
     DataType *mmapped_file=NULL; // Pointer to host data
     DataType *active_buffer=NULL, *transfer_buffer=NULL; // Convenient pointers
@@ -49,13 +53,6 @@ class IOUringStream {
 #ifdef __NVCC__
     cudaStream_t transfer_stream; // Stream for data transfers
 #endif
-
-    struct io_data {
-        int read;
-        off_t first_offset, offset;
-        size_t first_len;
-        struct iovec iov;
-    };
 
     int setup_context(uint32_t entries, struct io_uring* ring) {
       int ret;
@@ -87,68 +84,17 @@ class IOUringStream {
         return -1;
     }
 
-    void queue_prepped(struct io_uring *ring, struct io_data *data) {
+    int queue_read(struct io_uring *ring, off_t size, off_t offset, void* dst_buf) {
         struct io_uring_sqe *sqe;
-    
-        sqe = io_uring_get_sqe(ring);
-        assert(sqe);
-    
-        if (data->read)
-            io_uring_prep_readv(sqe, infd, &data->iov, 1, data->offset);
-        else
-            io_uring_prep_writev(sqe, outfd, &data->iov, 1, data->offset);
-    
-        io_uring_sqe_set_data(sqe, data);
-    }
 
-
-    int queue_read(struct io_uring *ring, off_t size, off_t offset) {
-        struct io_uring_sqe *sqe;
-        struct io_data *data;
-    
-        data = malloc(size + sizeof(*data));
-        if (!data)
-            return 1;
-    
         sqe = io_uring_get_sqe(ring);
         if (!sqe) {
-            free(data);
             return 1;
         }
     
-        data->read = 1;
-        data->offset = data->first_offset = offset;
-    
-        data->iov.iov_base = data + 1;
-        data->iov.iov_len = size;
-        data->first_len = size;
-    
-        io_uring_prep_readv(sqe, infd, &data->iov, 1, offset);
-        io_uring_sqe_set_data(sqe, data);
+        io_uring_prep_read(sqe, file, dst_buf, size, offset);
         return 0;
     }
-
-//    buff_state_t map_file(const std::string &fn) {
-//      int fd = open(fn.c_str(), O_RDONLY | O_DIRECT);
-//      if (fd == -1)
-//        FATAL("cannot open " << fn << ", error = " << std::strerror(errno));
-//      size_t size = lseek(fd, 0, SEEK_END);
-//      uint8_t *buff = (uint8_t *)mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
-//      close(fd);
-//      if (buff == MAP_FAILED)
-//        FATAL("cannot mmap " << fn << ", error = " << std::strerror(errno));
-//      return buff_state_t{buff, size};
-//    }
-
-//    size_t get_chunk(const buff_state_t &ckpt, size_t offset, DataType** ptr) {
-//      size_t byte_offset = offset * sizeof(DataType);
-//      ASSERT(byte_offset < ckpt.size);
-//      size_t ret = byte_offset + bytes_per_chunk >= ckpt.size ? ckpt.size - byte_offset : bytes_per_chunk;
-//      ASSERT(ret % sizeof(DataType) == 0);
-//      *ptr = (DataType *)(ckpt.buff + byte_offset);
-//      return ret / sizeof(DataType);
-//    }
-
 
   public:
     IOUringStream() {}
@@ -231,6 +177,8 @@ class IOUringStream {
       filesize = right.filesize;
       file = right.file;
       right.file = 0;
+      ring = right.ring;
+      ring_size = right.ring_size;
       host_buffer = right.host_buffer;
       right.host_buffer = NULL;
       active_buffer = right.active_buffer;
@@ -250,7 +198,7 @@ class IOUringStream {
     }
 
     ~IOUringStream() {
-      if(done && file != 0 {
+      if(done && file != 0) {
         close(file);
         file=0;
       }
@@ -281,85 +229,81 @@ class IOUringStream {
     }
 
     size_t get_file_size() const {
-      return filsize;
+      return filesize;
     }
 
     size_t prepare_slice() {
-      uint64_t reads, writes;
-DataType* test_buff = host_buffer;
-      if(full_transfer) {
-        transfer_slice_len = get_chunk(file_buffer, host_offsets[transferred_chunks]*elem_per_slice, &host_buffer);
+      int had_reads, got_comp, ret;
+      uint32_t reads=0;
+      struct io_uring_cqe *cqe;
+      if(elem_per_chunk*(transferred_chunks+chunks_per_slice) > filesize/sizeof(DataType)) { 
+        transfer_slice_len = filesize/sizeof(DataType) - transferred_chunks*elem_per_chunk;
       } else {
-        if(elem_per_chunk*(transferred_chunks+chunks_per_slice) > filesize/sizeof(DataType)) { 
-          transfer_slice_len = filesize/sizeof(DataType) - transferred_chunks*elem_per_chunk;
-        } else {
-          transfer_slice_len = elem_per_chunk*chunks_per_slice;
-        }
-        size_t chunks_left = chunks_per_slice;
-        size_t chunks_to_read = chunks_per_slice;
-        while (chunks_to_read || chunks_left) {
-          int had_read, got_comp;
-          /* Queue up as many reads as we can */
-          while (chunks_to_read) {
-            off_t this_size = chunks_to_read;
-            if (reads+write >= ring_size)
-              break;
-            if (this_size > buffer
-          }
-        }
-//#pragma omp task depend(inout: test_buff[0:transfer_slice_len])
-//{
-        #pragma omp parallel for
-        for(size_t i=0; i<chunks_per_slice; i++) {
-          if(transferred_chunks+i<num_offsets) {
-            DataType* chunk;
-            size_t len = get_chunk(file_buffer, host_offsets[transferred_chunks+i]*elem_per_chunk, &chunk);
-            assert(len <= elem_per_chunk);
-            assert(i*elem_per_chunk+len*sizeof(DataType) <= bytes_per_slice);
-            assert((size_t)test_buff+i*elem_per_chunk+len <= (size_t)test_buff+elem_per_slice);
-            if(len > 0)
-              memcpy(test_buff+i*elem_per_chunk, chunk, len*sizeof(DataType));
-          }
-        }
-//}
+        transfer_slice_len = elem_per_chunk*chunks_per_slice;
+      }
+      size_t chunks_left = chunks_per_slice;
+      if(transferred_chunks+chunks_left>num_offsets) {
+        chunks_left = num_offsets - transferred_chunks;
+      }
+      size_t chunks_transfer = chunks_left;
+//      printf("Num offset: %zu\n", num_offsets);
+//      printf("Chunks left: %zu\n", chunks_left);
+//      printf("Transferred chunks: %zu\n", transferred_chunks);
+      size_t i=0;
 
-//        size_t per_threads = chunks_per_slice / (Kokkos::num_threads()/2);
-//        if(per_threads*Kokkos::num_threads() < chunks_per_slice)
-//          per_threads += 1;
-//        for(size_t thread=0; thread<Kokkos::num_threads()/2; thread++) {
-//#pragma omp task depend(out: test_buff[thread*per_threads : (thread+1)*per_threads])
-//{
-//          for(size_t i=per_threads*thread; i<(thread+1)*per_threads; i++) {
-//            if((i<chunks_per_slice) && transferred_chunks+i<num_offsets) {
-//              DataType* chunk;
-//              size_t len = get_chunk(file_buffer, host_offsets[transferred_chunks+i]*elem_per_chunk, &chunk);
-//              assert(len <= elem_per_chunk);
-//              assert(i*elem_per_chunk+len*sizeof(DataType) <= bytes_per_slice);
-//              assert((size_t)test_buff+i*elem_per_chunk+len <= (size_t)test_buff+elem_per_slice);
-//              if(len > 0)
-//                memcpy(test_buff+i*elem_per_chunk, chunk, len*sizeof(DataType));
-//            }
-//          }
-//}
-//        }
+      while(chunks_left) {
+        had_reads = reads;
+        num_cqe = 0;
+        for(i; i<chunks_transfer; i++) {
+          if(reads >= ring_size)
+            break;
+          size_t fileoffset = host_offsets[transferred_chunks+i]*bytes_per_chunk;
+          size_t len = bytes_per_chunk;
+          if(fileoffset+len > filesize)
+            len = filesize - fileoffset;
+          if(queue_read(&ring, len, fileoffset, host_buffer+i*elem_per_chunk))
+            break;
+          reads++;
+          chunks_left--;
+          num_cqe++;
+        }
+        if(had_reads != reads) {
+          ret = io_uring_submit(&ring);
+          if(ret < 0) {
+            fprintf(stderr, "io_uring_submit: %s\n", strerror(-ret));
+            break;
+          }
+        }
+        // Queue is full
+        got_comp = 0;
+        while(chunks_left && (got_comp < chunks_left) && got_comp < reads) {
+          ret = io_uring_wait_cqe(&ring, &cqe);
+          if(ret < 0) {
+            fprintf(stderr, "io_uring_peek_cqe: %s\n", strerror(-ret));
+            return 1;
+          }
+          if(!cqe)
+            break;
+          io_uring_cqe_seen(&ring, cqe);
+          got_comp += 1;
+          reads--;
+        }
+      }
 #ifdef __NVCC__
-//#pragma omp task depend(in: test_buff[0:transfer_slice_len])
-//{
       if(async) {
         gpuErrchk( cudaMemcpyAsync(transfer_buffer, 
-                                   test_buff, 
+                                   host_buffer, 
                                    transfer_slice_len*sizeof(DataType), 
                                    cudaMemcpyHostToDevice, 
                                    transfer_stream) );
       } else {
         gpuErrchk( cudaMemcpy(transfer_buffer, 
-                              test_buff, 
+                              host_buffer, 
                               transfer_slice_len*sizeof(DataType), 
                               cudaMemcpyHostToDevice) );
       }
-//}
 #endif
-      }
+//printf("Prepared slice with %zu chunks\n", chunks_transfer - chunks_left);
       return transfer_slice_len;
     }
 
@@ -367,7 +311,6 @@ DataType* test_buff = host_buffer;
     void start_stream(size_t* offset_ptr, size_t n_offsets, size_t chunk_size) {
       transferred_chunks = 0; // Initialize stream
       file_offsets = offset_ptr;
-      filesize = file_buffer.size;
       num_offsets = n_offsets;
       if(full_transfer) {
         elem_per_chunk = elem_per_slice;
@@ -385,8 +328,11 @@ DataType* test_buff = host_buffer;
       DEBUG_PRINT("Chunks per slice: %zu\n", chunks_per_slice);
       DEBUG_PRINT("Num offsets: %zu\n", num_offsets);
 
-      if (setup_context(ring_size, &ring) {
+      if (setup_context(ring_size, &ring)) {
         fprintf(stderr, "Failed to setup ring of size %u\n", ring_size);
+      }
+      if (get_file_size(file, &filesize) != 0) {
+        fprintf(stderr, "Failed to get file size\n");
       }
 
 #ifdef __NVCC__
@@ -395,13 +341,21 @@ DataType* test_buff = host_buffer;
 #else
       host_offsets = offset_ptr;
 #endif
+//      printf("Started stream, preparing slice\n");
       prepare_slice();
       return;
     }
     
     // Get next slice of data on Device buffer
     DataType* next_slice() {
-//#pragma omp taskwait
+      struct io_uring_cqe *cqe;
+      int ret = io_uring_wait_cqe_nr(&ring, &cqe, num_cqe);
+      if(ret < 0) {
+        fprintf(stderr, "io_uring_wait_cqe_nr: %s\n", strerror(-ret));
+        return NULL;
+      }
+      io_uring_cq_advance(&ring, num_cqe);
+      
 #ifdef __NVCC__
       if(async) {
         gpuErrchk( cudaStreamSynchronize(transfer_stream) ); // Wait for slice to finish async copy

@@ -7,6 +7,7 @@
 #include "utils.hpp"
 #include "kokkos_vector.hpp"
 #include "mmap_stream.hpp"
+#include "io_uring_stream.hpp"
 
 template<typename DataType, typename ExecutionDevice=Kokkos::DefaultExecutionSpace>
 class DirectComparer {
@@ -16,8 +17,11 @@ class DirectComparer {
     uint32_t current_id;
     double tol;
     size_t d_stream_buf_len = 1024*1024*1024/sizeof(DataType);
-    MMapStream<scalar_type> file_stream0;
-    MMapStream<scalar_type> file_stream1;
+#ifdef IO_URING_STREAM
+    IOUringStream<scalar_type> file_stream0, file_stream1;
+#else
+    MMapStream<scalar_type> file_stream0, file_stream1;
+#endif
     Kokkos::Bitset<Kokkos::DefaultExecutionSpace> changed_entries;
     Kokkos::View<uint64_t[1]> num_comparisons;
     bool file_stream=false;
@@ -266,7 +270,11 @@ DirectComparer<DataType,ExecDevice>::deserialize(size_t* offsets, size_t noffset
   size_t host_len = blocksize*noffsets;
   block_size = blocksize;
   changed_entries = Kokkos::Bitset<Kokkos::DefaultExecutionSpace>(blocksize*noffsets);
+#ifdef IO_URING_STREAM
+  file_stream0 = IOUringStream<DataType>(d_stream_buf_len, filename);
+#else
   file_stream0 = MMapStream<DataType>(d_stream_buf_len, filename); 
+#endif
   file_stream0.start_stream(offsets, noffsets, blocksize);
   file_stream=true;
   return noffsets*blocksize;
@@ -280,10 +288,14 @@ DirectComparer<DataType,ExecDevice>::deserialize(size_t* offsets, size_t noffset
   changed_entries = Kokkos::Bitset<Kokkos::DefaultExecutionSpace>(blocksize*noffsets);
   file_stream=true;
 
+#ifdef IO_URING_STREAM
+  file_stream0 = IOUringStream<DataType>(d_stream_buf_len, file0, true, false);
+  file_stream1 = IOUringStream<DataType>(d_stream_buf_len, file1, true, false);
+#else
   file_stream0 = MMapStream<DataType>(d_stream_buf_len, file0, true, false); 
-  file_stream0.start_stream(offsets, noffsets, blocksize);
-
   file_stream1 = MMapStream<DataType>(d_stream_buf_len, file1, true, false); 
+#endif
+  file_stream0.start_stream(offsets, noffsets, blocksize);
   file_stream1.start_stream(offsets, noffsets, blocksize);
   return noffsets*blocksize;
 }

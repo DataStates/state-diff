@@ -240,10 +240,15 @@ CompareTreeDeduplicator::compare_trees() {
       changed_chunks.reset();
       auto& changed_blocks = changed_chunks;
 
+#ifdef IO_URING_STREAM
+      IOUringStream<float> file_stream0(stream_buffer_len, file0, true, false); 
+      IOUringStream<float> file_stream1(stream_buffer_len, file1, true, false); 
+#else
       MMapStream<float> file_stream0(stream_buffer_len, file0, true, false); 
+      MMapStream<float> file_stream1(stream_buffer_len, file1, true, false); 
+#endif
       file_stream0.start_stream(diff_hash_vec.vector_d.data(), num_diff_hash, blocksize);
 
-      MMapStream<float> file_stream1(stream_buffer_len, file1, true, false); 
       file_stream1.start_stream(diff_hash_vec.vector_d.data(), num_diff_hash, blocksize);
 
       AbsoluteComp<float> abs_comp;
