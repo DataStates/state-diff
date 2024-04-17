@@ -3,6 +3,8 @@
 
 #include <Kokkos_Core.hpp>
 
+#define IO_URING_STREAM
+
 //#define STDOUT
 //#define DEBUG
 //#define STATS

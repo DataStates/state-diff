@@ -30,6 +30,7 @@ target_include_directories(StateDiff
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 target_link_libraries(StateDiff PRIVATE Kokkos::kokkos)
+target_link_libraries(StateDiff PRIVATE uring)
 
 include(CMakePackageConfigHelpers)
 write_basic_package_version_file("${PROJECT_BINARY_DIR}/StateDiffConfigVersion.cmake"
