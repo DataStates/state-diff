@@ -185,7 +185,7 @@ public:
   KOKKOS_INLINE_FUNCTION bool calc_leaf_fuzzy_hash(const void* data, uint64_t len, 
                               float errorValue, const char dataType, HashDigest* digests, uint32_t u) const {
     
-    bool dualValid = fuzzyhash(data, len, dataType, errorValue, digests, true);
+    bool dualValid = fuzzyhash(data, len, dataType, errorValue, digests);
 
     if (dualValid)   {
       // Set the bit in the hashnum_bitset if both hashes are valid

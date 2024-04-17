@@ -207,7 +207,9 @@ CompareTreeDeduplicator::compare_trees() {
         }
       }
     });
+    // printf("Ready to synchronize\n");
     Kokkos::fence();
+    // printf("Synchronized\n");
   }
   Kokkos::Profiling::popRegion();
   Kokkos::Profiling::pushRegion(diff_label + std::string("Contribute hash comparison count"));
