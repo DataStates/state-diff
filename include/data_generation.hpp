@@ -153,7 +153,9 @@ bool write_file(const std::string &fn, uint8_t *buffer, size_t size) {
 
 template<typename DataType>
 void write_data(const std::string& filename, Kokkos::View<DataType*>& data) {
-  write_file(filename, (uint8_t*)(data.data()), data.size()*sizeof(DataType));
+  auto data_h = Kokkos::create_mirror_view(data);
+  Kokkos::deep_copy(data_h, data);
+  write_file(filename, (uint8_t*)(data_h.data()), data_h.size()*sizeof(DataType));
 //  typename Kokkos::View<DataType*>::HostMirror data_h = Kokkos::create_mirror_view(data);
 //  Kokkos::deep_copy(data_h, data);
 //  FILE *data_file;
