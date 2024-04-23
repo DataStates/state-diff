@@ -437,8 +437,8 @@ int main(int argc, char** argv) {
           outname = output_fname;
         }
         if(!comparing_runs) {
-//          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
-          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
+          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
+//          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
           if (fd == -1) {
               FATAL("cannot open " << outname << ", error = " << strerror(errno));
           }
@@ -535,8 +535,6 @@ int main(int argc, char** argv) {
           comp_deduplicator.stream_buffer_len = buffer_len/sizeof(float);
         } else {
           comp_deduplicator.setup(data_len, !comparing_runs);
-        }
-        if(!comparing_runs) {
           run_view_d = Kokkos::View<uint8_t*>("Device data", data_len);
         }
         Kokkos::Profiling::popRegion();
@@ -607,8 +605,8 @@ int main(int argc, char** argv) {
           outname = output_fname;
         }
         if(!comparing_runs) {
-//          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
-          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
+          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
+//          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
           if (fd == -1) {
               FATAL("cannot open " << outname << ", error = " << strerror(errno));
           }

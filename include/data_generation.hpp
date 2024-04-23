@@ -133,8 +133,8 @@ void perturb_data(Kokkos::View<DataType*>&          data0,
 
 bool write_file(const std::string &fn, uint8_t *buffer, size_t size) {
     bool ret=true;
-//    int fd = open(fn.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
-    int fd = open(fn.c_str(), O_CREAT | O_TRUNC | O_WRONLY , 0644);
+    int fd = open(fn.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
+//    int fd = open(fn.c_str(), O_CREAT | O_TRUNC | O_WRONLY , 0644);
     if (fd == -1) {
 //        FATAL("cannot open " << fn << ", error = " << strerror(errno));
         return false;
@@ -153,9 +153,9 @@ bool write_file(const std::string &fn, uint8_t *buffer, size_t size) {
 
 template<typename DataType>
 void write_data(const std::string& filename, Kokkos::View<DataType*>& data) {
-  write_file(filename, (uint8_t*)(data.data()), data.size()*sizeof(DataType));
-//  typename Kokkos::View<DataType*>::HostMirror data_h = Kokkos::create_mirror_view(data);
-//  Kokkos::deep_copy(data_h, data);
+  typename Kokkos::View<DataType*>::HostMirror data_h = Kokkos::create_mirror_view(data);
+  Kokkos::deep_copy(data_h, data);
+  write_file(filename, (uint8_t*)(data_h.data()), data_h.size()*sizeof(DataType));
 //  FILE *data_file;
 //  data_file = fopen(filename.c_str(), "wb");
 //  if(data_file == NULL) {

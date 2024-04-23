@@ -13,7 +13,9 @@
 #include "modified_kokkos_bitset.hpp"
 //#include "fuzzy_hash.hpp"
 #include "mmap_stream.hpp"
+#ifdef IO_URING_STREAM
 #include "io_uring_stream.hpp"
+#endif
 
 class CompareTreeDeduplicator {
   public:

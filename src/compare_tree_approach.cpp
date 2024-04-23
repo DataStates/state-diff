@@ -156,6 +156,7 @@ CompareTreeDeduplicator::compare_trees() {
   });
   auto& prev_dual_hash = tree_prev.dual_hash_d;
   auto& curr_dual_hash = tree_curr.dual_hash_d;
+  auto& first_ocurrences = first_ocur_vec;
   auto n_chunks = num_chunks;
   auto n_nodes = num_nodes;
   bool use_fuzzy_hash = fuzzyhash && (comp_op != Equivalence);
@@ -193,6 +194,7 @@ CompareTreeDeduplicator::compare_trees() {
 //printf("Tree: Block %zu (%zu) changed\n", node, node-left_leaf);
             }
           } else {
+//            first_ocurrences.push(node);
             first_ocur_vec.push(node);
           }
         } else {
@@ -236,7 +238,7 @@ CompareTreeDeduplicator::compare_trees() {
     first_ocur.clear();
     if(dataType == 'f') {
       Kokkos::Profiling::pushRegion(diff_label + std::string("Compare Tree start file streams"));
-      changed_chunks = Kokkos::Bitset<>(num_diff_hash);
+      changed_chunks = Kokkos::Bitset<>(num_chunks);
       changed_chunks.reset();
       auto& changed_blocks = changed_chunks;
 
@@ -285,7 +287,8 @@ CompareTreeDeduplicator::compare_trees() {
           if( (offset_idx+i < num_diff_hash) && (data_idx<filesize) ) {
             if(!abs_comp(sliceA[idx], sliceB[idx], err_tol)) {
               update += 1;
-              changed_blocks.set(offset_idx+i);
+//              changed_blocks.set(offset_idx+i);
+              changed_blocks.set(offsets[offset_idx+i]);
             }
             ncomp_access(0) += 1;
           }
@@ -611,246 +614,6 @@ CompareTreeDeduplicator::compare(uint8_t*  data_device_ptr,
   dedup_data(data_device_ptr, data_device_len, make_baseline);
   return num_first_ocur();
 }
-
-//std::pair<uint64_t,uint64_t> 
-//CompareTreeDeduplicator::collect_diff( const uint8_t* data_ptr, 
-//                                const size_t data_size,
-//                                Kokkos::View<uint8_t*>& buffer_d, 
-//                                header_t& header) {
-//  std::string chkpt_label = std::string("Checkpoint ") + std::to_string(current_id) + std::string(": ");
-//  std::string setup_label = chkpt_label + std::string("Gather: Setup");
-//  Kokkos::Profiling::pushRegion(setup_label);
-//
-//  STDOUT_PRINT("Number of first occurrences: %u\n", first_ocur_vec.size());
-//
-//  Kokkos::View<uint32_t*> region_leaves("Region leaves", num_chunks);
-//  Kokkos::View<uint32_t*> region_nodes("Region Nodes", first_ocur_vec.size());
-//  Kokkos::View<uint32_t*> region_len("Region lengths", first_ocur_vec.size());
-//  Kokkos::View<uint32_t[1]> counter_d("Counter");
-//  Kokkos::View<uint32_t[1]>::HostMirror counter_h = Kokkos::create_mirror_view(counter_d);
-//  Kokkos::deep_copy(counter_d, 0);
-//  Kokkos::View<uint32_t[1]> chunk_counter_d("Counter");
-//  Kokkos::View<uint32_t[1]>::HostMirror chunk_counter_h = Kokkos::create_mirror_view(chunk_counter_d);
-//  Kokkos::deep_copy(chunk_counter_d, 0);
-//  Kokkos::View<uint64_t*> prior_counter_d("Counter for prior repeats", current_id+1);
-//  Kokkos::View<uint64_t*>::HostMirror prior_counter_h = Kokkos::create_mirror_view(prior_counter_d);
-//  Kokkos::deep_copy(prior_counter_d, 0);
-//  Kokkos::Experimental::ScatterView<uint64_t*> prior_counter_sv(prior_counter_d);
-//
-//  DEBUG_PRINT("Setup counters\n");
-//
-//  Kokkos::Profiling::popRegion();
-//
-//  // Filter and count space used for distinct entries
-//  // Calculate number of chunks each entry maps to
-//  // Store roots and # of descendents
-//  std::string count_first_ocur_label = chkpt_label + std::string("Gather: Count first ocur bytes");
-//  Kokkos::parallel_for(count_first_ocur_label, Kokkos::RangePolicy<>(0, first_ocur_vec.size()), 
-//  KOKKOS_CLASS_LAMBDA(const uint32_t i) {
-//    uint32_t node = first_ocur_vec(i);
-//    uint32_t size = num_leaf_descendents(node, num_nodes);
-//    uint32_t idx = Kokkos::atomic_fetch_add(&counter_d(0), 1);
-//    Kokkos::atomic_add(&chunk_counter_d(0), size);
-//    region_nodes(idx) = node;
-//    region_len(idx) = size;
-//  });
-//
-//  std::string alloc_bitset_label = chkpt_label + std::string("Gather: Allocate bitset");
-//  Kokkos::Profiling::pushRegion(alloc_bitset_label);
-//  DEBUG_PRINT("Count distinct bytes\n");
-//
-//  DEBUG_PRINT("Setup chkpt bitset\n");
-//  Kokkos::Profiling::popRegion();
-//
-//  std::string contrib_label = chkpt_label + std::string("Gather: Contribute shift dupl");
-//  Kokkos::Profiling::pushRegion(contrib_label);
-//  DEBUG_PRINT("Count repeat bytes\n");
-//
-//  DEBUG_PRINT("Collect prior counter\n");
-//
-//  size_t data_offset = first_ocur_vec.size()*sizeof(uint32_t); 
-//  DEBUG_PRINT("Offset for data: %lu\n", data_offset);
-//  Kokkos::deep_copy(counter_h, counter_d);
-//  uint32_t num_distinct = counter_h(0);
-//  STDOUT_PRINT("Number of distinct regions: %u\n", num_distinct);
-//  Kokkos::Profiling::popRegion();
-//
-//  // Dividers for distinct chunks. Number of chunks per region varies.
-//  // Need offsets for each region so that writes can be done in parallel
-//  std::string calc_offsets_label = chkpt_label + std::string("Gather: Calculate offsets");
-//  STDOUT_PRINT("Created label: %u\n", num_distinct);
-//  Kokkos::parallel_scan(calc_offsets_label, num_distinct, 
-//  KOKKOS_CLASS_LAMBDA(const uint32_t i, uint32_t& partial_sum, bool is_final) {
-//    const uint32_t len = region_len(i);
-//    if(is_final) region_len(i) = partial_sum;
-//    partial_sum += len;
-//  });
-//
-//  std::string find_region_leaves_label = chkpt_label + std::string("Gather: Find region leaves");
-//  Kokkos::parallel_for(find_region_leaves_label, Kokkos::RangePolicy<>(0,num_distinct), 
-//  KOKKOS_CLASS_LAMBDA(const uint32_t i) {
-//    uint32_t offset = region_len(i);
-//    uint32_t node = region_nodes(i);
-//    uint32_t size = num_leaf_descendents(node, num_nodes);
-//    uint32_t start = leftmost_leaf(node, num_nodes); // - (num_chunks-1);
-//
-//    for(uint32_t j=0; j<size; j++) {
-//      uint32_t leaf = start+j;
-//      if(leaf < leftmost_leaf(0,num_nodes)) {
-//        uint32_t diff = leaf - ((num_nodes-1)/2);
-//        leaf = num_nodes + diff;
-//      }
-//      region_leaves(offset+j) = leaf - leftmost_leaf(0,num_nodes); 
-//    }
-//  });
-//
-//  std::string alloc_buffer_label = chkpt_label + std::string("Gather: Allocate buffer");
-//  Kokkos::Profiling::pushRegion(alloc_buffer_label);
-//  Kokkos::deep_copy(chunk_counter_h, chunk_counter_d);
-//  uint64_t buffer_len = sizeof(header_t)
-//                      + first_ocur_vec.size()*sizeof(uint32_t)
-//                      + chunk_counter_h(0)*static_cast<uint64_t>(chunk_size);
-//  Kokkos::resize(buffer_d, buffer_len);
-//
-//  Kokkos::deep_copy(counter_d, sizeof(uint32_t)*num_distinct);
-//
-//  Kokkos::Profiling::popRegion();
-//
-//  std::string copy_fo_metadata_label = chkpt_label + std::string("Gather: Copy first ocur metadata");
-//  Kokkos::parallel_for(copy_fo_metadata_label, Kokkos::RangePolicy<>(0,num_distinct), KOKKOS_CLASS_LAMBDA(const uint32_t i) {
-//    uint32_t node = region_nodes(i);
-//    memcpy(buffer_d.data()+sizeof(header_t)+static_cast<uint64_t>(i)*sizeof(uint32_t), &node, sizeof(uint32_t));
-//  });
-//
-//  std::string copy_data_label = chkpt_label + std::string("Gather: Copy data");
-//  Kokkos::parallel_for(copy_data_label, Kokkos::TeamPolicy<>(chunk_counter_h(0), Kokkos::AUTO), 
-//                         KOKKOS_CLASS_LAMBDA(const Kokkos::TeamPolicy<>::member_type& team_member) {
-//    uint32_t i = team_member.league_rank();
-//    uint32_t chunk = region_leaves(i);
-//    uint32_t writesize = chunk_size;
-//    uint64_t dst_offset = sizeof(header_t)+data_offset+static_cast<uint64_t>(i)*static_cast<uint64_t>(chunk_size);
-//    uint64_t src_offset = static_cast<uint64_t>(chunk)*static_cast<uint64_t>(chunk_size);
-//    if(chunk == num_chunks-1) {
-//      writesize = data_size-src_offset;
-//    }
-//    uint8_t* dst = (uint8_t*)(buffer_d.data()+dst_offset);
-//    uint8_t* src = (uint8_t*)(data_ptr+src_offset);
-//    team_memcpy(dst, src, writesize, team_member);
-//  });
-//
-//  DEBUG_PRINT("Wrote shared metadata\n");
-//  DEBUG_PRINT("Finished collecting data\n");
-//  header.ref_id           = baseline_id;
-//  header.cur_id           = current_id;
-//  header.datalen          = data_size;
-//  header.chunk_size       = chunk_size;
-//  header.num_first_ocur   = first_ocur_vec.size();
-//  header.num_shift_dupl   = 0;
-//  header.num_prior_diffs = 0;
-//  DEBUG_PRINT("Ref ID: %u\n"          , header.ref_id);
-//  DEBUG_PRINT("Chkpt ID: %u\n"        , header.cur_id);
-//  DEBUG_PRINT("Data len: %lu\n"       , header.datalen);
-//  DEBUG_PRINT("Chunk size: %u\n"      , header.chunk_size);
-//  DEBUG_PRINT("Num first ocur: %u\n"  , header.num_first_ocur);
-//  DEBUG_PRINT("Num shift dupl: %u\n"  , header.num_shift_dupl);
-//  DEBUG_PRINT("Num prior chkpts: %u\n", header.num_prior_diffs);
-//  uint64_t size_data = chunk_counter_h(0)*static_cast<uint64_t>(chunk_size);
-//  uint64_t size_metadata = buffer_len-size_data;
-//  STDOUT_PRINT("Finished collecting chunks\n");
-//  return std::make_pair(size_data, size_metadata);
-//}
-
-///**
-// * Main checkpointing function. Given a Kokkos View, create an incremental checkpoint using 
-// * the chosen checkpoint strategy. The deduplication mode can be one of the following:
-// *
-// * \param header        The checkpoint header
-// * \param data_ptr      Data to be checkpointed
-// * \param data_len      Length of data in bytes
-// * \param diff_h        The output incremental checkpoint on the Host
-// * \param make_baseline Flag determining whether to make a baseline checkpoint
-// */
-//std::pair<uint8_t*,size_t>
-//CompareTreeDeduplicator::deduplicate( 
-//                             uint8_t* data_ptr, 
-//                             size_t data_size,
-//                             bool make_baseline) {
-//  DEBUG_PRINT("==========================================================================================\n");
-//  STDOUT_PRINT("Deduplicating with CompareTree algorithm\n");
-//  using Timer = std::chrono::high_resolution_clock;
-//  using Duration = std::chrono::duration<double>;
-////  setup(data_ptr, data_size, (current_id == 0) || make_baseline);
-//  // ==========================================================================================
-//  // Deduplicate data
-//  // ==========================================================================================
-//  Timer::time_point beg_chkpt = Timer::now();
-//  setup(data_size, (current_id == 0) || make_baseline);
-//
-//  std::string dedup_region_name = std::string("Deduplication chkpt ") + 
-//                                  std::to_string(current_id);
-//  Timer::time_point start_create_tree0 = Timer::now();
-//  timers[0] = std::chrono::duration_cast<Duration>(start_create_tree0 - beg_chkpt).count();
-//  Kokkos::Profiling::pushRegion(dedup_region_name.c_str());
-//
-//  // Deduplicate data and identify nodes and chunks needed for the incremental checkpoint
-//  if((current_id == 0) || make_baseline) {
-//    baseline_id = current_id;
-//  }
-//  dedup_data(data_ptr, data_size, (current_id == 0) || make_baseline);
-//
-//  Kokkos::fence();
-//  DEBUG_PRINT("Deduplicated data id: %u\n", current_id);
-//
-//  Kokkos::Profiling::popRegion(); // Deduplicate
-//  Timer::time_point end_create_tree0 = Timer::now();
-//  timers[1] = std::chrono::duration_cast<Duration>(end_create_tree0 - start_create_tree0).count();
-//  DEBUG_PRINT("Finished Deduplicated data id: %u\n", current_id);
-//
-//  // ==========================================================================================
-//  // Create Diff
-//  // ==========================================================================================
-//  std::string collect_region_name = std::string("Start writing incremental checkpoint ") 
-//                            + std::to_string(current_id);
-//  Timer::time_point start_collect = Timer::now();
-//  Kokkos::Profiling::pushRegion(collect_region_name.c_str());
-//
-//  DEBUG_PRINT("Start collecting diff for id: %u\n", current_id);
-//  Kokkos::View<uint8_t*> diff("Temporary device View", 1);
-//  datasizes = collect_diff(data_ptr, data_size, diff, header);
-//  DEBUG_PRINT("Collected diff for id: %u\n", current_id);
-//
-//  Kokkos::Profiling::popRegion(); // Collect diff
-//  Timer::time_point end_collect = Timer::now();
-//  timers[2] = std::chrono::duration_cast<Duration>(end_collect - start_collect).count();
-//
-//  // ==========================================================================================
-//  // Copy diff to host 
-//  // ==========================================================================================
-//  Timer::time_point start_write = Timer::now();
-//  std::string write_region_name = std::string("Copy diff to host ") 
-//                                  + std::to_string(current_id);
-//  Kokkos::Profiling::pushRegion(write_region_name.c_str());
-//
-//  size_t diff_host_len = diff.size();
-//  uint8_t* diff_host_ptr = static_cast<uint8_t*>(new uint8_t[diff_host_len]);
-//  using UnmanagedHostView = Kokkos::View< uint8_t*, 
-//                                          Kokkos::DefaultHostExecutionSpace, 
-//                                          Kokkos::MemoryTraits<Kokkos::Unmanaged> >;
-//  UnmanagedHostView diff_h(diff_host_ptr, diff_host_len);
-//  Kokkos::deep_copy(diff_h, diff);
-//  memcpy(diff_h.data(), &header, sizeof(header_t));
-//  current_id += 1;
-//
-//  Kokkos::Profiling::popRegion(); // Copy diff to host
-//  Timer::time_point end_write = Timer::now();
-//  timers[3] = std::chrono::duration_cast<Duration>(end_write - start_write).count();
-//
-//  MerkleTree* temp = prev_tree;
-//  prev_tree = curr_tree;
-//  curr_tree = temp;
-//  DEBUG_PRINT("==========================================================================================\n");
-//  return std::make_pair(diff_host_ptr, diff_host_len);
-//}
 
 /**
  * Write logs for the diff metadata/data breakdown, runtimes, and the overall summary.

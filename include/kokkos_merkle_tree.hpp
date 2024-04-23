@@ -187,8 +187,8 @@ public:
     
     bool dualValid = fuzzyhash(data, len, dataType, errorValue, digests, true);
 
-    if (dualValid)   {
-      // Set the bit in the hashnum_bitset if both hashes are valid
+    // Set the bit in the hashnum_bitset if both hashes are valid
+    if (dualValid) {
       dual_hash_d.set(u);
     }
     return dualValid;

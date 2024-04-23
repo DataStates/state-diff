@@ -7,7 +7,9 @@
 #include "utils.hpp"
 #include "kokkos_vector.hpp"
 #include "mmap_stream.hpp"
+#ifdef IO_URING_STREAM
 #include "io_uring_stream.hpp"
+#endif
 
 template<typename DataType, typename ExecutionDevice=Kokkos::DefaultExecutionSpace>
 class DirectComparer {
