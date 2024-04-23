@@ -11,6 +11,8 @@ find_package(OpenSSL REQUIRED)
 include(GNUInstallDirs)
 
 option(ENABLE_TESTS "enable tests" OFF)
+option(ENABLE_IOURING "Enable IO Uring support" OFF)
+option(ENABLE_KOKKOS "Enable Kokkos specific flags" ON)
 
 #==============================================================================
 # Create library
@@ -30,7 +32,14 @@ target_include_directories(StateDiff
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 target_link_libraries(StateDiff PRIVATE Kokkos::kokkos)
-target_link_libraries(StateDiff PRIVATE uring)
+if(ENABLE_IO_URING)
+  target_link_libraries(StateDiff PRIVATE uring)
+  add_definitions(-DIO_URING_STREAM)
+endif(ENABLE_IO_URING)
+
+if(ENABLE_KOKKOS)
+  add_definitions(-D__USEKOKKOS)
+endif(ENABLE_KOKKOS)
 
 include(CMakePackageConfigHelpers)
 write_basic_package_version_file("${PROJECT_BINARY_DIR}/StateDiffConfigVersion.cmake"
