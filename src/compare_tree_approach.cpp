@@ -852,7 +852,7 @@ uint64_t CompareTreeDeduplicator::deserialize(std::vector<uint8_t>& run0_buffer,
     Kokkos::Profiling::popRegion();
     Kokkos::Profiling::pushRegion("Deserialize: create unmanaged host views");
 
-    using HashDigest2DView = Kokkos::View<HashDigest**, Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
+    using HashDigest2DView = Kokkos::View<HashDigest**, MerkleTree::tree_type::array_layout, Kokkos::DefaultHostExecutionSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
     HashDigest* raw_ptr0 = reinterpret_cast<HashDigest*>(run0_buffer.data() + offset0);
     HashDigest2DView unmanaged_view0(raw_ptr0, num_nodes, hashes_per_node0);
     offset0 += static_cast<size_t>(num_nodes)*static_cast<size_t>(hashes_per_node0) * sizeof(HashDigest);

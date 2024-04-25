@@ -29,6 +29,7 @@ private:
   }
 
 public:
+  using tree_type = Kokkos::View<HashDigest**>;
   Kokkos::View<HashDigest**> tree_d; ///< Device tree
   Kokkos::View<HashDigest**>::HostMirror tree_h; ///< Host mirror of tree
   Dedupe::Bitset<Kokkos::DefaultExecutionSpace> dual_hash_d;

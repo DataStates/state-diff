@@ -37,7 +37,7 @@ class CompareTreeDeduplicator {
     uint32_t num_nodes;
     uint32_t start_level=30;
     bool fuzzyhash = false;
-    float errorValue;
+    double errorValue;
     char dataType = static_cast<char>(*("f"));
     CompareOp comp_op=Equivalence;
     // Stats

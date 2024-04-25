@@ -294,8 +294,8 @@ DirectComparer<DataType,ExecDevice>::deserialize(size_t* offsets, size_t noffset
   file_stream0 = IOUringStream<DataType>(d_stream_buf_len, file0, true, false);
   file_stream1 = IOUringStream<DataType>(d_stream_buf_len, file1, true, false);
 #else
-  file_stream0 = MMapStream<DataType>(d_stream_buf_len, file0, true, false); 
-  file_stream1 = MMapStream<DataType>(d_stream_buf_len, file1, true, false); 
+  file_stream0 = MMapStream<DataType>(d_stream_buf_len, file0, true, true); 
+  file_stream1 = MMapStream<DataType>(d_stream_buf_len, file1, true, true); 
 #endif
   file_stream0.start_stream(offsets, noffsets, blocksize);
   file_stream1.start_stream(offsets, noffsets, blocksize);
