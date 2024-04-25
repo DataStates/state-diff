@@ -166,7 +166,7 @@ int main(int argc, char** argv) {
       STDOUT_PRINT("File %d: %s\n", i, run0_files[i].c_str());
     }
 
-    double timers[6] = {0.0};
+    double timers[7] = {0.0};
     size_t elem_changed = 0;
     uint64_t changed_blocks = 0;
     uint64_t n_comparisons = 0;
@@ -409,7 +409,7 @@ int main(int argc, char** argv) {
         Timer::time_point end_compare = Timer::now();
         double compare_time = std::chrono::duration_cast<Duration>(end_compare - beg_compare).count();
         std::cout << "\tRank " << world_rank << ": Compare: " << compare_time << std::endl;
-        timers[3] = compare_time;
+        timers[4] = compare_time;
 
         // ========================================================================================
         // Serialize (does nothing since data is already serialized)
@@ -420,7 +420,7 @@ int main(int argc, char** argv) {
         Timer::time_point end_serialize = Timer::now();
         double serialize_time = std::chrono::duration_cast<Duration>(end_serialize - beg_serialize).count();
         std::cout << "\tRank " << world_rank << ": Serialize: " << serialize_time << std::endl;
-        timers[4] = serialize_time;
+        timers[5] = serialize_time;
 
         // ========================================================================================
         // Write serialized data
@@ -464,7 +464,7 @@ int main(int argc, char** argv) {
         Timer::time_point end_write_tree = Timer::now();
         double write_tree_time = std::chrono::duration_cast<Duration>(end_write_tree - beg_write_tree).count();
         std::cout << "\tRank " << world_rank << ": Write: " << write_tree_time << std::endl;
-        timers[5] = deserialize_time;
+        timers[6] = deserialize_time;
 
         // ========================================================================================
         // Collect stats for log
@@ -563,22 +563,31 @@ int main(int argc, char** argv) {
         // ========================================================================================
         // Compare
         // ========================================================================================
-        Timer::time_point beg_compare = Timer::now();
-        Kokkos::Profiling::pushRegion("Compare");
+        Timer::time_point beg_compare1 = Timer::now();
+        Kokkos::Profiling::pushRegion("Compare phase 1");
         if(comparing_runs) {
           auto ncomp = comp_deduplicator.compare_trees_phase1();
-          if(comp_deduplicator.diff_hash_vec.size() > 0) {
-            printf("Different hashes: %u\n", comp_deduplicator.diff_hash_vec.size());
-            ncomp = comp_deduplicator.compare_trees_phase2();
-          }
         } else {
           comp_deduplicator.create_tree((uint8_t*)(run_view_d.data()), run_view_d.size());
         }
         Kokkos::Profiling::popRegion();
-        Timer::time_point end_compare = Timer::now();
-        double compare_time = std::chrono::duration_cast<Duration>(end_compare - beg_compare).count();
-        std::cout << "\tRank " << world_rank << ": Compare: " << compare_time << std::endl;
-        timers[3] = compare_time;
+        Timer::time_point end_compare1 = Timer::now();
+        double compare_time1 = std::chrono::duration_cast<Duration>(end_compare1 - beg_compare1).count();
+        std::cout << "\tRank " << world_rank << ": Compare Tree Phase 1: " << compare_time1 << std::endl;
+        timers[3] = compare_time1;
+
+        Timer::time_point beg_compare2 = Timer::now();
+        Kokkos::Profiling::pushRegion("Compare phase 2");
+        if(comparing_runs) {
+          if(comp_deduplicator.diff_hash_vec.size() > 0) {
+            auto ncomp = comp_deduplicator.compare_trees_phase2();
+          }
+        }
+        Kokkos::Profiling::popRegion();
+        Timer::time_point end_compare2 = Timer::now();
+        double compare_time2 = std::chrono::duration_cast<Duration>(end_compare2 - beg_compare2).count();
+        std::cout << "\tRank " << world_rank << ": Compare Tree Phase 2: " << compare_time2 << std::endl;
+        timers[4] = compare_time2;
 
         // ========================================================================================
         // Serialize
@@ -591,7 +600,7 @@ int main(int argc, char** argv) {
         Timer::time_point end_serialize = Timer::now();
         double serialize_time = std::chrono::duration_cast<Duration>(end_serialize - beg_serialize).count();
         std::cout << "\tRank " << world_rank << ": Serialize: " << serialize_time << std::endl;
-        timers[4] = serialize_time;
+        timers[5] = serialize_time;
 
         // ========================================================================================
         // Write
@@ -634,7 +643,7 @@ int main(int argc, char** argv) {
         Timer::time_point end_write_tree = Timer::now();
         double write_tree_time = std::chrono::duration_cast<Duration>(end_write_tree - beg_write_tree).count();
         std::cout << "\tRank " << world_rank << ": Write: " << write_tree_time << std::endl;
-        timers[5] = write_tree_time;
+        timers[6] = write_tree_time;
         // ========================================================================================
         // Collect stats for logs
         // ========================================================================================
@@ -666,7 +675,7 @@ int main(int argc, char** argv) {
       if(logfile.tellp() == logfile.beg) {
         logfile << "Rank,File,File size,Baseline file,Baseline file size,Hash function,Chunk size,Algorithm,Data type,";
         logfile << "Comparison operator,Error tolerance,Start level,Synchronous,Device buffer length,";
-        logfile << "Read time,Setup time,Deserialization time,Construction time,Comparison time,Serialization time,Write time,";
+        logfile << "Read time,Setup time,Deserialization time,Construction time,Compare tree time,Compare direct time,Serialization time,Write time,";
         logfile << "Elements different,Hashes different,Num comparisons,Num hash comparisons\n";
       }
       logfile << world_rank << ",";
@@ -703,12 +712,12 @@ int main(int argc, char** argv) {
       logfile << timers[1] << ",";
       logfile << timers[2] << ",";
       if(comparing_runs) {
-        logfile << "0," << timers[3] << ",";
+        logfile << "0," << timers[3] << "," << timers[4] << ",";
       } else {
-        logfile << timers[3] << ",0,";
+        logfile << timers[3] << ",0,0,";
       }
-      logfile << timers[4] << ",";
       logfile << timers[5] << ",";
+      logfile << timers[6] << ",";
       logfile << elem_changed << ",";
       logfile << changed_blocks << ",";
       logfile << n_comparisons << ",";
