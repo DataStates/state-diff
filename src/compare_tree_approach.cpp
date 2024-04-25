@@ -215,14 +215,12 @@ CompareTreeDeduplicator::compare_trees_phase1() {
   Kokkos::Profiling::pushRegion(diff_label + std::string("Contribute hash comparison count"));
   Kokkos::Experimental::contribute(num_hash_comp, nhash_comp);
   Kokkos::Profiling::popRegion();
-  Kokkos::Profiling::pushRegion(diff_label + std::string("Compare Tree sort indices"));
 //printf("Diff hash capacity: %u\n", diff_hash_vec.capacity());
 //Kokkos::parallel_for(num_chunks, KOKKOS_CLASS_LAMBDA(const uint32_t i) {
 //  diff_hash_vec.push(static_cast<size_t>(i));
 //});
 //Kokkos::fence();
 //printf("Diff hash vec pointer %p\n", diff_hash_vec.vector_d.data());
-  Kokkos::Profiling::popRegion();
   Kokkos::Profiling::popRegion();
   if(fuzzyhash && (comp_op != Equivalence)) {
     return changed_chunks.count();
@@ -238,8 +236,10 @@ CompareTreeDeduplicator::compare_trees_phase2() {
   // ==============================================================================================
   STDOUT_PRINT("Number of first occurrences (Leaves) - Phase One: %u\n", diff_hash_vec.size());
   std::string diff_label = std::string("Chkpt ") + std::to_string(current_id) + std::string(": ");
+  Kokkos::Profiling::pushRegion(diff_label + std::string("Compare Trees direct comparison"));
   
   // Sort indices for better performance
+  Kokkos::Profiling::pushRegion(diff_label + std::string("Compare Tree sort indices"));
   size_t num_diff_hash = static_cast<size_t>(diff_hash_vec.size());
   num_change_hashes_phase_1=num_diff_hash;
   auto diff_hash_subview = Kokkos::subview(diff_hash_vec.vector_d, Kokkos::make_pair((size_t)(0),num_diff_hash));
