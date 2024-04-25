@@ -228,12 +228,14 @@ int main(int argc, char** argv) {
   std::vector<float> data_b = load_data_from_file(file_b, file_start_offset);
   size_t data_len = data_a.size();
   size_t num_chunks =  data_len*sizeof(float) / chunk_size;
+  if(num_chunks*chunk_size < data_len*sizeof(float))
+    num_chunks += 1;
   INFO("Params:: DataSize=" << data_len << ", ChunkSize=" << chunk_size << ", NofChunks=" << num_chunks);
 
   int num_tests = (error > 0) ? 1 : 10;
   const int seed = 0x4321;
   std::mt19937 prng(seed);
-	std::uniform_real_distribution<float> error_dist(1e-6, 1e-2);
+	std::uniform_real_distribution<float> error_dist(1e-6, 1e-1);
 
   Kokkos::initialize(argc, argv);
   {

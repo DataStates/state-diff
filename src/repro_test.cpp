@@ -567,6 +567,10 @@ int main(int argc, char** argv) {
         Kokkos::Profiling::pushRegion("Compare phase 1");
         if(comparing_runs) {
           auto ncomp = comp_deduplicator.compare_trees_phase1();
+          if(comp_deduplicator.diff_hash_vec.size() > 0) {
+            //printf("Different hashes: %u\n", comp_deduplicator.diff_hash_vec.size());
+            ncomp = comp_deduplicator.compare_trees_phase2();
+          }
         } else {
           comp_deduplicator.create_tree((uint8_t*)(run_view_d.data()), run_view_d.size());
         }
