@@ -100,7 +100,9 @@ class CompareTreeDeduplicator {
             size_t    data_device_len,
             bool      make_baseline);
     size_t
-    compare_trees();
+    compare_trees_phase1();
+    size_t
+    compare_trees_phase2();
 
 //    /**
 //     * Main deduplicate function. Given a Device pointer, create an incremental diff using 
