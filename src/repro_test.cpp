@@ -266,8 +266,8 @@ int main(int argc, char** argv) {
         timers[1] = setup_time;
 
         // Create offsets for loading data
-        size_t blocksize = chunk_size/data_type_size;
-//        size_t blocksize = buffer_len/(data_type_size);
+//        size_t blocksize = chunk_size/data_type_size;
+        size_t blocksize = buffer_len/(data_type_size);
         size_t noffsets = (data_len/data_type_size)/blocksize;
         if(noffsets*blocksize < data_len/data_type_size)
           noffsets += 1;
@@ -566,8 +566,11 @@ int main(int argc, char** argv) {
         Timer::time_point beg_compare = Timer::now();
         Kokkos::Profiling::pushRegion("Compare");
         if(comparing_runs) {
-          auto ncomp = comp_deduplicator.compare_trees();
-          //printf("Ncomp: %zu\n", comp_deduplicator.num_first_ocur());
+          auto ncomp = comp_deduplicator.compare_trees_phase1();
+          if(comp_deduplicator.diff_hash_vec.size() > 0) {
+            printf("Different hashes: %u\n", comp_deduplicator.diff_hash_vec.size());
+            ncomp = comp_deduplicator.compare_trees_phase2();
+          }
         } else {
           comp_deduplicator.create_tree((uint8_t*)(run_view_d.data()), run_view_d.size());
         }

@@ -83,9 +83,9 @@ class MMapStream {
       transfer_slice_len = elem_per_slice;
       file_buffer = map_file(filename);
       if(transfer_all) {
-//        madvise(file_buffer.buff, file_buffer.size, MADV_SEQUENTIAL);
+        madvise(file_buffer.buff, file_buffer.size, MADV_SEQUENTIAL);
       } else {
-//        madvise(file_buffer.buff, file_buffer.size, MADV_RANDOM);
+        madvise(file_buffer.buff, file_buffer.size, MADV_RANDOM);
 //        madvise(file_buffer.buff, file_buffer.size, MADV_SEQUENTIAL);
       }
       ASSERT(file_buffer.size % sizeof(DataType) == 0);
@@ -209,16 +209,15 @@ class MMapStream {
     }
 
     size_t prepare_slice() {
-DataType* test_buff = host_buffer;
       if(full_transfer) {
-        transfer_slice_len = get_chunk(file_buffer, host_offsets[transferred_chunks]*elem_per_slice, &host_buffer);
+        transfer_slice_len = get_chunk(file_buffer, host_offsets[transferred_chunks]*elem_per_slice, &transfer_buffer);
       } else {
         if(elem_per_chunk*(transferred_chunks+chunks_per_slice) > filesize/sizeof(DataType)) { 
           transfer_slice_len = filesize/sizeof(DataType) - transferred_chunks*elem_per_chunk;
         } else {
           transfer_slice_len = elem_per_chunk*chunks_per_slice;
         }
-//#pragma omp task depend(inout: test_buff[0:transfer_slice_len])
+//#pragma omp task depend(inout: host_buffer[0:transfer_slice_len])
 //{
         #pragma omp parallel for
         for(size_t i=0; i<chunks_per_slice; i++) {
@@ -227,9 +226,9 @@ DataType* test_buff = host_buffer;
             size_t len = get_chunk(file_buffer, host_offsets[transferred_chunks+i]*elem_per_chunk, &chunk);
             assert(len <= elem_per_chunk);
             assert(i*elem_per_chunk+len*sizeof(DataType) <= bytes_per_slice);
-            assert((size_t)test_buff+i*elem_per_chunk+len <= (size_t)test_buff+elem_per_slice);
+            assert((size_t)host_buffer+i*elem_per_chunk+len <= (size_t)host_buffer+elem_per_slice);
             if(len > 0)
-              memcpy(test_buff+i*elem_per_chunk, chunk, len*sizeof(DataType));
+              memcpy(host_buffer+i*elem_per_chunk, chunk, len*sizeof(DataType));
           }
         }
 //}
@@ -238,7 +237,7 @@ DataType* test_buff = host_buffer;
 //        if(per_threads*Kokkos::num_threads() < chunks_per_slice)
 //          per_threads += 1;
 //        for(size_t thread=0; thread<Kokkos::num_threads()/2; thread++) {
-//#pragma omp task depend(out: test_buff[thread*per_threads : (thread+1)*per_threads])
+//#pragma omp task depend(out: host_buffer[thread*per_threads : (thread+1)*per_threads])
 //{
 //          for(size_t i=per_threads*thread; i<(thread+1)*per_threads; i++) {
 //            if((i<chunks_per_slice) && transferred_chunks+i<num_offsets) {
@@ -246,25 +245,25 @@ DataType* test_buff = host_buffer;
 //              size_t len = get_chunk(file_buffer, host_offsets[transferred_chunks+i]*elem_per_chunk, &chunk);
 //              assert(len <= elem_per_chunk);
 //              assert(i*elem_per_chunk+len*sizeof(DataType) <= bytes_per_slice);
-//              assert((size_t)test_buff+i*elem_per_chunk+len <= (size_t)test_buff+elem_per_slice);
+//              assert((size_t)host_buffer+i*elem_per_chunk+len <= (size_t)host_buffer+elem_per_slice);
 //              if(len > 0)
-//                memcpy(test_buff+i*elem_per_chunk, chunk, len*sizeof(DataType));
+//                memcpy(host_buffer+i*elem_per_chunk, chunk, len*sizeof(DataType));
 //            }
 //          }
 //}
 //        }
 #ifdef __NVCC__
-//#pragma omp task depend(in: test_buff[0:transfer_slice_len])
+//#pragma omp task depend(in: host_buffer[0:transfer_slice_len])
 //{
       if(async) {
         gpuErrchk( cudaMemcpyAsync(transfer_buffer, 
-                                   test_buff, 
+                                   host_buffer, 
                                    transfer_slice_len*sizeof(DataType), 
                                    cudaMemcpyHostToDevice, 
                                    transfer_stream) );
       } else {
         gpuErrchk( cudaMemcpy(transfer_buffer, 
-                              test_buff, 
+                              host_buffer, 
                               transfer_slice_len*sizeof(DataType), 
                               cudaMemcpyHostToDevice) );
       }

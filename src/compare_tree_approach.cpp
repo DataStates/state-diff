@@ -101,7 +101,7 @@ CompareTreeDeduplicator::setup(const size_t data_size,
 }
 
 size_t
-CompareTreeDeduplicator::compare_trees() {
+CompareTreeDeduplicator::compare_trees_phase1() {
   // ==============================================================================================
   // Compare Trees tree
   // ==============================================================================================
@@ -222,10 +222,22 @@ CompareTreeDeduplicator::compare_trees() {
 //});
 //Kokkos::fence();
 //printf("Diff hash vec pointer %p\n", diff_hash_vec.vector_d.data());
+  Kokkos::Profiling::popRegion();
+  Kokkos::Profiling::popRegion();
+  if(fuzzyhash && (comp_op != Equivalence)) {
+    return changed_chunks.count();
+  } else {
+    return num_first_ocur();
+  }
+}
+
+size_t
+CompareTreeDeduplicator::compare_trees_phase2() {
   // ==============================================================================================
   // Validate first occurences with direct comparison
   // ==============================================================================================
   STDOUT_PRINT("Number of first occurrences (Leaves) - Phase One: %u\n", diff_hash_vec.size());
+  std::string diff_label = std::string("Chkpt ") + std::to_string(current_id) + std::string(": ");
   
   // Sort indices for better performance
   size_t num_diff_hash = static_cast<size_t>(diff_hash_vec.size());
@@ -234,6 +246,8 @@ CompareTreeDeduplicator::compare_trees() {
   Kokkos::sort(diff_hash_vec.vector_d, 0, num_diff_hash);
   size_t blocksize = chunk_size/sizeof(float);
   Kokkos::Profiling::popRegion();
+  auto& num_changes = num_changed;
+  auto& first_ocur = first_ocur_vec;
   if (num_diff_hash > 0) {
     first_ocur.clear();
     if(dataType == 'f') {
@@ -263,7 +277,7 @@ CompareTreeDeduplicator::compare_trees() {
       size_t filesize = file_stream0.get_file_size();
       Kokkos::deep_copy(num_comparisons, 0);
       Kokkos::deep_copy(num_changed, 0);
-      size_t num_iter = num_diff_hash/file_stream0.chunks_per_slice;
+      size_t num_iter = file_stream0.num_offsets/file_stream0.chunks_per_slice;
       if(num_iter * file_stream0.chunks_per_slice < file_stream0.num_offsets)
         num_iter += 1;
       Kokkos::Experimental::ScatterView<uint64_t[1]> num_comp(num_comparisons);
