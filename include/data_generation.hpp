@@ -133,8 +133,8 @@ void perturb_data(Kokkos::View<DataType*>&          data0,
 
 bool write_file(const std::string &fn, uint8_t *buffer, size_t size) {
     bool ret=true;
-    int fd = open(fn.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
-//    int fd = open(fn.c_str(), O_CREAT | O_TRUNC | O_WRONLY , 0644);
+//    int fd = open(fn.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
+    int fd = open(fn.c_str(), O_CREAT | O_TRUNC | O_WRONLY , 0644);
     if (fd == -1) {
 //        FATAL("cannot open " << fn << ", error = " << strerror(errno));
         return false;

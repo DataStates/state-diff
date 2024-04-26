@@ -4,10 +4,9 @@
 #include <bits/stdc++.h>
 #include <iostream>
 #include "kokkos_murmur3.hpp"
-#include "MurmurHash3.h"
 #include "utils.hpp"
 
-#ifdef __USEKOKKOS
+#if defined(KOKKOS_CORE_HPP)
   #define KOKKOS_INLINE KOKKOS_INLINE_FUNCTION
 #else
   #define KOKKOS_INLINE inline
@@ -37,7 +36,7 @@ struct DataTypeInfo<float> {
 // Hashing approach tolerant to variations of floating point numbers
 template <typename T1, typename T2>
 KOKKOS_INLINE
-bool processData(const T1* data, T2 combinedBytes, uint64_t len, float errorValue, HashDigest* digests, bool usekokkos);
+bool processData(const T1* data, T2 combinedBytes, uint64_t len, float errorValue, HashDigest* digests);
 
 template <typename T1, typename T2>
 KOKKOS_INLINE
@@ -68,35 +67,34 @@ void printMismatch(std::string prefix, const HashDigest& dig);
 // Main hash function used by the code
 KOKKOS_INLINE
 bool fuzzyhash(const void* data, uint64_t len, const char dataType,
-                float errorValue, HashDigest* digests, bool usekokkos)  {
+                float errorValue, HashDigest* digests)  {
   if (dataType == *("d")) {
     const double* doubleData = static_cast<const double*>(data);
     uint64_t bitsDataType = 0;
-    return processData(doubleData, bitsDataType, len, errorValue, digests, usekokkos);
+    return processData(doubleData, bitsDataType, len, errorValue, digests);
   } else {
     const float* floatData = static_cast<const float*>(data);
     uint32_t bitsDataType = 0;
-    return processData(floatData, bitsDataType, len, errorValue, digests, usekokkos);
+    return processData(floatData, bitsDataType, len, errorValue, digests);
   }    
 }
 
 template <typename T1, typename T2>
 KOKKOS_INLINE
-bool processData(const T1* data, T2 bitsDataType, uint64_t len, float errorValue, HashDigest* digests, bool usekokkos) {
+bool processData(const T1* data, T2 bitsDataType, uint64_t len, float errorValue, HashDigest* digests) {
   // Given that every data point has two hashes, compute the modified
   // binary representations per data point and compute the hashes
   // for the entire chunk in a streaming fashion.
   const size_t blockSize = 16;
   constexpr uint32_t elementsPerBlock = blockSize/sizeof(T1);
-  uint32_t blocksPerChunk = len/blockSize;
 
   T1 dataLower[elementsPerBlock];
   T1 dataUpper[elementsPerBlock];
   uint64_t seedLower[2] = {0, 0};
   uint64_t seedUpper[2] = {0, 0};
+  uint32_t offset;
 
-  for(uint32_t offset=0; offset<len; offset+=blockSize) {
-
+  for(offset=0; offset<len; offset+=blockSize) {
     // Declare the digest for the current block
     uint64_t* digestLower = (uint64_t*)&digests[0];
     uint64_t* digestUpper = (uint64_t*)&digests[1];
@@ -123,13 +121,8 @@ bool processData(const T1* data, T2 bitsDataType, uint64_t len, float errorValue
     }
     
     // Compute the hashes for the current block of 128-bit data
-    if( usekokkos ) {
-      kokkos_murmur3::MurmurHash3_x64_128(dataLower, blockSize, seedLower, digestLower);
-      kokkos_murmur3::MurmurHash3_x64_128(dataUpper, blockSize, seedUpper, digestUpper);
-    } else {
-      base_murmur3::MurmurHash3_x64_128(dataLower, blockSize, seedLower, digestLower);
-      base_murmur3::MurmurHash3_x64_128(dataUpper, blockSize, seedUpper, digestUpper);
-    }
+    kokkos_murmur3::MurmurHash3_x64_128(dataLower, blockSize, seedLower, digestLower);
+    kokkos_murmur3::MurmurHash3_x64_128(dataUpper, blockSize, seedUpper, digestUpper);
 
     // Copy the content of digestLower and digestUpper into seedLower and seedUpper
     seedLower[0] = digestLower[0];
@@ -140,6 +133,33 @@ bool processData(const T1* data, T2 bitsDataType, uint64_t len, float errorValue
     // printf("After Truncation: %lu and %lu\n", seedLower[0], seedLower[1]);
     // printf("After Addition: %lu and %lu\n", seedUpper[0], seedUpper[1]);
   }
+  // ------------------------------------------------------------------------
+  // Handling data at the tail for fuzzy hash
+  // ------------------------------------------------------------------------
+  uint32_t remaining = len - (offset - blockSize);
+  assert(remaining  < elementsPerBlock * sizeof(T1));
+  if ( offset > len && remaining > 0)  {
+    // printf("Len: %lu; Offset: %u; blockSize: %zu; Remaining: %u\n", len, offset, blockSize, remaining);
+    uint64_t* tail_digestLower = (uint64_t*)&digests[0];
+    uint64_t* tail_digestUpper = (uint64_t*)&digests[1];
+    memset(dataLower, 0, blockSize);
+    memset(dataUpper, 0, blockSize);
+    offset -= blockSize;
+    memcpy(dataLower, (const uint8_t*)(data)+offset, remaining);
+    memcpy(dataUpper, (const uint8_t*)(data)+offset, remaining);
+    for(uint32_t j=0; j<remaining/sizeof(T1); j++) {
+      processElement(dataLower[j], dataUpper[j], bitsDataType, errorValue);
+    }
+    kokkos_murmur3::MurmurHash3_x64_128(dataLower, blockSize, seedLower, tail_digestLower);
+    kokkos_murmur3::MurmurHash3_x64_128(dataUpper, blockSize, seedUpper, tail_digestUpper);
+    seedLower[0] = tail_digestLower[0];
+    seedLower[1] = tail_digestLower[1];
+    seedUpper[0] = tail_digestUpper[0];
+    seedUpper[1] = tail_digestUpper[1];
+  }  
+  // ------------------------------------------------------------------------
+  // Handled data at the tail for fuzzy hash
+  // ------------------------------------------------------------------------
   if ( (seedUpper[0] != seedLower[0]) || (seedUpper[1] != seedLower[1]) ) {
     // The hashes are not identical. We need them both to proceed.
     return true;
