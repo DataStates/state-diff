@@ -156,6 +156,20 @@ void write_data(const std::string& filename, Kokkos::View<DataType*>& data) {
   typename Kokkos::View<DataType*>::HostMirror data_h = Kokkos::create_mirror_view(data);
   Kokkos::deep_copy(data_h, data);
   write_file(filename, (uint8_t*)(data_h.data()), data_h.size()*sizeof(DataType));
+
+//  using HostView = Kokkos::View<DataType*, 
+//                                Kokkos::DefaultHostExecutionSpace, 
+//                                Kokkos::MemoryTraits<Kokkos::Unmanaged>
+//                                >;
+//  size_t npages = data.size()*sizeof(DataType)/getpagesize();
+//  if(npages*getpagesize() < data.size()*sizeof(DataType))
+//    npages += 1;
+//  DataType* data_h_ptr = (DataType*) aligned_alloc(getpagesize(), npages*getpagesize());
+//  HostView data_h(data_h_ptr, data.size());
+//  Kokkos::deep_copy(data_h, data);
+//  write_file(filename, (uint8_t*)(data_h.data()), npages*getpagesize());
+//  free(data_h_ptr);
+
 //  FILE *data_file;
 //  data_file = fopen(filename.c_str(), "wb");
 //  if(data_file == NULL) {

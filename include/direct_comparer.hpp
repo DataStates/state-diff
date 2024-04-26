@@ -193,6 +193,7 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare() {
   size_t num_iter = file_stream0.num_offsets/file_stream0.chunks_per_slice;
   if(num_iter * file_stream0.chunks_per_slice < file_stream0.num_offsets)
     num_iter += 1;
+  DEBUG_PRINT("Number of iterations: %zu\n", num_iter);
   Kokkos::Experimental::ScatterView<uint64_t[1]> num_comp(num_comparisons);
   Kokkos::Profiling::popRegion();
   for(size_t iter=0; iter<num_iter; iter++) {
@@ -291,8 +292,8 @@ DirectComparer<DataType,ExecDevice>::deserialize(size_t* offsets, size_t noffset
   file_stream=true;
 
 #ifdef IO_URING_STREAM
-  file_stream0 = IOUringStream<DataType>(d_stream_buf_len, file0, true, false);
-  file_stream1 = IOUringStream<DataType>(d_stream_buf_len, file1, true, false);
+  file_stream0 = IOUringStream<DataType>(d_stream_buf_len, file0, true, true);
+  file_stream1 = IOUringStream<DataType>(d_stream_buf_len, file1, true, true);
 #else
   file_stream0 = MMapStream<DataType>(d_stream_buf_len, file0, true, true); 
   file_stream1 = MMapStream<DataType>(d_stream_buf_len, file1, true, true); 

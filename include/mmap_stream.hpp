@@ -105,17 +105,6 @@ class MMapStream {
       }
       host_buffer = transfer_buffer;
 #endif
-//      if(!full_transfer) {
-//        active_buffer = device_alloc<DataType>(bytes_per_slice);
-//        transfer_buffer = device_alloc<DataType>(bytes_per_slice);
-//#ifdef __NVCC__
-//        host_buffer = host_alloc<DataType>(bytes_per_slice);
-//#else
-//        host_buffer = transfer_buffer;
-//#endif
-//      } else {
-//        host_buffer = transfer_buffer;
-//      }
       
 #ifdef __NVCC__
       gpuErrchk( cudaStreamCreate(&transfer_stream) );

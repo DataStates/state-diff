@@ -358,9 +358,9 @@ CompareTreeDeduplicator::create_tree(const uint8_t* data_ptr, const size_t data_
   level_beg = (level_beg-1)/2;
   level_end = (level_end-2)/2;
   uint32_t left_leaf = level_beg;
-  //uint32_t right_leaf = level_end;
+  uint32_t right_leaf = level_end;
   uint32_t last_lvl_beg = (1 <<  start_level) - 1;
-  //uint32_t last_lvl_end = (1 << (start_level + 1)) - 2;
+  uint32_t last_lvl_end = (1 << (start_level + 1)) - 2;
   DEBUG_PRINT("Leaf range [%u,%u]\n", left_leaf, right_leaf);
   DEBUG_PRINT("Start level [%u,%u]\n", last_lvl_beg, last_lvl_end);
 
@@ -462,7 +462,7 @@ CompareTreeDeduplicator::dedup_data(const uint8_t* data_ptr,
   level_beg = (level_beg-1)/2;
   level_end = (level_end-2)/2;
   uint32_t left_leaf = level_beg;
-  //uint32_t right_leaf = level_end;
+  uint32_t right_leaf = level_end;
   uint32_t last_lvl_beg = (1 <<  start_level) - 1;
   uint32_t last_lvl_end = (1 << (start_level + 1)) - 2;
   DEBUG_PRINT("Leaf range [%u,%u]\n", left_leaf, right_leaf);
