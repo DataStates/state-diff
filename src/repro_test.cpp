@@ -563,35 +563,36 @@ int main(int argc, char** argv) {
         // ========================================================================================
         // Compare
         // ========================================================================================
-        Timer::time_point beg_compare1 = Timer::now();
-        Kokkos::Profiling::pushRegion("Compare phase 1");
-        if(comparing_runs) {
-          auto ncomp = comp_deduplicator.compare_trees_phase1();
-          if(comp_deduplicator.diff_hash_vec.size() > 0) {
-            //printf("Different hashes: %u\n", comp_deduplicator.diff_hash_vec.size());
-            ncomp = comp_deduplicator.compare_trees_phase2();
-          }
-        } else {
+        if(!comparing_runs) {
+          Timer::time_point beg_compare1 = Timer::now();
+          Kokkos::Profiling::pushRegion("Create tree");
           comp_deduplicator.create_tree((uint8_t*)(run_view_d.data()), run_view_d.size());
-        }
-        Kokkos::Profiling::popRegion();
-        Timer::time_point end_compare1 = Timer::now();
-        double compare_time1 = std::chrono::duration_cast<Duration>(end_compare1 - beg_compare1).count();
-        std::cout << "\tRank " << world_rank << ": Compare Tree Phase 1: " << compare_time1 << std::endl;
-        timers[3] = compare_time1;
+          Kokkos::Profiling::popRegion();
+          Timer::time_point end_compare1 = Timer::now();
+          double compare_time1 = std::chrono::duration_cast<Duration>(end_compare1 - beg_compare1).count();
+          std::cout << "\tRank " << world_rank << ": Create Tree: " << compare_time1 << std::endl;
+          timers[3] = compare_time1;
+        } else {
+          Timer::time_point beg_compare1 = Timer::now();
+          Kokkos::Profiling::pushRegion("Compare phase 1");
+          auto ncomp = comp_deduplicator.compare_trees_phase1();
+          Kokkos::Profiling::popRegion();
+          Timer::time_point end_compare1 = Timer::now();
+          double compare_time1 = std::chrono::duration_cast<Duration>(end_compare1 - beg_compare1).count();
+          std::cout << "\tRank " << world_rank << ": Compare Tree Phase 1: " << compare_time1 << std::endl;
+          timers[3] = compare_time1;
 
-        Timer::time_point beg_compare2 = Timer::now();
-        Kokkos::Profiling::pushRegion("Compare phase 2");
-        if(comparing_runs) {
+          Timer::time_point beg_compare2 = Timer::now();
+          Kokkos::Profiling::pushRegion("Compare phase 2");
           if(comp_deduplicator.diff_hash_vec.size() > 0) {
             auto ncomp = comp_deduplicator.compare_trees_phase2();
           }
+          Kokkos::Profiling::popRegion();
+          Timer::time_point end_compare2 = Timer::now();
+          double compare_time2 = std::chrono::duration_cast<Duration>(end_compare2 - beg_compare2).count();
+          std::cout << "\tRank " << world_rank << ": Compare Tree Phase 2: " << compare_time2 << std::endl;
+          timers[4] = compare_time2;
         }
-        Kokkos::Profiling::popRegion();
-        Timer::time_point end_compare2 = Timer::now();
-        double compare_time2 = std::chrono::duration_cast<Duration>(end_compare2 - beg_compare2).count();
-        std::cout << "\tRank " << world_rank << ": Compare Tree Phase 2: " << compare_time2 << std::endl;
-        timers[4] = compare_time2;
 
         // ========================================================================================
         // Serialize

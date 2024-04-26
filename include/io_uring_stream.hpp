@@ -2,6 +2,7 @@
 #define __IO_URING_STREAM_HPP
 #include <type_traits>
 #include <string>
+#include <future>
 #include <mutex>
 #include <thread>
 #include <atomic>
@@ -28,10 +29,6 @@
 
 template<typename DataType>
 class IOUringStream {
-//  struct buff_state_t {
-//    uint8_t *buff;
-//    size_t size;
-//  };
 
   public:
     size_t *host_offsets=NULL, *file_offsets=NULL; // Track where to make slice
@@ -50,10 +47,12 @@ class IOUringStream {
     DataType *mmapped_file=NULL; // Pointer to host data
     DataType *active_buffer=NULL, *transfer_buffer=NULL; // Convenient pointers
     DataType *host_buffer=NULL;
+    std::future<int> fut;
 #ifdef __NVCC__
     cudaStream_t transfer_stream; // Stream for data transfers
 #endif
 
+  private:
     int setup_context(uint32_t entries, struct io_uring* ring) {
       int ret;
       ret = io_uring_queue_init(entries, ring, 0);
@@ -100,7 +99,8 @@ class IOUringStream {
     IOUringStream() {}
 
     // Constructor for Host -> Device stream
-    IOUringStream(size_t buff_len, std::string& file_name, bool async_memcpy=true, bool transfer_all=true) {
+    IOUringStream(size_t buff_len, std::string& file_name, 
+                  bool async_memcpy=true, bool transfer_all=true) {
       full_transfer = transfer_all;
       async = async_memcpy;
       elem_per_slice = buff_len;
@@ -116,36 +116,16 @@ class IOUringStream {
         fprintf(stderr, "Failed to retrieve file size for %s\n", filename.c_str());
       }
       INFO("mapping " << first.size / sizeof(DataType) << " elements");
-#ifdef __NVCC__
       active_buffer = device_alloc<DataType>(bytes_per_slice);
       transfer_buffer = device_alloc<DataType>(bytes_per_slice);
+      host_buffer = transfer_buffer;
+#ifdef __NVCC__
       if(!full_transfer) {
         host_buffer = host_alloc<DataType>(bytes_per_slice);
-      } else {
-        host_buffer = transfer_buffer;
       }
-#else
-      if(!full_transfer) {
-        active_buffer = device_alloc<DataType>(bytes_per_slice);
-        transfer_buffer = device_alloc<DataType>(bytes_per_slice);
-      }
-      host_buffer = transfer_buffer;
-#endif
-//      if(!full_transfer) {
-//        active_buffer = device_alloc<DataType>(bytes_per_slice);
-//        transfer_buffer = device_alloc<DataType>(bytes_per_slice);
-//#ifdef __NVCC__
-//        host_buffer = host_alloc<DataType>(bytes_per_slice);
-//#else
-//        host_buffer = transfer_buffer;
-//#endif
-//      } else {
-//        host_buffer = transfer_buffer;
-//      }
-      
-#ifdef __NVCC__
       gpuErrchk( cudaStreamCreate(&transfer_stream) );
 #endif
+      
       DEBUG_PRINT("Constructor: Filename: %s\n", filename.c_str());
       DEBUG_PRINT("File size: %zu\n", filesize);
       DEBUG_PRINT("Constructor: Full transfer? %d\n", full_transfer);
@@ -202,17 +182,13 @@ class IOUringStream {
         close(file);
         file=0;
       }
-      if(!full_transfer) {
-        if(active_buffer != NULL)
-          device_free<DataType>(active_buffer);
-        if(transfer_buffer != NULL)
-          device_free<DataType>(transfer_buffer);
+      if(active_buffer != NULL)
+        device_free<DataType>(active_buffer);
+      if(transfer_buffer != NULL)
+        device_free<DataType>(transfer_buffer);
 #ifdef __NVCC__
-        if(host_buffer != NULL)
-          host_free<DataType>(host_buffer);
-#endif
-      }
-#ifdef __NVCC__
+      if(host_buffer != NULL)
+        host_free<DataType>(host_buffer);
       if(done && transfer_stream != 0) {
         gpuErrchk( cudaStreamDestroy(transfer_stream) );
       }
@@ -232,63 +208,15 @@ class IOUringStream {
       return filesize;
     }
 
-    size_t prepare_slice() {
-      int had_reads, got_comp, ret;
-      uint32_t reads=0;
+    int async_memcpy() {
       struct io_uring_cqe *cqe;
-      if(elem_per_chunk*(transferred_chunks+chunks_per_slice) > filesize/sizeof(DataType)) { 
-        transfer_slice_len = filesize/sizeof(DataType) - transferred_chunks*elem_per_chunk;
-      } else {
-        transfer_slice_len = elem_per_chunk*chunks_per_slice;
+      int ret = io_uring_wait_cqe_nr(&ring, &cqe, num_cqe);
+      if(ret < 0) {
+        fprintf(stderr, "io_uring_wait_cqe_nr: %s\n", strerror(-ret));
+        return ret;
       }
-      size_t chunks_left = chunks_per_slice;
-      if(transferred_chunks+chunks_left>num_offsets) {
-        chunks_left = num_offsets - transferred_chunks;
-      }
-      size_t chunks_transfer = chunks_left;
-//      printf("Num offset: %zu\n", num_offsets);
-//      printf("Chunks left: %zu\n", chunks_left);
-//      printf("Transferred chunks: %zu\n", transferred_chunks);
-      size_t i=0;
-
-      while(chunks_left) {
-        had_reads = reads;
-        num_cqe = 0;
-        for(i; i<chunks_transfer; i++) {
-          if(reads >= ring_size)
-            break;
-          size_t fileoffset = host_offsets[transferred_chunks+i]*bytes_per_chunk;
-          size_t len = bytes_per_chunk;
-          if(fileoffset+len > filesize)
-            len = filesize - fileoffset;
-          if(queue_read(&ring, len, fileoffset, host_buffer+i*elem_per_chunk))
-            break;
-          reads++;
-          chunks_left--;
-          num_cqe++;
-        }
-        if(had_reads != reads) {
-          ret = io_uring_submit(&ring);
-          if(ret < 0) {
-            fprintf(stderr, "io_uring_submit: %s\n", strerror(-ret));
-            break;
-          }
-        }
-        // Queue is full
-        got_comp = 0;
-        while(chunks_left && (got_comp < chunks_left) && got_comp < reads) {
-          ret = io_uring_wait_cqe(&ring, &cqe);
-          if(ret < 0) {
-            fprintf(stderr, "io_uring_peek_cqe: %s\n", strerror(-ret));
-            return 1;
-          }
-          if(!cqe)
-            break;
-          io_uring_cqe_seen(&ring, cqe);
-          got_comp += 1;
-          reads--;
-        }
-      }
+      io_uring_cq_advance(&ring, num_cqe);
+      
 #ifdef __NVCC__
       if(async) {
         gpuErrchk( cudaMemcpyAsync(transfer_buffer, 
@@ -303,7 +231,42 @@ class IOUringStream {
                               cudaMemcpyHostToDevice) );
       }
 #endif
-//printf("Prepared slice with %zu chunks\n", chunks_transfer - chunks_left);
+      return 0;
+    }
+
+    size_t prepare_slice() {
+      int had_reads, got_comp, ret;
+      uint32_t reads=0;
+      struct io_uring_cqe *cqe;
+      if(elem_per_chunk*(transferred_chunks+chunks_per_slice) > filesize/sizeof(DataType)) { 
+        transfer_slice_len = filesize/sizeof(DataType) - transferred_chunks*elem_per_chunk;
+      } else {
+        transfer_slice_len = elem_per_chunk*chunks_per_slice;
+      }
+      size_t chunks_left = chunks_per_slice;
+      if(transferred_chunks+chunks_left>num_offsets) {
+        chunks_left = num_offsets - transferred_chunks;
+      }
+
+      had_reads = reads;
+      num_cqe = 0;
+      for(size_t i=0; i<chunks_left; i++) {
+        if(reads >= ring_size)
+          break;
+        size_t fileoffset = host_offsets[transferred_chunks+i]*bytes_per_chunk;
+        size_t len = bytes_per_chunk;
+        if(fileoffset+len > filesize)
+          len = filesize - fileoffset;
+        if(queue_read(&ring, len, fileoffset, host_buffer+i*elem_per_chunk))
+          break;
+        reads++;
+        num_cqe++;
+      }
+      ret = io_uring_submit(&ring);
+      if(ret < 0) {
+        fprintf(stderr, "io_uring_submit: %s\n", strerror(-ret));
+      }
+      fut = std::async(std::launch::async, &IOUringStream::async_memcpy, this);
       return transfer_slice_len;
     }
 
@@ -319,6 +282,8 @@ class IOUringStream {
       } else {
         elem_per_chunk = chunk_size;
         bytes_per_chunk = elem_per_chunk*sizeof(DataType);
+        if(elem_per_slice > ring_size*elem_per_chunk)
+          elem_per_slice = ring_size*elem_per_chunk;
         chunks_per_slice = elem_per_slice/elem_per_chunk;
       }
       DEBUG_PRINT("Elem per chunk: %zu\n", elem_per_chunk);
@@ -341,21 +306,15 @@ class IOUringStream {
 #else
       host_offsets = offset_ptr;
 #endif
-//      printf("Started stream, preparing slice\n");
       prepare_slice();
       return;
     }
     
     // Get next slice of data on Device buffer
     DataType* next_slice() {
-      struct io_uring_cqe *cqe;
-      int ret = io_uring_wait_cqe_nr(&ring, &cqe, num_cqe);
-      if(ret < 0) {
-        fprintf(stderr, "io_uring_wait_cqe_nr: %s\n", strerror(-ret));
-        return NULL;
-      }
-      io_uring_cq_advance(&ring, num_cqe);
-      
+      int ret = fut.get();
+      if(ret < 0)
+        fprintf(stderr, "async_memcpy: %s\n", strerror(-ret));
 #ifdef __NVCC__
       if(async) {
         gpuErrchk( cudaStreamSynchronize(transfer_stream) ); // Wait for slice to finish async copy
@@ -366,9 +325,7 @@ class IOUringStream {
       active_buffer = transfer_buffer;
       transfer_buffer = temp;
 #ifndef __NVCC__
-      if(!full_transfer) {
-        host_buffer = transfer_buffer;
-      }
+      host_buffer = transfer_buffer;
 #endif
       active_slice_len = transfer_slice_len;
       size_t nchunks = active_slice_len/elem_per_chunk;
