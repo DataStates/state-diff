@@ -139,8 +139,6 @@ CompareTreeDeduplicator::compare_trees_phase1() {
   Kokkos::deep_copy(num_comparisons, 0);
   Kokkos::deep_copy(num_hash_comp, 0);
   Kokkos::deep_copy(num_changed, 0);
-  auto& num_changes = num_changed;
-  auto& first_ocur = first_ocur_vec;
   Kokkos::Experimental::ScatterView<uint64_t[1]> nhash_comp(num_hash_comp);
   Kokkos::Profiling::popRegion();
   
@@ -156,7 +154,6 @@ CompareTreeDeduplicator::compare_trees_phase1() {
   });
   auto& prev_dual_hash = tree_prev.dual_hash_d;
   auto& curr_dual_hash = tree_curr.dual_hash_d;
-  auto& first_ocurrences = first_ocur_vec;
   auto n_chunks = num_chunks;
   auto n_nodes = num_nodes;
   bool use_fuzzy_hash = fuzzyhash && (comp_op != Equivalence);

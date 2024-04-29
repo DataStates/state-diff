@@ -8,10 +8,7 @@
 #include <filesystem>
 #include <argparse/argparse.hpp>
 #include "stdio.h"
-//#include "deduplicator.hpp"
-//#include "compare_tree_approach.hpp"
-//#include "direct_comparer.hpp"
-//#include "comp_func.hpp"
+#include "direct_io.hpp"
 #include "state_diff.hpp"
 #include "mpi.h"
 
@@ -188,9 +185,9 @@ int main(int argc, char** argv) {
     } else if(comp.compare("equivalence") == 0) {
       comp_deduplicator.comp_op = Equivalence;
     }
-    DirectComparer<uint8_t,Kokkos::DefaultExecutionSpace> u8_comparer( err_tol, buffer_len, Kokkos::num_threads());  
-    DirectComparer<float,Kokkos::DefaultExecutionSpace>   f32_comparer(err_tol, buffer_len/sizeof(float), Kokkos::num_threads()); 
-    DirectComparer<double,Kokkos::DefaultExecutionSpace>  f64_comparer(err_tol, buffer_len/sizeof(double), Kokkos::num_threads()); 
+    DirectComparer<uint8_t,Kokkos::DefaultExecutionSpace> u8_comparer( err_tol, chunk_size, buffer_len);  
+    DirectComparer<float,Kokkos::DefaultExecutionSpace>   f32_comparer(err_tol, chunk_size, buffer_len/sizeof(float)); 
+    DirectComparer<double,Kokkos::DefaultExecutionSpace>  f64_comparer(err_tol, chunk_size, buffer_len/sizeof(double)); 
 
     // Iterate through files
     for(uint32_t idx=0; idx<num_diffs; idx++) {
@@ -204,6 +201,9 @@ int main(int argc, char** argv) {
         Kokkos::Profiling::pushRegion("Read");
 
         // Get length of file
+//        off_t filesize;
+//        get_file_size(run0_files[idx], &filesize);
+//        data_len = static_cast<size_t>(filesize);
         std::ifstream f;
         f.exceptions(std::ifstream::failbit | std::ifstream::badbit);
         f.open(run0_files[idx], std::ifstream::in | std::ifstream::binary);
@@ -213,7 +213,12 @@ int main(int argc, char** argv) {
 
         Kokkos::View<uint8_t*>::HostMirror data0_h, data1_h;
         if(!enable_file_streaming) { // Read files if not using file data streaming
-          data0_h = Kokkos::View<uint8_t*>::HostMirror("Run 0 region mirror", data_len);
+//          data0_h = Kokkos::View<uint8_t*>::HostMirror("Run 0 region mirror", data_len);
+//          unaligned_direct_read(run0_files[idx], data0_h.data(), data_len);
+//          if(comparing_runs) {
+//            data1_h = Kokkos::View<uint8_t*>::HostMirror("Run 1 region mirror", data_len);
+//            unaligned_direct_read(run1_files[idx], data1_h.data(), data_len);
+//          }
           f.read((char*)(data0_h.data()), data_len);
           f.close();
           if(comparing_runs) {
@@ -223,6 +228,10 @@ int main(int argc, char** argv) {
             f.close();
           }
         } else {
+//          if(!comparing_runs) {
+//            data0_h = Kokkos::View<uint8_t*>::HostMirror("Run 0 region mirror", data_len);
+//            unaligned_direct_read(run0_files[idx], data0_h.data(), data_len);
+//          }
           if(comparing_runs) { // Read current file for later write
 //            data1_h = Kokkos::View<uint8_t*>::HostMirror("Run 0 region mirror", data_len);
 //            f.read((char*)(data1_h.data()), data_len);
@@ -248,11 +257,11 @@ int main(int argc, char** argv) {
         Kokkos::View<uint8_t*> data0_d, data1_d;
         if(enable_file_streaming) { // Setup comparer
           if(dtype.compare("float") == 0) {
-            f32_comparer.setup(data_len/sizeof(float), !comparing_runs);
+            f32_comparer.setup(data_len/sizeof(float));
           } else if(dtype.compare("double") == 0) {
-            f64_comparer.setup(data_len/sizeof(double), !comparing_runs);
+            f64_comparer.setup(data_len/sizeof(double));
           } else {
-            u8_comparer.setup(data_len, !comparing_runs);
+            u8_comparer.setup(data_len);
           }
         } else { // Allocate Views if not using file streaming
           data0_d = Kokkos::View<uint8_t*>("Run 0 region mirror", data_len);
@@ -264,6 +273,35 @@ int main(int argc, char** argv) {
         double setup_time = std::chrono::duration_cast<Duration>(end_setup - beg_setup).count();
         std::cout << "\tRank " << world_rank << ": Setup: " << setup_time << std::endl;
         timers[1] = setup_time;
+
+        // ========================================================================================
+        // Deserialize
+        // ========================================================================================
+        Timer::time_point beg_deserialize = Timer::now();
+        Kokkos::Profiling::pushRegion("Deserialization");
+        if(comparing_runs) {
+          if(enable_file_streaming) { // Start loading of data from files
+            if(dtype.compare("float") == 0) {
+              f32_comparer.deserialize(run0_files[idx], run1_files[idx]);
+            } else if(dtype.compare("double") == 0) {
+              f64_comparer.deserialize(run0_files[idx], run1_files[idx]);
+            } else {
+              u8_comparer.deserialize(run0_files[idx], run1_files[idx]);
+            }
+          } else { // Copy data to device
+            Kokkos::deep_copy(data0_d, data0_h);
+            Kokkos::deep_copy(data1_d, data1_h);
+          }
+        } else {
+          if(!enable_file_streaming) { // Copy data to device
+            Kokkos::deep_copy(data0_d, data0_h);
+          }
+        }
+        Kokkos::Profiling::popRegion();
+        Timer::time_point end_deserialize = Timer::now();
+        double deserialize_time = std::chrono::duration_cast<Duration>(end_deserialize - beg_deserialize).count();
+        std::cout << "\tRank " << world_rank << ": Deserialize: " << deserialize_time << std::endl;
+        timers[2] = deserialize_time;
 
         // Create offsets for loading data
 //        size_t blocksize = chunk_size/data_type_size;
@@ -278,53 +316,25 @@ int main(int argc, char** argv) {
         });
 
         // ========================================================================================
-        // Deserialize
-        // ========================================================================================
-        Timer::time_point beg_deserialize = Timer::now();
-        Kokkos::Profiling::pushRegion("Deserialization");
-        if(comparing_runs) {
-          if(enable_file_streaming) { // Start loading of data from files
-            if(dtype.compare("float") == 0) {
-              f32_comparer.deserialize(offsets.data(), noffsets, blocksize, run0_files[idx], run1_files[idx]);
-            } else if(dtype.compare("double") == 0) {
-              f64_comparer.deserialize(offsets.data(), noffsets, blocksize, run0_files[idx], run1_files[idx]);
-            } else {
-              u8_comparer.deserialize(offsets.data(), noffsets, blocksize, run0_files[idx], run1_files[idx]);
-            }
-          } else { // Copy data to device
-            Kokkos::deep_copy(data0_d, data0_h);
-            Kokkos::deep_copy(data1_d, data1_h);
-          }
-        } else {
-          f32_comparer.block_size = blocksize;
-          if(!enable_file_streaming) { // Copy data to device
-            Kokkos::deep_copy(data0_d, data0_h);
-          }
-        }
-        Kokkos::Profiling::popRegion();
-        Timer::time_point end_deserialize = Timer::now();
-        double deserialize_time = std::chrono::duration_cast<Duration>(end_deserialize - beg_deserialize).count();
-        std::cout << "\tRank " << world_rank << ": Deserialize: " << deserialize_time << std::endl;
-        timers[2] = deserialize_time;
-
-        // ========================================================================================
         // Compare data
         // ========================================================================================
         Timer::time_point beg_compare = Timer::now();
         Kokkos::Profiling::pushRegion("Compare");
         uint64_t nchanges = 0;
 
+        double io_time = 0.0;
         if(dtype.compare("float") == 0) {
           if(comparing_runs) {
             if(enable_file_streaming) { // Compare data as it is streamed from the files to the device
 
               if (comp.compare("absolute") ==  0) { 
-                nchanges = f32_comparer.compare<AbsoluteComp>();
+                nchanges = f32_comparer.compare<AbsoluteComp>(offsets.data(), noffsets);
               } else if (comp.compare("relative") == 0) {
-                nchanges = f32_comparer.compare<RelativeComp>();
+                nchanges = f32_comparer.compare<RelativeComp>(offsets.data(), noffsets);
               } else {
-                nchanges = f32_comparer.compare<EquivalenceComp>();
+                nchanges = f32_comparer.compare<EquivalenceComp>(offsets.data(), noffsets);
               }
+              io_time = f32_comparer.get_io_time();
             } else { // Compare data already on device
               if (comp.compare("absolute") ==  0) { 
                 nchanges = f32_comparer.compare<AbsoluteComp>((float*)(data0_d.data()), (float*)(data1_d.data()), data_len/sizeof(float));
@@ -335,26 +345,27 @@ int main(int argc, char** argv) {
               }
             }
           } else { // Compare initial case. Only for recording times to contrast with I/O and data movement
-            float* f32_data = (float*)(data0_d.data());
-            size_t f32_data_len = data_len/sizeof(float);
-            if (comp.compare("absolute") ==  0) { 
-              nchanges = f32_comparer.compare<AbsoluteComp>(f32_data, f32_data_len, !comparing_runs);
-            } else if (comp.compare("relative") == 0) {
-              nchanges = f32_comparer.compare<RelativeComp>(f32_data, f32_data_len, !comparing_runs);
-            } else {
-              nchanges = f32_comparer.compare<EquivalenceComp>(f32_data, f32_data_len, !comparing_runs);
-            }
+//            float* f32_data = (float*)(data0_d.data());
+//            size_t f32_data_len = data_len/sizeof(float);
+//            if (comp.compare("absolute") ==  0) { 
+//              nchanges = f32_comparer.compare<AbsoluteComp>(f32_data, f32_data_len, offsets.data(), noffsets);
+//            } else if (comp.compare("relative") == 0) {
+//              nchanges = f32_comparer.compare<RelativeComp>(f32_data, f32_data_len, offsets.data(), noffsets);
+//            } else {
+//              nchanges = f32_comparer.compare<EquivalenceComp>(f32_data, f32_data_len, offsets.data(), noffsets);
+//            }
           }
         } else if(dtype.compare("double") == 0) {
           if(comparing_runs) {
             if(enable_file_streaming) {
               if (comp.compare("absolute") ==  0) { 
-                nchanges = f64_comparer.compare<AbsoluteComp>();
+                nchanges = f64_comparer.compare<AbsoluteComp>(offsets.data(), noffsets);
               } else if (comp.compare("relative") == 0) {
-                nchanges = f64_comparer.compare<RelativeComp>();
+                nchanges = f64_comparer.compare<RelativeComp>(offsets.data(), noffsets);
               } else {
-                nchanges = f64_comparer.compare<EquivalenceComp>();
+                nchanges = f64_comparer.compare<EquivalenceComp>(offsets.data(), noffsets);
               }
+              io_time = f64_comparer.get_io_time();
             } else {
               if (comp.compare("absolute") ==  0) { 
                 nchanges = f64_comparer.compare<AbsoluteComp>((double*)(data0_d.data()), (double*)(data1_d.data()), data_len/sizeof(double));
@@ -365,26 +376,27 @@ int main(int argc, char** argv) {
               }
             }
           } else {
-            double* f64_data = (double*)(data0_d.data());
-            size_t f64_data_len = data_len/sizeof(double);
-            if (comp.compare("absolute") ==  0) { 
-              nchanges = f64_comparer.compare<AbsoluteComp>(f64_data, f64_data_len, !comparing_runs);
-            } else if (comp.compare("relative") == 0) {
-              nchanges = f64_comparer.compare<RelativeComp>(f64_data, f64_data_len, !comparing_runs);
-            } else {
-              nchanges = f64_comparer.compare<EquivalenceComp>(f64_data, f64_data_len, !comparing_runs);
-            }
+//            double* f64_data = (double*)(data0_d.data());
+//            size_t f64_data_len = data_len/sizeof(double);
+//            if (comp.compare("absolute") ==  0) { 
+//              nchanges = f64_comparer.compare<AbsoluteComp>(f64_data, f64_data_len, offsets.data(), noffsets);
+//            } else if (comp.compare("relative") == 0) {
+//              nchanges = f64_comparer.compare<RelativeComp>(f64_data, f64_data_len, offsets.data(), noffsets);
+//            } else {
+//              nchanges = f64_comparer.compare<EquivalenceComp>(f64_data, f64_data_len, offsets.data(), noffsets);
+//            }
           }
         } else {
           if(comparing_runs) {
             if(enable_file_streaming) {
               if (comp.compare("absolute") ==  0) { 
-                nchanges = u8_comparer.compare<AbsoluteComp>();
+                nchanges = u8_comparer.compare<AbsoluteComp>(offsets.data(), noffsets);
               } else if (comp.compare("relative") == 0) {
-                nchanges = u8_comparer.compare<RelativeComp>();
+                nchanges = u8_comparer.compare<RelativeComp>(offsets.data(), noffsets);
               } else {
-                nchanges = u8_comparer.compare<EquivalenceComp>();
+                nchanges = u8_comparer.compare<EquivalenceComp>(offsets.data(), noffsets);
               }
+              io_time = u8_comparer.get_io_time();
             } else {
               if (comp.compare("absolute") ==  0) { 
                 nchanges = u8_comparer.compare<AbsoluteComp>((uint8_t*)(data0_d.data()), (uint8_t*)(data1_d.data()), data_len/sizeof(uint8_t));
@@ -395,13 +407,13 @@ int main(int argc, char** argv) {
               }
             }
           } else {
-            if (comp.compare("absolute") ==  0) { 
-              nchanges = u8_comparer.compare<AbsoluteComp>((uint8_t *)(data0_d.data()), data_len, !comparing_runs);
-            } else if (comp.compare("relative") == 0) {
-              nchanges = u8_comparer.compare<RelativeComp>((uint8_t *)(data0_d.data()), data_len, !comparing_runs);
-            } else {
-              nchanges = u8_comparer.compare<EquivalenceComp>((uint8_t *)(data0_d.data()), data_len, !comparing_runs);
-            }
+//            if (comp.compare("absolute") ==  0) { 
+//              nchanges = u8_comparer.compare<AbsoluteComp>((uint8_t *)(data0_d.data()), data_len, offsets.data(), noffsets);
+//            } else if (comp.compare("relative") == 0) {
+//              nchanges = u8_comparer.compare<RelativeComp>((uint8_t *)(data0_d.data()), data_len, offsets.data(), noffsets);
+//            } else {
+//              nchanges = u8_comparer.compare<EquivalenceComp>((uint8_t *)(data0_d.data()), data_len, offsets.data(), noffsets);
+//            }
           }
         }
 
@@ -409,6 +421,7 @@ int main(int argc, char** argv) {
         Timer::time_point end_compare = Timer::now();
         double compare_time = std::chrono::duration_cast<Duration>(end_compare - beg_compare).count();
         std::cout << "\tRank " << world_rank << ": Compare: " << compare_time << std::endl;
+        std::cout << "\tRank " << world_rank << ": IO Time: " << io_time << std::endl;
         timers[4] = compare_time;
 
         // ========================================================================================
@@ -437,20 +450,21 @@ int main(int argc, char** argv) {
           outname = output_fname;
         }
         if(!comparing_runs) {
-          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
-//          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
-          if (fd == -1) {
-              FATAL("cannot open " << outname << ", error = " << strerror(errno));
-          }
-          size_t transferred = 0, remaining = data_len;
-          while (remaining > 0) {
-          	auto ret = write(fd, data0_h.data() + transferred, remaining);
-          	if (ret < 0)
-          	    FATAL("cannot write " << data_len << " bytes to " << outname << " , error = " << std::strerror(errno));
-          	remaining -= ret;
-          	transferred += ret;
-          }
-          close(fd);
+          unaligned_direct_write(outname, data0_h.data(), data_len);
+//          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
+////          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
+//          if (fd == -1) {
+//              FATAL("cannot open " << outname << ", error = " << strerror(errno));
+//          }
+//          size_t transferred = 0, remaining = data_len;
+//          while (remaining > 0) {
+//          	auto ret = write(fd, data0_h.data() + transferred, remaining);
+//          	if (ret < 0)
+//          	    FATAL("cannot write " << data_len << " bytes to " << outname << " , error = " << std::strerror(errno));
+//          	remaining -= ret;
+//          	transferred += ret;
+//          }
+//          close(fd);
         }
         
 //        std::ofstream log;
@@ -622,20 +636,21 @@ int main(int argc, char** argv) {
           outname = output_fname;
         }
         if(!comparing_runs) {
-          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
-//          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
-          if (fd == -1) {
-              FATAL("cannot open " << outname << ", error = " << strerror(errno));
-          }
-          size_t transferred = 0, remaining = serialized_buffer.size();
-          while (remaining > 0) {
-          	auto ret = write(fd, serialized_buffer.data() + transferred, remaining);
-          	if (ret < 0)
-          	    FATAL("cannot write " << serialized_buffer.size() << " bytes to " << outname << " , error = " << std::strerror(errno));
-          	remaining -= ret;
-          	transferred += ret;
-          }
-          close(fd);
+          unaligned_direct_write(outname, serialized_buffer.data(), serialized_buffer.size());
+//          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
+////          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
+//          if (fd == -1) {
+//              FATAL("cannot open " << outname << ", error = " << strerror(errno));
+//          }
+//          size_t transferred = 0, remaining = serialized_buffer.size();
+//          while (remaining > 0) {
+//          	auto ret = write(fd, serialized_buffer.data() + transferred, remaining);
+//          	if (ret < 0)
+//          	    FATAL("cannot write " << serialized_buffer.size() << " bytes to " << outname << " , error = " << std::strerror(errno));
+//          	remaining -= ret;
+//          	transferred += ret;
+//          }
+//          close(fd);
         }
 //        if(!comparing_runs) {
 //          std::ofstream log;

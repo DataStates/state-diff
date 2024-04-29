@@ -11,6 +11,7 @@
 #include <libgen.h>
 #include <random>
 #include "debug.hpp"
+#include "direct_io.hpp"
 //#include "state_diff.hpp"
 #include <type_traits>
 #include <unistd.h>
@@ -133,17 +134,17 @@ void perturb_data(Kokkos::View<DataType*>&          data0,
 
 bool write_file(const std::string &fn, uint8_t *buffer, size_t size) {
     bool ret=true;
-//    int fd = open(fn.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
-    int fd = open(fn.c_str(), O_CREAT | O_TRUNC | O_WRONLY , 0644);
+    int fd = open(fn.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
+//    int fd = open(fn.c_str(), O_CREAT | O_TRUNC | O_WRONLY , 0644);
     if (fd == -1) {
-//        FATAL("cannot open " << fn << ", error = " << strerror(errno));
+        FATAL("cannot open " << fn << ", error = " << strerror(errno));
         return false;
     }
     size_t transferred = 0, remaining = size;
     while (remaining > 0) {
     	auto ret = write(fd, buffer + transferred, remaining);
-//    	if (ret < 0)
-//    	    FATAL("cannot write " << size << " bytes to " << fn << " , error = " << std::strerror(errno));
+    	if (ret < 0)
+    	    FATAL("cannot write " << size << " bytes to " << fn << " , error = " << std::strerror(errno));
     	remaining -= ret;
     	transferred += ret;
     }
@@ -153,21 +154,27 @@ bool write_file(const std::string &fn, uint8_t *buffer, size_t size) {
 
 template<typename DataType>
 void write_data(const std::string& filename, Kokkos::View<DataType*>& data) {
+//  typename Kokkos::View<DataType*>::HostMirror data_h = Kokkos::create_mirror_view(data);
+//  Kokkos::deep_copy(data_h, data);
+//  write_file(filename, (uint8_t*)(data_h.data()), data_h.size()*sizeof(DataType));
+
   typename Kokkos::View<DataType*>::HostMirror data_h = Kokkos::create_mirror_view(data);
   Kokkos::deep_copy(data_h, data);
-  write_file(filename, (uint8_t*)(data_h.data()), data_h.size()*sizeof(DataType));
+  unaligned_direct_write(filename, (uint8_t*)(data_h.data()), data.size()*sizeof(DataType));
 
 //  using HostView = Kokkos::View<DataType*, 
 //                                Kokkos::DefaultHostExecutionSpace, 
 //                                Kokkos::MemoryTraits<Kokkos::Unmanaged>
 //                                >;
-//  size_t npages = data.size()*sizeof(DataType)/getpagesize();
-//  if(npages*getpagesize() < data.size()*sizeof(DataType))
+//  size_t pagesize = sysconf(_SC_PAGESIZE);
+//  size_t npages = data.size()*sizeof(DataType)/pagesize;
+//  if(npages*pagesize < data.size()*sizeof(DataType))
 //    npages += 1;
-//  DataType* data_h_ptr = (DataType*) aligned_alloc(getpagesize(), npages*getpagesize());
+//  DataType* data_h_ptr = (DataType*) aligned_alloc(pagesize, npages*pagesize);
+//  memset(data_h_ptr, 0, npages*pagesize);
 //  HostView data_h(data_h_ptr, data.size());
 //  Kokkos::deep_copy(data_h, data);
-//  write_file(filename, (uint8_t*)(data_h.data()), npages*getpagesize());
+//  write_file(filename, (uint8_t*)(data_h.data()), npages*pagesize);
 //  free(data_h_ptr);
 
 //  FILE *data_file;

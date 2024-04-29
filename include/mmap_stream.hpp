@@ -43,12 +43,13 @@ class MMapStream {
     DataType *mmapped_file=NULL; // Pointer to host data
     DataType *active_buffer=NULL, *transfer_buffer=NULL; // Convenient pointers
     DataType *host_buffer=NULL;
+    double timer = 0;
 #ifdef __NVCC__
     cudaStream_t transfer_stream; // Stream for data transfers
 #endif
 
     buff_state_t map_file(const std::string &fn) {
-      int fd = open(fn.c_str(), O_RDONLY | O_DIRECT);
+      int fd = open(fn.c_str(), O_RDONLY);
       if (fd == -1)
         FATAL("cannot open " << fn << ", error = " << std::strerror(errno));
       size_t size = lseek(fd, 0, SEEK_END);
@@ -85,8 +86,8 @@ class MMapStream {
       if(transfer_all) {
         madvise(file_buffer.buff, file_buffer.size, MADV_SEQUENTIAL);
       } else {
-        madvise(file_buffer.buff, file_buffer.size, MADV_RANDOM);
-//        madvise(file_buffer.buff, file_buffer.size, MADV_SEQUENTIAL);
+//        madvise(file_buffer.buff, file_buffer.size, MADV_RANDOM);
+        madvise(file_buffer.buff, file_buffer.size, MADV_SEQUENTIAL);
       }
       ASSERT(file_buffer.size % sizeof(DataType) == 0);
       INFO("mapping " << first.size / sizeof(DataType) << " elements");
@@ -263,7 +264,7 @@ class MMapStream {
     }
 
     // Start streaming data from Host to Device
-    void start_stream(size_t* offset_ptr, size_t n_offsets, size_t chunk_size) {
+    void start_stream(size_t* offset_ptr, const size_t n_offsets, const size_t chunk_size) {
       transferred_chunks = 0; // Initialize stream
       file_offsets = offset_ptr;
       filesize = file_buffer.size;
@@ -290,7 +291,10 @@ class MMapStream {
 #else
       host_offsets = offset_ptr;
 #endif
+      Timer::time_point beg = Timer::now();
       prepare_slice();
+      Timer::time_point end = Timer::now();
+      timer += std::chrono::duration_cast<Duration>(end - beg).count();
       return;
     }
     
@@ -316,14 +320,23 @@ class MMapStream {
       if(elem_per_chunk*nchunks < active_slice_len)
         nchunks += 1;
       transferred_chunks += nchunks;
-      if(transferred_chunks < num_offsets)
+      if(transferred_chunks < num_offsets) {
+        Timer::time_point beg = Timer::now();
         prepare_slice();
+        Timer::time_point end = Timer::now();
+        timer += std::chrono::duration_cast<Duration>(end - beg).count();
+      }
       return active_buffer;
     }
 
     // Reset Host to Device stream
     void end_stream() {
       done = true;
+      timer = 0.0;
+    }
+
+    double get_timer() {
+      return timer;
     }
 };
 
