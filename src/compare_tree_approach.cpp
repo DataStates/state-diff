@@ -288,6 +288,7 @@ CompareTreeDeduplicator::compare_trees_phase2() {
         slice_len = file_stream0.get_slice_len();
         Kokkos::Profiling::popRegion();
         Kokkos::Profiling::pushRegion(diff_label + std::string("Compare Tree direct comparison"));
+        Timer::time_point beg = Timer::now();
         uint64_t ndiff = 0;
         // Parallel comparison
         auto range_policy = Kokkos::RangePolicy<size_t>(0, slice_len);
@@ -313,9 +314,15 @@ CompareTreeDeduplicator::compare_trees_phase2() {
         if(slice_len % blocksize > 0)
           offset_idx += 1;
         Kokkos::Profiling::popRegion();
+        Timer::time_point end = Timer::now();
+        compare_timer += std::chrono::duration_cast<Duration>(end - beg).count();
       }
       Kokkos::Profiling::pushRegion(diff_label + std::string("Compare Tree finalize"));
       Kokkos::Experimental::contribute(num_comparisons, num_comp);
+      io_timer = file_stream0.get_timer();
+      if(file_stream1.get_timer() > io_timer) {
+        io_timer = file_stream1.get_timer();
+      }
       file_stream0.end_stream();
       file_stream1.end_stream();
       Kokkos::deep_copy(num_changes, num_diff);
@@ -357,11 +364,11 @@ CompareTreeDeduplicator::create_tree(const uint8_t* data_ptr, const size_t data_
   level_beg = (level_beg-1)/2;
   level_end = (level_end-2)/2;
   uint32_t left_leaf = level_beg;
-  uint32_t right_leaf = level_end;
+  //uint32_t right_leaf = level_end;
   uint32_t last_lvl_beg = (1 <<  start_level) - 1;
-  uint32_t last_lvl_end = (1 << (start_level + 1)) - 2;
-  DEBUG_PRINT("Leaf range [%u,%u]\n", left_leaf, right_leaf);
-  DEBUG_PRINT("Start level [%u,%u]\n", last_lvl_beg, last_lvl_end);
+  //uint32_t last_lvl_end = (1 << (start_level + 1)) - 2;
+  //DEBUG_PRINT("Leaf range [%u,%u]\n", left_leaf, right_leaf);
+  //DEBUG_PRINT("Start level [%u,%u]\n", last_lvl_beg, last_lvl_end);
 
   // ==============================================================================================
   // Construct tree
@@ -461,11 +468,11 @@ CompareTreeDeduplicator::dedup_data(const uint8_t* data_ptr,
   level_beg = (level_beg-1)/2;
   level_end = (level_end-2)/2;
   uint32_t left_leaf = level_beg;
-  uint32_t right_leaf = level_end;
+  //uint32_t right_leaf = level_end;
   uint32_t last_lvl_beg = (1 <<  start_level) - 1;
   uint32_t last_lvl_end = (1 << (start_level + 1)) - 2;
-  DEBUG_PRINT("Leaf range [%u,%u]\n", left_leaf, right_leaf);
-  DEBUG_PRINT("Start level [%u,%u]\n", last_lvl_beg, last_lvl_end);
+  //DEBUG_PRINT("Leaf range [%u,%u]\n", left_leaf, right_leaf);
+  //DEBUG_PRINT("Start level [%u,%u]\n", last_lvl_beg, last_lvl_end);
 
   // ==============================================================================================
   // Construct tree
@@ -903,4 +910,12 @@ uint64_t CompareTreeDeduplicator::get_num_changes() const {
 
 size_t CompareTreeDeduplicator::num_first_ocur() const {
   return first_ocur_vec.size();
+}
+
+double CompareTreeDeduplicator::get_io_time() const {
+  return io_timer;
+}
+
+double CompareTreeDeduplicator::get_compare_time() const {
+  return compare_timer;
 }

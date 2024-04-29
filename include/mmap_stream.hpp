@@ -49,7 +49,7 @@ class MMapStream {
 #endif
 
     buff_state_t map_file(const std::string &fn) {
-      int fd = open(fn.c_str(), O_RDONLY);
+      int fd = open(fn.c_str(), O_RDONLY | O_DIRECT);
       if (fd == -1)
         FATAL("cannot open " << fn << ", error = " << std::strerror(errno));
       size_t size = lseek(fd, 0, SEEK_END);
@@ -86,8 +86,8 @@ class MMapStream {
       if(transfer_all) {
         madvise(file_buffer.buff, file_buffer.size, MADV_SEQUENTIAL);
       } else {
-//        madvise(file_buffer.buff, file_buffer.size, MADV_RANDOM);
-        madvise(file_buffer.buff, file_buffer.size, MADV_SEQUENTIAL);
+        madvise(file_buffer.buff, file_buffer.size, MADV_RANDOM);
+//        madvise(file_buffer.buff, file_buffer.size, MADV_SEQUENTIAL);
       }
       ASSERT(file_buffer.size % sizeof(DataType) == 0);
       INFO("mapping " << first.size / sizeof(DataType) << " elements");
@@ -209,7 +209,8 @@ class MMapStream {
         }
 //#pragma omp task depend(inout: host_buffer[0:transfer_slice_len])
 //{
-        #pragma omp parallel for
+//        #pragma omp parallel for
+        #pragma omp taskloop
         for(size_t i=0; i<chunks_per_slice; i++) {
           if(transferred_chunks+i<num_offsets) {
             DataType* chunk;
@@ -223,11 +224,12 @@ class MMapStream {
         }
 //}
 
-//        size_t per_threads = chunks_per_slice / (Kokkos::num_threads()/2);
+//        size_t per_threads = chunks_per_slice / (Kokkos::num_threads());
 //        if(per_threads*Kokkos::num_threads() < chunks_per_slice)
 //          per_threads += 1;
-//        for(size_t thread=0; thread<Kokkos::num_threads()/2; thread++) {
-//#pragma omp task depend(out: host_buffer[thread*per_threads : (thread+1)*per_threads])
+//        for(int thread=0; thread<Kokkos::num_threads(); thread++) {
+////#pragma omp task depend(out: host_buffer[thread*per_threads : (thread+1)*per_threads])
+//#pragma omp task 
 //{
 //          for(size_t i=per_threads*thread; i<(thread+1)*per_threads; i++) {
 //            if((i<chunks_per_slice) && transferred_chunks+i<num_offsets) {
@@ -243,8 +245,8 @@ class MMapStream {
 //}
 //        }
 #ifdef __NVCC__
-//#pragma omp task depend(in: host_buffer[0:transfer_slice_len])
-//{
+#pragma omp task depend(in: host_buffer[0:transfer_slice_len])
+{
       if(async) {
         gpuErrchk( cudaMemcpyAsync(transfer_buffer, 
                                    host_buffer, 
@@ -257,7 +259,7 @@ class MMapStream {
                               transfer_slice_len*sizeof(DataType), 
                               cudaMemcpyHostToDevice) );
       }
-//}
+}
 #endif
       }
       return transfer_slice_len;
@@ -300,7 +302,7 @@ class MMapStream {
     
     // Get next slice of data on Device buffer
     DataType* next_slice() {
-//#pragma omp taskwait
+#pragma omp taskwait
 #ifdef __NVCC__
       if(async) {
         gpuErrchk( cudaStreamSynchronize(transfer_stream) ); // Wait for slice to finish async copy

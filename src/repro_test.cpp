@@ -323,6 +323,7 @@ int main(int argc, char** argv) {
         uint64_t nchanges = 0;
 
         double io_time = 0.0;
+        double compare_time = 0.0;
         if(dtype.compare("float") == 0) {
           if(comparing_runs) {
             if(enable_file_streaming) { // Compare data as it is streamed from the files to the device
@@ -335,6 +336,7 @@ int main(int argc, char** argv) {
                 nchanges = f32_comparer.compare<EquivalenceComp>(offsets.data(), noffsets);
               }
               io_time = f32_comparer.get_io_time();
+              compare_time = f32_comparer.get_compare_time();
             } else { // Compare data already on device
               if (comp.compare("absolute") ==  0) { 
                 nchanges = f32_comparer.compare<AbsoluteComp>((float*)(data0_d.data()), (float*)(data1_d.data()), data_len/sizeof(float));
@@ -366,6 +368,7 @@ int main(int argc, char** argv) {
                 nchanges = f64_comparer.compare<EquivalenceComp>(offsets.data(), noffsets);
               }
               io_time = f64_comparer.get_io_time();
+              compare_time = f64_comparer.get_compare_time();
             } else {
               if (comp.compare("absolute") ==  0) { 
                 nchanges = f64_comparer.compare<AbsoluteComp>((double*)(data0_d.data()), (double*)(data1_d.data()), data_len/sizeof(double));
@@ -397,6 +400,7 @@ int main(int argc, char** argv) {
                 nchanges = u8_comparer.compare<EquivalenceComp>(offsets.data(), noffsets);
               }
               io_time = u8_comparer.get_io_time();
+              compare_time = u8_comparer.get_compare_time();
             } else {
               if (comp.compare("absolute") ==  0) { 
                 nchanges = u8_comparer.compare<AbsoluteComp>((uint8_t*)(data0_d.data()), (uint8_t*)(data1_d.data()), data_len/sizeof(uint8_t));
@@ -419,9 +423,10 @@ int main(int argc, char** argv) {
 
         Kokkos::Profiling::popRegion();
         Timer::time_point end_compare = Timer::now();
-        double compare_time = std::chrono::duration_cast<Duration>(end_compare - beg_compare).count();
-        std::cout << "\tRank " << world_rank << ": Compare: " << compare_time << std::endl;
-        std::cout << "\tRank " << world_rank << ": IO Time: " << io_time << std::endl;
+        double comparison_time = std::chrono::duration_cast<Duration>(end_compare - beg_compare).count();
+        std::cout << "\tRank " << world_rank << ": Compare: " << comparison_time << std::endl;
+        std::cout << "\t\tRank " << world_rank << ": IO Time (Per file): " << io_time << std::endl;
+        std::cout << "\t\tRank " << world_rank << ": Compare Time: " << compare_time << std::endl;
         timers[4] = compare_time;
 
         // ========================================================================================
@@ -589,7 +594,7 @@ int main(int argc, char** argv) {
         } else {
           Timer::time_point beg_compare1 = Timer::now();
           Kokkos::Profiling::pushRegion("Compare phase 1");
-          auto ncomp = comp_deduplicator.compare_trees_phase1();
+          comp_deduplicator.compare_trees_phase1();
           Kokkos::Profiling::popRegion();
           Timer::time_point end_compare1 = Timer::now();
           double compare_time1 = std::chrono::duration_cast<Duration>(end_compare1 - beg_compare1).count();
@@ -599,13 +604,16 @@ int main(int argc, char** argv) {
           Timer::time_point beg_compare2 = Timer::now();
           Kokkos::Profiling::pushRegion("Compare phase 2");
           if(comp_deduplicator.diff_hash_vec.size() > 0) {
-            auto ncomp = comp_deduplicator.compare_trees_phase2();
+            comp_deduplicator.compare_trees_phase2();
           }
           Kokkos::Profiling::popRegion();
           Timer::time_point end_compare2 = Timer::now();
           double compare_time2 = std::chrono::duration_cast<Duration>(end_compare2 - beg_compare2).count();
           std::cout << "\tRank " << world_rank << ": Compare Tree Phase 2: " << compare_time2 << std::endl;
           timers[4] = compare_time2;
+
+          std::cout << "\t\tRank " << world_rank << ": IO Time (Per file): " << comp_deduplicator.get_io_time() << std::endl;
+          std::cout << "\t\tRank " << world_rank << ": Compare Time: " << comp_deduplicator.get_compare_time() << std::endl;
         }
 
         // ========================================================================================
