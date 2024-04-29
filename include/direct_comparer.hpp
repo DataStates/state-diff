@@ -23,11 +23,12 @@ class DirectComparer {
     std::string file0, file1;
     size_t block_size = 0;
     double io_timer=0.0;
-#ifdef IO_URING_STREAM
-    IOUringStream<scalar_type> file_stream0, file_stream1;
-#else
-    MMapStream<scalar_type> file_stream0, file_stream1;
-#endif
+    double compare_timer=0.0;
+//#ifdef IO_URING_STREAM
+//    IOUringStream<scalar_type> file_stream0, file_stream1;
+//#else
+//    MMapStream<scalar_type> file_stream0, file_stream1;
+//#endif
 
   public:
     // Default empty constructor
@@ -82,6 +83,7 @@ class DirectComparer {
     int deserialize(std::string& filename0, std::string& filename1);
 
     double get_io_time() const;
+    double get_compare_time() const;
     uint64_t get_num_comparisons() const ;
     uint64_t get_num_changed_blocks() const ;
 };
@@ -130,9 +132,9 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(const DataType* data_
                                                            const size_t    noffsets) {
   // Start streaming data
 #ifdef IO_URING_STREAM
-  file_stream0 = IOUringStream<DataType>(d_stream_buf_len, file0);
+  IOUringStream<DataType> file_stream0(d_stream_buf_len, file0);
 #else
-  file_stream0 = MMapStream<DataType>(d_stream_buf_len, file0); 
+  MMapStream<DataType> file_stream0(d_stream_buf_len, file0); 
 #endif
   file_stream0.start_stream(offsets, noffsets, block_size);
 
@@ -184,11 +186,11 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(size_t* offsets, cons
 
   Kokkos::Profiling::pushRegion("Direct: Compare: start streaming");
 #ifdef IO_URING_STREAM
-  file_stream0 = IOUringStream<DataType>(d_stream_buf_len, file0, true, true);
-  file_stream1 = IOUringStream<DataType>(d_stream_buf_len, file1, true, true);
+  IOUringStream<DataType> file_stream0(d_stream_buf_len, file0, true, true);
+  IOUringStream<DataType> file_stream1(d_stream_buf_len, file1, true, true);
 #else
-  file_stream0 = MMapStream<DataType>(d_stream_buf_len, file0, true, true); 
-  file_stream1 = MMapStream<DataType>(d_stream_buf_len, file1, true, true); 
+  MMapStream<DataType> file_stream0(d_stream_buf_len, file0, true, true); 
+  MMapStream<DataType> file_stream1(d_stream_buf_len, file1, true, true); 
 #endif
   file_stream0.start_stream(offsets, noffsets, block_size);
   file_stream1.start_stream(offsets, noffsets, block_size);
@@ -220,6 +222,7 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(size_t* offsets, cons
     Kokkos::Profiling::popRegion();
 
     Kokkos::Profiling::pushRegion("Direct: Compare: compare slices");
+    Timer::time_point beg = Timer::now();
     // Parallel comparison
     auto range_policy = Kokkos::RangePolicy<size_t>(0, slice_len);
     Kokkos::parallel_reduce("Count differences", range_policy, 
@@ -235,6 +238,8 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(size_t* offsets, cons
     Kokkos::fence();
     data_processed += slice_len;
     num_diff += ndiff;
+    Timer::time_point end = Timer::now();
+    compare_timer += std::chrono::duration_cast<Duration>(end - beg).count();
     Kokkos::Profiling::popRegion();
   }
   Kokkos::Profiling::pushRegion("Direct: Compare: contribute and finalize");
@@ -352,6 +357,11 @@ uint64_t DirectComparer<DataType,ExecDevice>::get_num_changed_blocks() const {
 template<typename DataType, typename ExecDevice>
 double DirectComparer<DataType, ExecDevice>::get_io_time() const {
   return io_timer;
+}
+
+template<typename DataType, typename ExecDevice>
+double DirectComparer<DataType, ExecDevice>::get_compare_time() const {
+  return compare_timer;
 }
 
 #endif // DIRECT_COMPARER_HPP

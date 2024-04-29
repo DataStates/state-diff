@@ -51,6 +51,7 @@ class IOUringStream {
 #ifdef __NVCC__
     cudaStream_t transfer_stream; // Stream for data transfers
 #endif
+    double timer=0.0;
 
   private:
     int setup_context(uint32_t entries, struct io_uring* ring) {
@@ -306,7 +307,10 @@ class IOUringStream {
 #else
       host_offsets = offset_ptr;
 #endif
+      Timer::time_point beg = Timer::now();
       prepare_slice();
+      Timer::time_point end = Timer::now();
+      timer += std::chrono::duration_cast<Duration>(end - beg).count();
       return;
     }
     
@@ -332,14 +336,22 @@ class IOUringStream {
       if(elem_per_chunk*nchunks < active_slice_len)
         nchunks += 1;
       transferred_chunks += nchunks;
-      if(transferred_chunks < num_offsets)
+      if(transferred_chunks < num_offsets) {
+        Timer::time_point beg = Timer::now();
         prepare_slice();
+        Timer::time_point end = Timer::now();
+        timer += std::chrono::duration_cast<Duration>(end - beg).count();
+      }
       return active_buffer;
     }
 
     // Reset Host to Device stream
     void end_stream() {
       done = true;
+    }
+
+    double get_timer() {
+      return timer;
     }
 };
 
