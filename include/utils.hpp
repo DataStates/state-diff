@@ -19,6 +19,9 @@
 #define STDOUT_PRINT(...) do{ } while ( false )
 #endif
 
+using Timer = std::chrono::high_resolution_clock;
+using Duration = std::chrono::duration<double>;
+
 struct alignas(16) HashDigest {
   uint8_t digest[16] = {0};
 };

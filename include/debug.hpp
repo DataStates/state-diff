@@ -4,7 +4,7 @@
 #include <cstring>
 #include "logger_state.hpp"
 
-static logger_state_t logger_state;
+inline logger_state_t logger_state;
 
 #ifdef __BENCHMARK
 #define TIMER_START(timer) auto timer = std::chrono::steady_clock::now();
