@@ -209,8 +209,10 @@ class MMapStream {
         }
 //#pragma omp task depend(inout: host_buffer[0:transfer_slice_len])
 //{
-//        #pragma omp parallel for
-        #pragma omp taskloop
+//        #pragma omp parallel
+//        #pragma omp single
+//        #pragma omp taskloop
+        #pragma omp parallel for
         for(size_t i=0; i<chunks_per_slice; i++) {
           if(transferred_chunks+i<num_offsets) {
             DataType* chunk;
@@ -302,7 +304,7 @@ class MMapStream {
     
     // Get next slice of data on Device buffer
     DataType* next_slice() {
-#pragma omp taskwait
+//#pragma omp taskwait
 #ifdef __NVCC__
       if(async) {
         gpuErrchk( cudaStreamSynchronize(transfer_stream) ); // Wait for slice to finish async copy
