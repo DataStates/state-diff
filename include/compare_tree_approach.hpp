@@ -54,11 +54,9 @@ class CompareTreeDeduplicator {
     size_t num_threads=1;
     size_t num_change_hashes_phase_1=0;
 
-    void setup(const size_t data_len,
-               bool baseline, std::string& filename0, std::string& filename1);
+    void setup(const size_t data_len, std::string& filename0, std::string& filename1);
 
-    void setup(const size_t data_len,
-               bool baseline);
+    void setup(const size_t data_len);
 
     void create_tree(const uint8_t* data_ptr, const size_t len);
 
