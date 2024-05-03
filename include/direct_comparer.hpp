@@ -113,7 +113,7 @@ DirectComparer<DataType,ExecutionDevice>::DirectComparer(double tolerance,
  * \param data_device_len   Length of data in bytes
  */
 template<typename DataType, typename ExecutionDevice>
-void DirectComparer<DataType,ExecutionDevice>::setup(const uint64_t  data_device_len) {
+void DirectComparer<DataType,ExecutionDevice>::setup(const uint64_t data_device_len) {
 }
 
 /**

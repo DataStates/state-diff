@@ -126,12 +126,13 @@ int main(int argc, char** argv) {
     STDOUT_PRINT("Fuzzy hash? %d\n", fuzzy_hash);
     STDOUT_PRINT("Algorithm:  %s\n", alg.c_str());
     STDOUT_PRINT("Data type:  %s\n", dtype.c_str());
-    STDOUT_PRINT("Numb diffs: %u\n", num_diffs);
+    //STDOUT_PRINT("Numb diffs: %u\n", num_diffs);
 
     int world_rank=0, world_size=1;
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-    std::string rank_str = "mpirestart-" + std::to_string(world_rank);
+    //std::string rank_str = "mpirestart-" + std::to_string(world_rank);
+    std::string rank_str = "mpirestart-";
     std::vector<std::string> run0_files, run1_files, run0_full_files, run1_full_files;
     if(run0_all_files.size() > 0) {
       for(uint32_t i=0; i<run0_all_files.size(); i++) {
@@ -550,10 +551,10 @@ int main(int argc, char** argv) {
         Timer::time_point beg_setup = Timer::now();
         Kokkos::Profiling::pushRegion("Setup");
         if(comparing_runs) {
-          comp_deduplicator.setup(data_len, !comparing_runs, run0_full_files[idx], run1_full_files[idx]);
+          comp_deduplicator.setup(data_len, run0_full_files[idx], run1_full_files[idx]);
           comp_deduplicator.stream_buffer_len = buffer_len/sizeof(float);
         } else {
-          comp_deduplicator.setup(data_len, !comparing_runs);
+          comp_deduplicator.setup(data_len);
           run_view_d = Kokkos::View<uint8_t*>("Device data", data_len);
         }
         Kokkos::Profiling::popRegion();

@@ -8,7 +8,6 @@ CompareTreeDeduplicator::CompareTreeDeduplicator(uint32_t bytes_per_chunk) {
   prev_tree = &tree1;
   chunk_size = bytes_per_chunk;
   current_id = 0;
-  baseline_id = 0;
   start_level = 30;
   num_comparisons = Kokkos::View<uint64_t[1]>("Num comparisons");
   num_hash_comp = Kokkos::View<uint64_t[1]>("Num hash comparisons");
@@ -20,7 +19,6 @@ CompareTreeDeduplicator::CompareTreeDeduplicator(uint32_t bytes_per_chunk, uint3
   prev_tree = &tree1;
   chunk_size = bytes_per_chunk;
   current_id = 0;
-  baseline_id = 0;
   start_level = start;
   fuzzyhash = fuzzy;
   errorValue = error;
@@ -31,7 +29,7 @@ CompareTreeDeduplicator::CompareTreeDeduplicator(uint32_t bytes_per_chunk, uint3
 }
 
 void 
-CompareTreeDeduplicator::setup(const size_t data_size, bool baseline) {
+CompareTreeDeduplicator::setup(const size_t data_size) {
   DEBUG_PRINT("Begin setup\n");
   // ==========================================================================================
   // Deduplicate data
@@ -62,6 +60,7 @@ CompareTreeDeduplicator::setup(const size_t data_size, bool baseline) {
     curr_tree->dual_hash_d.clear();
     prev_tree->dual_hash_d.clear();
   }
+  changed_chunks = Kokkos::Bitset<>(num_chunks);
   curr_tree->dual_hash_d.clear();
   first_ocur_vec.clear();
 
@@ -94,10 +93,10 @@ CompareTreeDeduplicator::setup(const size_t data_size, bool baseline) {
 
 void 
 CompareTreeDeduplicator::setup(const size_t data_size,
-               bool baseline, std::string& run0_file, std::string& run1_file) {
+               std::string& run0_file, std::string& run1_file) {
   file0 = run0_file;
   file1 = run1_file;
-  setup(data_size, baseline);
+  setup(data_size);
 }
 
 size_t
@@ -251,7 +250,6 @@ CompareTreeDeduplicator::compare_trees_phase2() {
     first_ocur.clear();
     if(dataType == 'f') {
       Kokkos::Profiling::pushRegion(diff_label + std::string("Compare Tree start file streams"));
-      changed_chunks = Kokkos::Bitset<>(num_chunks);
       changed_chunks.reset();
       auto& changed_blocks = changed_chunks;
 
@@ -295,13 +293,12 @@ CompareTreeDeduplicator::compare_trees_phase2() {
         Kokkos::parallel_reduce("Count differences", range_policy, 
         KOKKOS_LAMBDA (const size_t idx, uint64_t& update) {
           auto ncomp_access = num_comp.access();
-          size_t i = idx / blocksize;
-          size_t j = idx % blocksize;
+          size_t i = idx / blocksize; // Block
+          size_t j = idx % blocksize; // Element in block
           size_t data_idx = blocksize*sizeof(float)*offsets[offset_idx+i] + j*sizeof(float);
           if( (offset_idx+i < num_diff_hash) && (data_idx<filesize) ) {
             if(!abs_comp(sliceA[idx], sliceB[idx], err_tol)) {
               update += 1;
-//              changed_blocks.set(offset_idx+i);
               changed_blocks.set(offsets[offset_idx+i]);
             }
             ncomp_access(0) += 1;

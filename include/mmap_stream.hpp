@@ -94,11 +94,11 @@ class MMapStream {
 #ifdef __NVCC__
       active_buffer = device_alloc<DataType>(bytes_per_slice);
       transfer_buffer = device_alloc<DataType>(bytes_per_slice);
-      if(!full_transfer) {
+      //if(!full_transfer) {
         host_buffer = host_alloc<DataType>(bytes_per_slice);
-      } else {
-        host_buffer = transfer_buffer;
-      }
+      //} else {
+      //  host_buffer = transfer_buffer;
+      //}
 #else
       if(!full_transfer) {
         active_buffer = device_alloc<DataType>(bytes_per_slice);
@@ -200,7 +200,14 @@ class MMapStream {
 
     size_t prepare_slice() {
       if(full_transfer) {
+#ifdef __NVCC__
+        DataType* slice;
+        transfer_slice_len = get_chunk(file_buffer, host_offsets[transferred_chunks]*elem_per_slice, &slice);
+        if(transfer_slice_len > 0)
+          memcpy(host_buffer, slice, transfer_slice_len*sizeof(DataType));
+#else
         transfer_slice_len = get_chunk(file_buffer, host_offsets[transferred_chunks]*elem_per_slice, &transfer_buffer);
+#endif
       } else {
         if(elem_per_chunk*(transferred_chunks+chunks_per_slice) > filesize/sizeof(DataType)) { 
           transfer_slice_len = filesize/sizeof(DataType) - transferred_chunks*elem_per_chunk;
@@ -246,9 +253,10 @@ class MMapStream {
 //          }
 //}
 //        }
+      }
 #ifdef __NVCC__
-#pragma omp task depend(in: host_buffer[0:transfer_slice_len])
-{
+//#pragma omp task depend(in: host_buffer[0:transfer_slice_len])
+//{
       if(async) {
         gpuErrchk( cudaMemcpyAsync(transfer_buffer, 
                                    host_buffer, 
@@ -261,9 +269,8 @@ class MMapStream {
                               transfer_slice_len*sizeof(DataType), 
                               cudaMemcpyHostToDevice) );
       }
-}
+//}
 #endif
-      }
       return transfer_slice_len;
     }
 

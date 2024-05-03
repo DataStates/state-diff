@@ -36,11 +36,11 @@ struct DataTypeInfo<float> {
 // Hashing approach tolerant to variations of floating point numbers
 template <typename T1, typename T2>
 KOKKOS_INLINE
-bool processData(const T1* data, T2 combinedBytes, uint64_t len, float errorValue, HashDigest* digests);
+bool processData(const T1* data, T2 combinedBytes, uint64_t len,  T1 errorValue, HashDigest* digests);
 
 template <typename T1, typename T2>
 KOKKOS_INLINE
-void processElement(T1& fpvalueLower, T1& fpvalueUpper, T2 bitsDataType, float errorValue);
+void processElement(T1& fpvalueLower, T1& fpvalueUpper, T2 bitsDataType, T1 errorValue);
 
 // Keep MSBs and clear LSBs given exponents of float and error values
 template <typename T1, typename T2>
@@ -50,7 +50,7 @@ bool clearLSBs(T1 fpvalue, T2 *bits, T2 mantissaFP, int numBitsToKeep);
 // Check if the number is a NaN, Inf or other special cases
 template <typename T1, typename T2>
 KOKKOS_INLINE
-bool specialCase(T1 fpvalue, T2 exponentBits, T2 mantissaBits);
+bool specialCase(T2 exponentBits, T2 mantissaBits);
 
 // Function to add two uint32_t binary representations
 template <typename T2>
@@ -67,7 +67,7 @@ void printMismatch(std::string prefix, const HashDigest& dig);
 // Main hash function used by the code
 KOKKOS_INLINE
 bool fuzzyhash(const void* data, uint64_t len, const char dataType,
-                float errorValue, HashDigest* digests)  {
+                double errorValue, HashDigest* digests)  {
   if (dataType == *("d")) {
     const double* doubleData = static_cast<const double*>(data);
     uint64_t bitsDataType = 0;
@@ -75,13 +75,13 @@ bool fuzzyhash(const void* data, uint64_t len, const char dataType,
   } else {
     const float* floatData = static_cast<const float*>(data);
     uint32_t bitsDataType = 0;
-    return processData(floatData, bitsDataType, len, errorValue, digests);
+    return processData(floatData, bitsDataType, len, static_cast<float>(errorValue), digests);
   }    
 }
 
 template <typename T1, typename T2>
 KOKKOS_INLINE
-bool processData(const T1* data, T2 bitsDataType, uint64_t len, float errorValue, HashDigest* digests) {
+bool processData(const T1* data, T2 bitsDataType, uint64_t len, T1 errorValue, HashDigest* digests) {
   // Given that every data point has two hashes, compute the modified
   // binary representations per data point and compute the hashes
   // for the entire chunk in a streaming fashion.
@@ -170,7 +170,7 @@ bool processData(const T1* data, T2 bitsDataType, uint64_t len, float errorValue
 // Hashing approach tolerant to variations of floating point numbers
 template <typename T1, typename T2>
 KOKKOS_INLINE
-void processElement(T1& fpvalueLower, T1& fpvalueUpper, T2 bitsDataType, float errorValue) {
+void processElement(T1& fpvalueLower, T1& fpvalueUpper, T2 bitsDataType, T1 errorValue) {
 
   using Info = DataTypeInfo<T1>;
   //T1 fpvalue = fpvalueLower;
@@ -185,7 +185,7 @@ void processElement(T1& fpvalueLower, T1& fpvalueUpper, T2 bitsDataType, float e
   T2 mantissaBits = (*bits) & Info::MANTISSAMASK;
   int exponent = exponentBits - Info::BIAS;
   T2* newFPbits = reinterpret_cast<T2 *>(&fpvalueUpper);
-  if (specialCase(fpvalueLower, exponentBits, mantissaBits)) {
+  if (specialCase<T1>(exponentBits, mantissaBits)) {
     // Verify that the numbers are not NaNs or infinity. 
     // If so, directly apply the murmur hash instead of the fuzzy hash
     *newFPbits = *bits;
@@ -246,7 +246,7 @@ bool clearLSBs(T1 fpvalue, T2 *bits, T2 mantissaFP, int numBitsToKeep) {
 
 template <typename T1, typename T2>
 KOKKOS_INLINE
-bool specialCase(T1 fpvalue, T2 exponentBits, T2 mantissaBits) {
+bool specialCase(T2 exponentBits, T2 mantissaBits) {
   /*
     If the exponent bits are all zeros and the mantissa bits are not all zeros.
     This condition identifies subnormal (or denormalized) numbers.
@@ -303,7 +303,7 @@ void printMismatch(const HashDigest& dig) {
 }
 
 inline
-int areAbsoluteEqual(const float* data_a, const float* data_b, int size, float error, int id) {
+int areAbsoluteEqual(const float* data_a, const float* data_b, int size, float error) {
   int result = 0;
   for (int i = 0; (i < size) && (result < 1); ++i) {
     if (fabs(data_a[i] - data_b[i]) > error) {
