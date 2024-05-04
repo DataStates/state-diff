@@ -191,7 +191,9 @@ void processElement(T1& fpvalueLower, T1& fpvalueUpper, T2 bitsDataType, T1 erro
     *newFPbits = *bits;
   }
   else {
-    int numBitsToKeep = exponent - errorExponent;
+    //int numBitsToKeep = exponent - errorExponent;
+    int exponentDifference = exponent - errorExponent;
+    int numBitsToKeep = (exponentDifference < 0) ? 0 : exponentDifference;
     bool unchangedMantissa = clearLSBs(fpvalueLower, bits, mantissaBits, numBitsToKeep);
     T2 bitmask;
     if (unchangedMantissa) {
