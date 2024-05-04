@@ -19,16 +19,11 @@ class DirectComparer {
     double tol;
     size_t d_stream_buf_len = 1024*1024*1024/sizeof(DataType);
     Kokkos::Bitset<Kokkos::DefaultExecutionSpace> changed_entries;
-    Kokkos::View<uint64_t[1]> num_comparisons;
+    size_t num_comparisons=0;
     std::string file0, file1;
     size_t block_size = 0;
     double io_timer=0.0;
     double compare_timer=0.0;
-//#ifdef IO_URING_STREAM
-//    IOUringStream<scalar_type> file_stream0, file_stream1;
-//#else
-//    MMapStream<scalar_type> file_stream0, file_stream1;
-//#endif
 
   public:
     // Default empty constructor
@@ -91,7 +86,6 @@ class DirectComparer {
 template<typename DataType, typename ExecutionDevice>
 DirectComparer<DataType,ExecutionDevice>::DirectComparer() {
   tol = 0.0;
-  num_comparisons = Kokkos::View<uint64_t[1]>("Num comparisons");
 }
 
 template<typename DataType, typename ExecutionDevice>
@@ -102,7 +96,6 @@ DirectComparer<DataType,ExecutionDevice>::DirectComparer(double tolerance,
   tol = tolerance;
   d_stream_buf_len = device_buf_len;
   block_size = chunk_size;
-  num_comparisons = Kokkos::View<uint64_t[1]>("Num comparisons");
 }
 
 /**
@@ -139,27 +132,23 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(const DataType* data_
   file_stream0.start_stream(offsets, noffsets, block_size);
 
   changed_entries = Kokkos::Bitset<Kokkos::DefaultExecutionSpace>(block_size*noffsets);
-  Kokkos::deep_copy(num_comparisons, 0);
+  num_comparisons = 0;
   CompareFunc<DataType> compFunc;
   uint64_t num_diff = 0;
   size_t offset_idx = 0;
   double err_tol = tol;
   while(offset_idx < data_device_len/block_size) {
     uint64_t ndiff = 0;
-    DataType* slice = NULL;
-    size_t slice_len = 0;
-    slice = file_stream0.next_slice();
-    slice_len = file_stream0.get_slice_len();
+    DataType* slice = file_stream0.next_slice();
+    size_t slice_len = file_stream0.get_slice_len();
     size_t blocksize = block_size;
     size_t nblocks = slice_len/block_size;
     if(block_size*nblocks < slice_len)
       nblocks += 1;
   
-    auto& num_comp = num_comparisons;
     auto mdrange_policy = Kokkos::MDRangePolicy<size_t, Kokkos::Rank<2>>({0,0}, {nblocks, blocksize});
     Kokkos::parallel_reduce("Count differences", mdrange_policy, 
-    [slice, data_device_ptr, data_device_len, offsets, offset_idx, blocksize, compFunc, err_tol, num_comp] 
-    KOKKOS_FUNCTION (const size_t i, const size_t j, uint64_t& update) {
+    KOKKOS_LAMBDA(const size_t i, const size_t j, uint64_t& update) {
       size_t data_idx = blocksize*offsets[offset_idx+i] + j;
       if(data_idx < data_device_len) {
         DataType curr = data_device_ptr[data_idx];
@@ -167,13 +156,13 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(const DataType* data_
         if(!compFunc(curr, prev, err_tol)) {
           update += 1;
         }
-        Kokkos::atomic_add(&(num_comp(0)), 1);
       }
     }, Kokkos::Sum<uint64_t>(ndiff));
     Kokkos::fence();
   
     offset_idx += slice_len/block_size;
     num_diff += ndiff;
+    num_comparisons += slice_len;
   }
   io_timer = file_stream0.get_timer();
   file_stream0.end_stream();
@@ -200,24 +189,24 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(size_t* offsets, cons
   CompareFunc<DataType> compFunc;
   uint64_t num_diff = 0;
   double err_tol = tol;
-  DataType *sliceA=NULL, *sliceB=NULL;
-  size_t slice_len=0, data_processed=0;
-  Kokkos::deep_copy(num_comparisons, 0);
+  size_t data_processed=0;
+  // Stats
+  num_comparisons = 0;
   changed_entries = Kokkos::Bitset<Kokkos::DefaultExecutionSpace>(block_size*noffsets);
   changed_entries.reset();
   auto& changes = changed_entries;
+  // Calculate number of iterations
   size_t num_iter = file_stream0.num_offsets/file_stream0.chunks_per_slice;
   if(num_iter * file_stream0.chunks_per_slice < file_stream0.num_offsets)
     num_iter += 1;
   DEBUG_PRINT("Number of iterations: %zu\n", num_iter);
-  Kokkos::Experimental::ScatterView<uint64_t[1]> num_comp(num_comparisons);
   Kokkos::Profiling::popRegion();
 
   for(size_t iter=0; iter<num_iter; iter++) {
     Kokkos::Profiling::pushRegion("Direct: Compare: get slices");
-    sliceA = file_stream0.next_slice();
-    sliceB = file_stream1.next_slice();
-    slice_len = file_stream0.get_slice_len();
+    DataType* sliceA = file_stream0.next_slice();
+    DataType* sliceB = file_stream1.next_slice();
+    size_t slice_len = file_stream0.get_slice_len();
     uint64_t ndiff = 0;
     Kokkos::Profiling::popRegion();
 
@@ -232,8 +221,6 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(size_t* offsets, cons
         update += 1;
         changes.set(data_idx);
       }
-      auto ncomp_access = num_comp.access();
-      ncomp_access(0) += 1;
     }, Kokkos::Sum<uint64_t>(ndiff));
     Kokkos::fence();
     data_processed += slice_len;
@@ -242,15 +229,13 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(size_t* offsets, cons
     compare_timer += std::chrono::duration_cast<Duration>(end - beg).count();
     Kokkos::Profiling::popRegion();
   }
-  Kokkos::Profiling::pushRegion("Direct: Compare: contribute and finalize");
-  Kokkos::Experimental::contribute(num_comparisons, num_comp);
+  num_comparisons = data_processed;
   io_timer = file_stream0.get_timer();
   if(file_stream1.get_timer() > io_timer) {
     io_timer = file_stream1.get_timer();
   }
   file_stream0.end_stream();
   file_stream1.end_stream();
-  Kokkos::Profiling::popRegion();
   return num_diff;
 }
 
@@ -260,6 +245,8 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(const DataType* data_
   CompareFunc<DataType> compFunc;
   uint64_t num_diff = 0;
   double err_tol = tol;
+  changed_entries = Kokkos::Bitset<Kokkos::DefaultExecutionSpace>(data_length);
+  changed_entries.reset();
   auto& changes = changed_entries;
 
   // Parallel comparison
@@ -272,7 +259,7 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(const DataType* data_
     }
   }, Kokkos::Sum<uint64_t>(num_diff));
   Kokkos::fence();
-  Kokkos::deep_copy(num_comparisons, data_length);
+  num_comparisons = data_length;
   return num_diff;
 }
 
@@ -294,13 +281,6 @@ template<typename DataType, typename ExecDevice>
 int
 DirectComparer<DataType,ExecDevice>::deserialize(std::string& filename) {
   file0 = filename;
-//  changed_entries = Kokkos::Bitset<Kokkos::DefaultExecutionSpace>(blocksize*noffsets);
-//#ifdef IO_URING_STREAM
-//  file_stream0 = IOUringStream<DataType>(d_stream_buf_len, filename);
-//#else
-//  file_stream0 = MMapStream<DataType>(d_stream_buf_len, filename); 
-//#endif
-//  file_stream0.start_stream(offsets, noffsets, blocksize);
   return 0;
 }
 
@@ -309,25 +289,12 @@ int
 DirectComparer<DataType,ExecDevice>::deserialize(std::string& filename0, std::string& filename1) {
   file0 = filename0;
   file1 = filename1;
-//  changed_entries = Kokkos::Bitset<Kokkos::DefaultExecutionSpace>(blocksize*noffsets);
-//
-//#ifdef IO_URING_STREAM
-//  file_stream0 = IOUringStream<DataType>(d_stream_buf_len, file0, true, true);
-//  file_stream1 = IOUringStream<DataType>(d_stream_buf_len, file1, true, true);
-//#else
-//  file_stream0 = MMapStream<DataType>(d_stream_buf_len, file0, true, true); 
-//  file_stream1 = MMapStream<DataType>(d_stream_buf_len, file1, true, true); 
-//#endif
-//  file_stream0.start_stream(offsets, noffsets, blocksize);
-//  file_stream1.start_stream(offsets, noffsets, blocksize);
   return 0;
 }
 
 template<typename DataType, typename ExecDevice>
 uint64_t DirectComparer<DataType,ExecDevice>::get_num_comparisons() const {
-  auto num_comparisons_h = Kokkos::create_mirror_view(num_comparisons);
-  Kokkos::deep_copy(num_comparisons_h, num_comparisons);
-  return num_comparisons_h(0); 
+  return num_comparisons; 
 }
 
 template<typename DataType, typename ExecDevice>

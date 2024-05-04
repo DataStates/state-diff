@@ -2,11 +2,7 @@
 #define __MMAP_STREAM_HPP
 #include <type_traits>
 #include <string>
-#include <mutex>
-#include <thread>
-#include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -39,7 +35,6 @@ class MMapStream {
     size_t chunks_per_slice=0;
     bool async=true, full_transfer=true, done=false;
     std::string filename;
-    size_t filesize;
     DataType *mmapped_file=NULL; // Pointer to host data
     DataType *active_buffer=NULL, *transfer_buffer=NULL; // Convenient pointers
     DataType *host_buffer=NULL;
@@ -87,28 +82,20 @@ class MMapStream {
         madvise(file_buffer.buff, file_buffer.size, MADV_SEQUENTIAL);
       } else {
         madvise(file_buffer.buff, file_buffer.size, MADV_RANDOM);
-//        madvise(file_buffer.buff, file_buffer.size, MADV_SEQUENTIAL);
       }
       ASSERT(file_buffer.size % sizeof(DataType) == 0);
       INFO("mapping " << first.size / sizeof(DataType) << " elements");
 #ifdef __NVCC__
       active_buffer = device_alloc<DataType>(bytes_per_slice);
       transfer_buffer = device_alloc<DataType>(bytes_per_slice);
-      //if(!full_transfer) {
-        host_buffer = host_alloc<DataType>(bytes_per_slice);
-      //} else {
-      //  host_buffer = transfer_buffer;
-      //}
+      host_buffer = host_alloc<DataType>(bytes_per_slice);
+      gpuErrchk( cudaStreamCreate(&transfer_stream) );
 #else
       if(!full_transfer) {
         active_buffer = device_alloc<DataType>(bytes_per_slice);
         transfer_buffer = device_alloc<DataType>(bytes_per_slice);
       }
       host_buffer = transfer_buffer;
-#endif
-      
-#ifdef __NVCC__
-      gpuErrchk( cudaStreamCreate(&transfer_stream) );
 #endif
       DEBUG_PRINT("Constructor: Filename: %s\n", filename.c_str());
       DEBUG_PRINT("File size: %zu\n", file_buffer.size);
@@ -118,49 +105,6 @@ class MMapStream {
       DEBUG_PRINT("Constructor: Bytes per slice: %zu\n", bytes_per_slice);
       DEBUG_PRINT("Constructor: Active slice len: %zu\n", active_slice_len);
       DEBUG_PRINT("Constructor: Transfer slice len: %zu\n", transfer_slice_len);
-    }
-
-    // Move assignment operator
-    MMapStream& operator=(MMapStream&& right) {
-      file_buffer.buff = right.file_buffer.buff;
-      file_buffer.size = right.file_buffer.size;
-      right.file_buffer.buff = NULL;
-      right.file_buffer.size = 0;
-      host_offsets = right.host_offsets;
-      right.host_offsets = NULL;
-      file_offsets = right.file_offsets;
-      right.file_offsets = NULL;
-      num_offsets = right.num_offsets;
-      active_slice_len = right.active_slice_len;
-      transfer_slice_len = right.transfer_slice_len;
-      elem_per_slice = right.elem_per_slice;
-      bytes_per_slice = right.bytes_per_slice;
-      elem_per_chunk = right.elem_per_chunk;
-      bytes_per_chunk = right.bytes_per_chunk;
-      chunks_per_slice = right.chunks_per_slice;
-      async = right.async;
-      full_transfer = right.full_transfer;
-      done = right.done;
-      filename = right.filename;
-      filesize = right.filesize;
-      mmapped_file = right.mmapped_file;
-      right.mmapped_file = NULL;
-      host_buffer = right.host_buffer;
-      right.host_buffer = NULL;
-      active_buffer = right.active_buffer;
-      right.active_buffer = NULL;
-      transfer_buffer = right.transfer_buffer;
-      right.transfer_buffer = NULL;
-#ifdef __NVCC__
-      transfer_stream = right.transfer_stream;
-      right.transfer_stream = 0;
-#endif
-      return *this;
-    }
-
-    // Move constructor
-    MMapStream(MMapStream&& src) {
-      *this = src;
     }
 
     ~MMapStream() {
@@ -200,22 +144,26 @@ class MMapStream {
 
     size_t prepare_slice() {
       if(full_transfer) {
+        // Offset into file
+        size_t offset = host_offsets[transferred_chunks]*elem_per_slice;
 #ifdef __NVCC__
+        // Get pointer to chunk
         DataType* slice;
-        transfer_slice_len = get_chunk(file_buffer, host_offsets[transferred_chunks]*elem_per_slice, &slice);
+        transfer_slice_len = get_chunk(file_buffer, offset, &slice);
+        // Copy chunk to host buffer
         if(transfer_slice_len > 0)
           memcpy(host_buffer, slice, transfer_slice_len*sizeof(DataType));
 #else
-        transfer_slice_len = get_chunk(file_buffer, host_offsets[transferred_chunks]*elem_per_slice, &transfer_buffer);
+        // Get pointer to chunk
+        transfer_slice_len = get_chunk(file_buffer, offset, &transfer_buffer);
 #endif
       } else {
-        if(elem_per_chunk*(transferred_chunks+chunks_per_slice) > filesize/sizeof(DataType)) { 
-          transfer_slice_len = filesize/sizeof(DataType) - transferred_chunks*elem_per_chunk;
-        } else {
-          transfer_slice_len = elem_per_chunk*chunks_per_slice;
+        // Calculate number of elements to read
+        transfer_slice_len = elem_per_chunk*chunks_per_slice;
+        size_t elements_read = elem_per_chunk*transferred_chunks;
+        if(elements_read+transfer_slice_len > file_buffer.size/sizeof(DataType)) { 
+          transfer_slice_len = file_buffer.size/sizeof(DataType) - elements_read;
         }
-//#pragma omp task depend(inout: host_buffer[0:transfer_slice_len])
-//{
 //        #pragma omp parallel
 //        #pragma omp single
 //        #pragma omp taskloop
@@ -231,30 +179,9 @@ class MMapStream {
               memcpy(host_buffer+i*elem_per_chunk, chunk, len*sizeof(DataType));
           }
         }
-//}
-
-//        size_t per_threads = chunks_per_slice / (Kokkos::num_threads());
-//        if(per_threads*Kokkos::num_threads() < chunks_per_slice)
-//          per_threads += 1;
-//        for(int thread=0; thread<Kokkos::num_threads(); thread++) {
-////#pragma omp task depend(out: host_buffer[thread*per_threads : (thread+1)*per_threads])
-//#pragma omp task 
-//{
-//          for(size_t i=per_threads*thread; i<(thread+1)*per_threads; i++) {
-//            if((i<chunks_per_slice) && transferred_chunks+i<num_offsets) {
-//              DataType* chunk;
-//              size_t len = get_chunk(file_buffer, host_offsets[transferred_chunks+i]*elem_per_chunk, &chunk);
-//              assert(len <= elem_per_chunk);
-//              assert(i*elem_per_chunk+len*sizeof(DataType) <= bytes_per_slice);
-//              assert((size_t)host_buffer+i*elem_per_chunk+len <= (size_t)host_buffer+elem_per_slice);
-//              if(len > 0)
-//                memcpy(host_buffer+i*elem_per_chunk, chunk, len*sizeof(DataType));
-//            }
-//          }
-//}
-//        }
       }
 #ifdef __NVCC__
+      // Transfer buffer to GPU if needed
 //#pragma omp task depend(in: host_buffer[0:transfer_slice_len])
 //{
       if(async) {
@@ -277,9 +204,9 @@ class MMapStream {
     // Start streaming data from Host to Device
     void start_stream(size_t* offset_ptr, const size_t n_offsets, const size_t chunk_size) {
       transferred_chunks = 0; // Initialize stream
-      file_offsets = offset_ptr;
-      filesize = file_buffer.size;
-      num_offsets = n_offsets;
+      file_offsets = offset_ptr; // Store pointer to device offsets
+      num_offsets = n_offsets; // Store number of offsets
+      // Calculate useful values
       if(full_transfer) {
         elem_per_chunk = elem_per_slice;
         bytes_per_chunk = bytes_per_slice;
@@ -296,12 +223,14 @@ class MMapStream {
       DEBUG_PRINT("Chunks per slice: %zu\n", chunks_per_slice);
       DEBUG_PRINT("Num offsets: %zu\n", num_offsets);
 
+      // Copy offsets to device if necessary
 #ifdef __NVCC__
       host_offsets = host_alloc<size_t>(n_offsets*sizeof(size_t));
       gpuErrchk( cudaMemcpy(host_offsets, offset_ptr, n_offsets*sizeof(size_t), cudaMemcpyDeviceToHost) );
 #else
       host_offsets = offset_ptr;
 #endif
+      // Start copying data into buffer
       Timer::time_point beg = Timer::now();
       prepare_slice();
       Timer::time_point end = Timer::now();
@@ -327,10 +256,12 @@ class MMapStream {
       }
 #endif
       active_slice_len = transfer_slice_len;
+      // Update number of chunks transferred
       size_t nchunks = active_slice_len/elem_per_chunk;
       if(elem_per_chunk*nchunks < active_slice_len)
         nchunks += 1;
       transferred_chunks += nchunks;
+      // Start reading next slice if there are any left
       if(transferred_chunks < num_offsets) {
         Timer::time_point beg = Timer::now();
         prepare_slice();

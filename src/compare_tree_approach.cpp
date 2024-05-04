@@ -153,6 +153,8 @@ CompareTreeDeduplicator::compare_trees_phase1() {
   });
   auto& prev_dual_hash = tree_prev.dual_hash_d;
   auto& curr_dual_hash = tree_curr.dual_hash_d;
+  auto& diff_hashes = diff_hash_vec;
+  auto& first_occurrences = first_ocur_vec;
   auto n_chunks = num_chunks;
   auto n_nodes = num_nodes;
   bool use_fuzzy_hash = fuzzyhash && (comp_op != Equivalence);
@@ -183,15 +185,15 @@ CompareTreeDeduplicator::compare_trees_phase1() {
         if( (node >= n_chunks-1) && (node < n_nodes) ) {
           if(use_fuzzy_hash) {
             if(node < left_leaf) { // Leaf is not on the last level
-              diff_hash_vec.push((n_nodes-left_leaf) + (node - ((n_nodes-1)/2)));
+              diff_hashes.push((n_nodes-left_leaf) + (node - ((n_nodes-1)/2)));
 //printf("Tree: Block %zu (%zu) changed\n", node, (n_nodes-left_leaf) + (node - ((n_nodes-1)/2)));
             } else { // Leaf is on the last level
-              diff_hash_vec.push((node-left_leaf));
+              diff_hashes.push((node-left_leaf));
 //printf("Tree: Block %zu (%zu) changed\n", node, node-left_leaf);
             }
           } else {
 //            first_ocurrences.push(node);
-            first_ocur_vec.push(node);
+            first_occurrences.push(node);
           }
         } else {
           uint32_t child_l = 2 * node + 1;
@@ -348,7 +350,6 @@ CompareTreeDeduplicator::create_tree(const uint8_t* data_ptr, const size_t data_
   DEBUG_PRINT("Baseline deduplication\n");
 
   // Grab references to current and previous tree
-  //MerkleTree& tree_prev = *prev_tree;
   MerkleTree& tree_curr = *curr_tree;
 
   // Setup markers for beginning and end of tree level
@@ -366,6 +367,11 @@ CompareTreeDeduplicator::create_tree(const uint8_t* data_ptr, const size_t data_
   //uint32_t last_lvl_end = (1 << (start_level + 1)) - 2;
   //DEBUG_PRINT("Leaf range [%u,%u]\n", left_leaf, right_leaf);
   //DEBUG_PRINT("Start level [%u,%u]\n", last_lvl_beg, last_lvl_end);
+  auto nchunks = num_chunks;
+  auto nnodes = num_nodes;
+  auto chunksize = chunk_size;
+  auto dtype = dataType;
+  auto err_tol = errorValue;
 
   // ==============================================================================================
   // Construct tree
@@ -374,40 +380,40 @@ CompareTreeDeduplicator::create_tree(const uint8_t* data_ptr, const size_t data_
   Kokkos::Profiling::pushRegion(diff_label + std::string("Construct Tree"));
   if(fuzzyhash && (comp_op != Equivalence)) {
     Kokkos::parallel_for(diff_label + std::string("Hash leaves"), Kokkos::RangePolicy<>(0,num_chunks),
-    KOKKOS_CLASS_LAMBDA(uint32_t idx) {
+    KOKKOS_LAMBDA(uint32_t idx) {
       // Calculate leaf node
       uint32_t leaf = left_leaf + idx;
       // Adjust leaf if not on the lowest level
-      if(leaf >= num_nodes) {
-        const uint32_t diff = leaf - num_nodes;
-        leaf = ((num_nodes-1)/2) + diff;
+      if(leaf >= nnodes) {
+        const uint32_t diff = leaf - nnodes;
+        leaf = ((nnodes-1)/2) + diff;
       }
       // Determine which chunk of data to hash
-      uint32_t num_bytes = chunk_size;
-      uint64_t offset = static_cast<uint64_t>(idx)*static_cast<uint64_t>(chunk_size);
-      if(idx == num_chunks-1) // Calculate how much data to hash
+      uint32_t num_bytes = chunksize;
+      uint64_t offset = static_cast<uint64_t>(idx)*static_cast<uint64_t>(chunksize);
+      if(idx == nchunks-1) // Calculate how much data to hash
         num_bytes = data_size-offset;
       // Hash chunk
       HashDigest digest[2] = {0};
-      bool dual_hash = tree_curr.calc_leaf_fuzzy_hash(data_ptr+offset, num_bytes, errorValue, dataType, digest, leaf);
+      bool dual_hash = tree_curr.calc_leaf_fuzzy_hash(data_ptr+offset, num_bytes, err_tol, dtype, digest, leaf);
       tree_curr(leaf,0) = digest[0];
       if(dual_hash)
         tree_curr(leaf,1) = digest[1];
     });
   } else {
     Kokkos::parallel_for(diff_label + std::string("Hash leaves"), Kokkos::RangePolicy<>(0,num_chunks),
-    KOKKOS_CLASS_LAMBDA(uint32_t idx) {
+    KOKKOS_LAMBDA(uint32_t idx) {
       // Calculate leaf node
       uint32_t leaf = left_leaf + idx;
       // Adjust leaf if not on the lowest level
-      if(leaf >= num_nodes) {
-        const uint32_t diff = leaf - num_nodes;
-        leaf = ((num_nodes-1)/2) + diff;
+      if(leaf >= nnodes) {
+        const uint32_t diff = leaf - nnodes;
+        leaf = ((nnodes-1)/2) + diff;
       }
       // Determine which chunk of data to hash
-      uint32_t num_bytes = chunk_size;
-      uint64_t offset = static_cast<uint64_t>(idx)*static_cast<uint64_t>(chunk_size);
-      if(idx == num_chunks-1) // Calculate how much data to hash
+      uint32_t num_bytes = chunksize;
+      uint64_t offset = static_cast<uint64_t>(idx)*static_cast<uint64_t>(chunksize);
+      if(idx == nchunks-1) // Calculate how much data to hash
         num_bytes = data_size-offset;
       // Hash chunk
       tree_curr.calc_leaf_hash(data_ptr+offset, num_bytes, leaf);
@@ -422,9 +428,9 @@ CompareTreeDeduplicator::create_tree(const uint8_t* data_ptr, const size_t data_
                                         + std::to_string(level_beg) + std::string(",") 
                                         + std::to_string(level_end) + std::string("]");
     Kokkos::parallel_for(tree_constr_label, Kokkos::RangePolicy<>(level_beg, level_end+1), 
-    KOKKOS_CLASS_LAMBDA(const uint32_t node) {
+    KOKKOS_LAMBDA(const uint32_t node) {
       // Check if node is non leaf
-      if(node < num_chunks-1) {
+      if(node < nchunks-1) {
         //uint32_t child_l = 2*node+1;
         //hash((uint8_t*)&tree_curr(child_l), 2*sizeof(HashDigest), tree_curr(node).digest);
         bool dual_hash = tree_curr.calc_hash(node);
@@ -470,6 +476,14 @@ CompareTreeDeduplicator::dedup_data(const uint8_t* data_ptr,
   uint32_t last_lvl_end = (1 << (start_level + 1)) - 2;
   //DEBUG_PRINT("Leaf range [%u,%u]\n", left_leaf, right_leaf);
   //DEBUG_PRINT("Start level [%u,%u]\n", last_lvl_beg, last_lvl_end);
+  auto nnodes = num_nodes;
+  auto nchunks = num_chunks;
+  auto chunksize = chunk_size;
+  bool fuzzy_hash = fuzzyhash;
+  auto err_tol = errorValue;
+  auto dtype = dataType;
+  auto& diff_hashes = diff_hash_vec;
+  auto& first_occurrences = first_ocur_vec;
 
   // ==============================================================================================
   // Construct tree
@@ -477,28 +491,28 @@ CompareTreeDeduplicator::dedup_data(const uint8_t* data_ptr,
   std::string diff_label = std::string("Diff ") + std::to_string(current_id) + std::string(": ");
   Kokkos::Profiling::pushRegion(diff_label + std::string("Construct Tree"));
   Kokkos::parallel_for(diff_label + std::string("Hash leaves"), Kokkos::RangePolicy<>(0,num_chunks),
-  KOKKOS_CLASS_LAMBDA(uint32_t idx) {
+  KOKKOS_LAMBDA(uint32_t idx) {
     // Calculate leaf node
     uint32_t leaf = left_leaf + idx;
     // Adjust leaf if not on the lowest level
-    if(leaf >= num_nodes) {
-      const uint32_t diff = leaf - num_nodes;
-      leaf = ((num_nodes-1)/2) + diff;
+    if(leaf >= nnodes) {
+      const uint32_t diff = leaf - nnodes;
+      leaf = ((nnodes-1)/2) + diff;
     }
     // Determine which chunk of data to hash
-    uint32_t num_bytes = chunk_size;
-    uint64_t offset = static_cast<uint64_t>(idx)*static_cast<uint64_t>(chunk_size);
-    if(idx == num_chunks-1) // Calculate how much data to hash
+    uint32_t num_bytes = chunksize;
+    uint64_t offset = static_cast<uint64_t>(idx)*static_cast<uint64_t>(chunksize);
+    if(idx == nchunks-1) // Calculate how much data to hash
       num_bytes = data_size-offset;
     // Hash chunk
     //hash(data_ptr+offset, num_bytes, tree_curr(leaf).digest);
-    if(fuzzyhash) {
+    if(fuzzy_hash) {
       HashDigest digest[2];// = {0};
       digest[0] = {0};
       digest[1] = {0};
 
       // tree_curr.calc_leaf_fuzzy_hash(data_ptr+offset, num_bytes, digest);
-      bool dual_hash = tree_curr.calc_leaf_fuzzy_hash(data_ptr+offset, num_bytes, errorValue, dataType, digest, leaf);
+      bool dual_hash = tree_curr.calc_leaf_fuzzy_hash(data_ptr+offset, num_bytes, err_tol, dtype, digest, leaf);
       tree_curr(leaf,0) = digest[0];
       if(dual_hash)
         tree_curr(leaf,1) = digest[1];
@@ -525,7 +539,7 @@ CompareTreeDeduplicator::dedup_data(const uint8_t* data_ptr,
       }
       if (changed) {
         // Add lead id to first occurence
-        diff_hash_vec.push(leaf-(num_chunks-1));
+        diff_hashes.push(leaf-(nchunks-1));
       }
       // ==========================================================================================
     } else {
@@ -541,9 +555,9 @@ CompareTreeDeduplicator::dedup_data(const uint8_t* data_ptr,
                                         + std::to_string(level_beg) + std::string(",") 
                                         + std::to_string(level_end) + std::string("]");
     Kokkos::parallel_for(tree_constr_label, Kokkos::RangePolicy<>(level_beg, level_end+1), 
-    KOKKOS_CLASS_LAMBDA(const uint32_t node) {
+    KOKKOS_LAMBDA(const uint32_t node) {
       // Check if node is non leaf
-      if(node < num_chunks-1) {
+      if(node < nchunks-1) {
         //uint32_t child_l = 2*node+1;
         //hash((uint8_t*)&tree_curr(child_l), 2*sizeof(HashDigest), tree_curr(node).digest);
         //tree_curr.calc_hash(node);
@@ -565,8 +579,8 @@ CompareTreeDeduplicator::dedup_data(const uint8_t* data_ptr,
   
   if(baseline) {
     Kokkos::parallel_for("Fill up init first_ocur_bec", Kokkos::RangePolicy<>(num_chunks - 1, num_nodes),
-    KOKKOS_CLASS_LAMBDA(const uint32_t i) {
-      first_ocur_vec.push(i);
+    KOKKOS_LAMBDA(const uint32_t i) {
+      first_occurrences.push(i);
     });
   } else {
 
@@ -576,15 +590,20 @@ CompareTreeDeduplicator::dedup_data(const uint8_t* data_ptr,
     Queue working_queue(num_chunks);
     auto fill_policy = Kokkos::RangePolicy<>(level_beg, level_end + 1);
     Kokkos::parallel_for("Fill up queue with every node in the stop_level", fill_policy,
-    KOKKOS_CLASS_LAMBDA(const uint32_t i) {
+    KOKKOS_LAMBDA(const uint32_t i) {
       working_queue.push(i);
     });
 
+    //auto& prev_dual_hashes = tree_prev.dual_hash_d;
+    //auto& curr_dual_hashes = tree_curr.dual_hash_d;
+    auto& first_occurrences = first_ocur_vec;
+    auto nchunks = num_chunks;
+    bool use_fuzzy_hash = fuzzyhash;
     while(working_queue.size() > 0){
-      Kokkos::parallel_for(working_queue.size(), KOKKOS_CLASS_LAMBDA(uint32_t i){
+      Kokkos::parallel_for(working_queue.size(), KOKKOS_LAMBDA(uint32_t i){
         uint32_t node = working_queue.pop();
         bool changed = false;
-        if(fuzzyhash) {
+        if(use_fuzzy_hash) {
           if(tree_curr.dual_hash_d.test(node)) { // Current tree has two hashes
             if(tree_prev.dual_hash_d.test(node)) { // Previous tree has two hashes
               changed = !digests_same(tree_curr(node,0), tree_prev(node,0)) || 
@@ -609,11 +628,11 @@ CompareTreeDeduplicator::dedup_data(const uint8_t* data_ptr,
         if(changed) {
           uint32_t child_l = 2 * node + 1;
           uint32_t child_r = 2 * node + 2;
-          if(node < num_chunks - 1) {
+          if(node < nchunks - 1) {
             working_queue.push(child_l);
             working_queue.push(child_r);
           } else {
-            first_ocur_vec.push(node);
+            first_occurrences.push(node);
           }
         }
       });
