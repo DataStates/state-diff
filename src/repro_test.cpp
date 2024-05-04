@@ -126,7 +126,6 @@ int main(int argc, char** argv) {
     STDOUT_PRINT("Fuzzy hash? %d\n", fuzzy_hash);
     STDOUT_PRINT("Algorithm:  %s\n", alg.c_str());
     STDOUT_PRINT("Data type:  %s\n", dtype.c_str());
-    //STDOUT_PRINT("Numb diffs: %u\n", num_diffs);
 
     int world_rank=0, world_size=1;
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
@@ -177,7 +176,7 @@ int main(int argc, char** argv) {
     }
 
     // Create deduplicators
-    CompareTreeDeduplicator comp_deduplicator = CompareTreeDeduplicator(chunk_size, level, fuzzy_hash, err_tol, dtype[0]);
+    CompareTreeDeduplicator comp_deduplicator(chunk_size, level, fuzzy_hash, err_tol, dtype[0]);
     comp_deduplicator.num_threads = Kokkos::num_threads();
     if (comp.compare("absolute") ==  0) { 
       comp_deduplicator.comp_op = Absolute;
@@ -186,9 +185,9 @@ int main(int argc, char** argv) {
     } else if(comp.compare("equivalence") == 0) {
       comp_deduplicator.comp_op = Equivalence;
     }
-    DirectComparer<uint8_t,Kokkos::DefaultExecutionSpace> u8_comparer( err_tol, chunk_size, buffer_len);  
-    DirectComparer<float,Kokkos::DefaultExecutionSpace>   f32_comparer(err_tol, chunk_size, buffer_len/sizeof(float)); 
-    DirectComparer<double,Kokkos::DefaultExecutionSpace>  f64_comparer(err_tol, chunk_size, buffer_len/sizeof(double)); 
+    DirectComparer<uint8_t> u8_comparer( err_tol, chunk_size, buffer_len);  
+    DirectComparer<float>   f32_comparer(err_tol, chunk_size, buffer_len/sizeof(float)); 
+    DirectComparer<double>  f64_comparer(err_tol, chunk_size, buffer_len/sizeof(double)); 
 
     // Iterate through files
     for(uint32_t idx=0; idx<num_diffs; idx++) {

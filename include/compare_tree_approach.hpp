@@ -36,7 +36,7 @@ class CompareTreeDeduplicator {
     Vector<uint32_t> first_ocur_vec; // First occurrence root offsets
     uint32_t num_chunks;
     uint32_t num_nodes;
-    uint32_t start_level=30;
+    uint32_t start_level=12;
     bool fuzzyhash = false;
     double errorValue;
     char dataType = static_cast<char>(*("f"));
@@ -72,7 +72,6 @@ class CompareTreeDeduplicator {
     CompareTreeDeduplicator(uint32_t bytes_per_chunk, uint32_t limit, bool fuzzy=false, 
                             float errorValue=0, const char dataType=*("f"));
 
-    KOKKOS_INLINE_FUNCTION
     ~CompareTreeDeduplicator() {};
 
     size_t num_first_ocur() const;
