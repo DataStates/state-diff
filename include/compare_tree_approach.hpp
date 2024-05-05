@@ -60,9 +60,9 @@ class CompareTreeDeduplicator {
 
     void create_tree(const uint8_t* data_ptr, const size_t len);
 
-    void dedup_data(const uint8_t* data_ptr, 
-                    const size_t len,
-                    bool baseline);
+//    void dedup_data(const uint8_t* data_ptr, 
+//                    const size_t len,
+//                    bool baseline);
 
   public:
     CompareTreeDeduplicator();
@@ -87,10 +87,10 @@ class CompareTreeDeduplicator {
      * \param data_device_len   Length of data in bytes
      * \param make_baseline     Flag determining whether to make a baseline checkpoint
      */
-    size_t
-    compare(uint8_t*  data_device_ptr, 
-            size_t    data_device_len,
-            bool      make_baseline);
+//    size_t
+//    compare(uint8_t*  data_device_ptr, 
+//            size_t    data_device_len,
+//            bool      make_baseline);
     size_t
     compare_trees_phase1();
     size_t
