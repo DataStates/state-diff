@@ -470,7 +470,7 @@ int main(int argc, char** argv) {
 //          	transferred += ret;
 //          }
 //          close(fd);
-        }
+//        }
         
 //        std::ofstream log;
 //        if(!comparing_runs) {
@@ -676,19 +676,11 @@ int main(int argc, char** argv) {
         // Collect stats for logs
         // ========================================================================================
         size_t changed_blocks_phase1;
-        if(fuzzy_hash && (comp_deduplicator.comp_op != Equivalence)) {
-          n_comparisons = comp_deduplicator.get_num_comparisons();
-          n_hash_comp = comp_deduplicator.get_num_hash_comparisons();
-          elem_changed = comp_deduplicator.get_num_changes();
-          changed_blocks = comp_deduplicator.changed_chunks.count();
-          changed_blocks_phase1 = comp_deduplicator.num_change_hashes_phase_1;
-        } else {
-          n_comparisons = 0;
-          n_hash_comp = comp_deduplicator.get_num_hash_comparisons();
-          elem_changed = comp_deduplicator.num_first_ocur()*chunk_size/sizeof(float);
-          changed_blocks_phase1 = comp_deduplicator.num_first_ocur();
-          changed_blocks = changed_blocks_phase1;
-        }
+        n_comparisons = comp_deduplicator.get_num_comparisons();
+        n_hash_comp = comp_deduplicator.get_num_hash_comparisons();
+        elem_changed = comp_deduplicator.get_num_changes();
+        changed_blocks = comp_deduplicator.changed_chunks.count();
+        changed_blocks_phase1 = comp_deduplicator.num_change_hashes_phase_1;
         printf("Rank %d: Number of different elements %zu\n", world_rank, elem_changed);
         printf("Rank %d: Number of comparisons %lu\n", world_rank, n_comparisons);
         printf("Rank %d: Number of hash comparisons %lu\n", world_rank, n_hash_comp);

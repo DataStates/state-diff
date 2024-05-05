@@ -57,9 +57,9 @@ class MMapStream {
 
     size_t get_chunk(const buff_state_t &ckpt, size_t offset, DataType** ptr) {
       size_t byte_offset = offset * sizeof(DataType);
-      ASSERT(byte_offset < ckpt.size);
+      assert(byte_offset < ckpt.size);
       size_t ret = byte_offset + bytes_per_chunk >= ckpt.size ? ckpt.size - byte_offset : bytes_per_chunk;
-      ASSERT(ret % sizeof(DataType) == 0);
+      assert(ret % sizeof(DataType) == 0);
       *ptr = (DataType *)(ckpt.buff + byte_offset);
       return ret / sizeof(DataType);
     }
