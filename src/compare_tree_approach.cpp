@@ -388,11 +388,7 @@ CompareTreeDeduplicator::create_tree(const uint8_t* data_ptr, const size_t data_
       if(idx == nchunks-1) // Calculate how much data to hash
         num_bytes = data_size-offset;
       // Hash chunk
-      HashDigest digest[2] = {0};
-      bool dual_hash = tree_curr.calc_leaf_fuzzy_hash(data_ptr+offset, num_bytes, err_tol, dtype, digest, leaf);
-      tree_curr(leaf,0) = digest[0];
-      if(dual_hash)
-        tree_curr(leaf,1) = digest[1];
+      tree_curr.calc_leaf_fuzzy_hash(data_ptr+offset, num_bytes, err_tol, dtype, leaf);
     });
   } else {
     Kokkos::parallel_for(diff_label + std::string("Hash leaves"), Kokkos::RangePolicy<>(0,num_chunks),
