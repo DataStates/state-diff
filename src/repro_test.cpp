@@ -470,7 +470,7 @@ int main(int argc, char** argv) {
 //          	transferred += ret;
 //          }
 //          close(fd);
-//        }
+        }
         
 //        std::ofstream log;
 //        if(!comparing_runs) {
