@@ -76,11 +76,11 @@ public:
    *
    * \return Reference to hash digest at node i
    */
-  KOKKOS_INLINE_FUNCTION HashDigest& operator()(int32_t i) const {
+  KOKKOS_INLINE_FUNCTION HashDigest& operator()(uint32_t i) const {
     return tree_d(i, 0);
   }
 
-  KOKKOS_INLINE_FUNCTION HashDigest& operator()(int32_t i, int32_t j) const {
+  KOKKOS_INLINE_FUNCTION HashDigest& operator()(uint32_t i, uint32_t j) const {
     return tree_d(i, j);
   }
 
@@ -93,32 +93,34 @@ public:
     HashDigest temp[2];
     bool child_l_dual = dual_hash_d.test(child_l);
     bool child_r_dual = dual_hash_d.test(child_r);
+    uint8_t* temp0 = (uint8_t*)(&temp[0]);
+    uint8_t* temp1 = (uint8_t*)(&temp[0]);
     if(!child_l_dual && !child_r_dual) { // Both have 1 hash each
-      memcpy((uint8_t*)(&temp[0]), (uint8_t*)(&tree_d(child_l,0)), sizeof(HashDigest)); 
-      memcpy((uint8_t*)(&temp[1]), (uint8_t*)(&tree_d(child_r,0)), sizeof(HashDigest)); 
+      memcpy(temp0, (uint8_t*)(&tree_d(child_l,0)), sizeof(HashDigest)); 
+      memcpy(temp1, (uint8_t*)(&tree_d(child_r,0)), sizeof(HashDigest)); 
       kokkos_murmur3::hash(&temp, 2*sizeof(HashDigest), dig[0].digest);
     } else if(child_l_dual && !child_r_dual) { // Left has 2 hashes
-      memcpy((uint8_t*)(&temp[0]), (uint8_t*)(&tree_d(child_l,0)), sizeof(HashDigest)); 
-      memcpy((uint8_t*)(&temp[1]), (uint8_t*)(&tree_d(child_r,0)), sizeof(HashDigest)); 
+      memcpy(temp0, (uint8_t*)(&tree_d(child_l,0)), sizeof(HashDigest)); 
+      memcpy(temp1, (uint8_t*)(&tree_d(child_r,0)), sizeof(HashDigest)); 
       kokkos_murmur3::hash(&temp, 2*sizeof(HashDigest), dig[0].digest);
-      memcpy((uint8_t*)(&temp[0]), (uint8_t*)(&tree_d(child_l,1)), sizeof(HashDigest)); 
-      memcpy((uint8_t*)(&temp[1]), (uint8_t*)(&tree_d(child_r,0)), sizeof(HashDigest)); 
+      memcpy(temp0, (uint8_t*)(&tree_d(child_l,1)), sizeof(HashDigest)); 
+      memcpy(temp1, (uint8_t*)(&tree_d(child_r,0)), sizeof(HashDigest)); 
       kokkos_murmur3::hash(&temp, 2*sizeof(HashDigest), dig[1].digest);
       dual_hash = true;
     } else if(!child_l_dual && child_r_dual) { // Right has 2 hashes
-      memcpy((uint8_t*)(&temp[0]), (uint8_t*)(&tree_d(child_l,0)), sizeof(HashDigest)); 
-      memcpy((uint8_t*)(&temp[1]), (uint8_t*)(&tree_d(child_r,0)), sizeof(HashDigest)); 
+      memcpy(temp0, (uint8_t*)(&tree_d(child_l,0)), sizeof(HashDigest)); 
+      memcpy(temp1, (uint8_t*)(&tree_d(child_r,0)), sizeof(HashDigest)); 
       kokkos_murmur3::hash(&temp, 2*sizeof(HashDigest), dig[0].digest);
-      memcpy((uint8_t*)(&temp[0]), (uint8_t*)(&tree_d(child_l,0)), sizeof(HashDigest)); 
-      memcpy((uint8_t*)(&temp[1]), (uint8_t*)(&tree_d(child_r,1)), sizeof(HashDigest)); 
+      memcpy(temp0, (uint8_t*)(&tree_d(child_l,0)), sizeof(HashDigest)); 
+      memcpy(temp1, (uint8_t*)(&tree_d(child_r,1)), sizeof(HashDigest)); 
       kokkos_murmur3::hash(&temp, 2*sizeof(HashDigest), dig[1].digest);
       dual_hash = true;
     } else if(child_l_dual && child_r_dual) { // Both have 2 hashes
-      memcpy((uint8_t*)(&temp[0]), (uint8_t*)(&tree_d(child_l,0)), sizeof(HashDigest)); 
-      memcpy((uint8_t*)(&temp[1]), (uint8_t*)(&tree_d(child_r,0)), sizeof(HashDigest)); 
+      memcpy(temp0, (uint8_t*)(&tree_d(child_l,0)), sizeof(HashDigest)); 
+      memcpy(temp1, (uint8_t*)(&tree_d(child_r,0)), sizeof(HashDigest)); 
       kokkos_murmur3::hash(&temp, 2*sizeof(HashDigest), dig[0].digest);
-      memcpy((uint8_t*)(&temp[0]), (uint8_t*)(&tree_d(child_l,1)), sizeof(HashDigest)); 
-      memcpy((uint8_t*)(&temp[1]), (uint8_t*)(&tree_d(child_r,1)), sizeof(HashDigest)); 
+      memcpy(temp0, (uint8_t*)(&tree_d(child_l,1)), sizeof(HashDigest)); 
+      memcpy(temp1, (uint8_t*)(&tree_d(child_r,1)), sizeof(HashDigest)); 
       kokkos_murmur3::hash(&temp, 2*sizeof(HashDigest), dig[1].digest);
       dual_hash = true;
     }
@@ -183,8 +185,9 @@ public:
     return false;
   }
 
-  KOKKOS_INLINE_FUNCTION bool calc_leaf_fuzzy_hash(const void* data, uint64_t len, 
-                              float errorValue, const char dataType, uint32_t u) const {
+  KOKKOS_INLINE_FUNCTION bool 
+  calc_leaf_fuzzy_hash(const void* data, uint64_t len, 
+                       float errorValue, const char dataType, uint32_t u) const {
     
     HashDigest digests[2] = {0};
     bool dualValid = fuzzyhash(data, len, dataType, errorValue, digests);
@@ -198,8 +201,9 @@ public:
     return dualValid;
   }
  
-  KOKKOS_INLINE_FUNCTION bool calc_leaf_fuzzy_hash(const void* data, uint64_t len, 
-                              float errorValue, const char dataType, HashDigest* digests, uint32_t u) const {
+  KOKKOS_INLINE_FUNCTION bool 
+  calc_leaf_fuzzy_hash(const void* data, uint64_t len, 
+                       float errorValue, const char dataType, HashDigest* digests, uint32_t u) const {
     
     bool dualValid = fuzzyhash(data, len, dataType, errorValue, digests);
 

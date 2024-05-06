@@ -177,7 +177,6 @@ int main(int argc, char** argv) {
 
     // Create deduplicators
     CompareTreeDeduplicator comp_deduplicator(chunk_size, level, fuzzy_hash, err_tol, dtype[0]);
-    comp_deduplicator.num_threads = Kokkos::num_threads();
     if (comp.compare("absolute") ==  0) { 
       comp_deduplicator.comp_op = Absolute;
     } else if(comp.compare("relative") == 0) {
@@ -186,8 +185,8 @@ int main(int argc, char** argv) {
       comp_deduplicator.comp_op = Equivalence;
     }
     DirectComparer<uint8_t> u8_comparer( err_tol, chunk_size, buffer_len);  
-    DirectComparer<float>   f32_comparer(err_tol, chunk_size, buffer_len/sizeof(float)); 
-    DirectComparer<double>  f64_comparer(err_tol, chunk_size, buffer_len/sizeof(double)); 
+    DirectComparer<float>   f32_comparer(err_tol, chunk_size/sizeof(float), buffer_len/sizeof(float)); 
+    DirectComparer<double>  f64_comparer(err_tol, chunk_size/sizeof(double), buffer_len/sizeof(double)); 
 
     // Iterate through files
     for(uint32_t idx=0; idx<num_diffs; idx++) {
@@ -304,10 +303,10 @@ int main(int argc, char** argv) {
         timers[2] = deserialize_time;
 
         // Create offsets for loading data
-//        size_t blocksize = chunk_size/data_type_size;
-        size_t blocksize = buffer_len/(data_type_size);
-        size_t noffsets = (data_len/data_type_size)/blocksize;
-        if(noffsets*blocksize < data_len/data_type_size)
+        size_t blocksize = chunk_size;
+//        size_t blocksize = buffer_len;
+        size_t noffsets = data_len/blocksize;
+        if(noffsets*blocksize < data_len)
           noffsets += 1;
         Kokkos::View<size_t*> offsets("File offsets", noffsets);
         Kokkos::parallel_for("Create offsets", Kokkos::RangePolicy<size_t>(0,noffsets), 
@@ -455,21 +454,21 @@ int main(int argc, char** argv) {
           outname = output_fname;
         }
         if(!comparing_runs) {
-          unaligned_direct_write(outname, data0_h.data(), data_len);
-//          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
-////          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
-//          if (fd == -1) {
-//              FATAL("cannot open " << outname << ", error = " << strerror(errno));
-//          }
-//          size_t transferred = 0, remaining = data_len;
-//          while (remaining > 0) {
-//          	auto ret = write(fd, data0_h.data() + transferred, remaining);
-//          	if (ret < 0)
-//          	    FATAL("cannot write " << data_len << " bytes to " << outname << " , error = " << std::strerror(errno));
-//          	remaining -= ret;
-//          	transferred += ret;
-//          }
-//          close(fd);
+//          unaligned_direct_write(outname, data0_h.data(), data_len);
+          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
+//          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
+          if (fd == -1) {
+              FATAL("cannot open " << outname << ", error = " << strerror(errno));
+          }
+          size_t transferred = 0, remaining = data_len;
+          while (remaining > 0) {
+          	auto ret = write(fd, data0_h.data() + transferred, remaining);
+          	if (ret < 0)
+          	    FATAL("cannot write " << data_len << " bytes to " << outname << " , error = " << std::strerror(errno));
+          	remaining -= ret;
+          	transferred += ret;
+          }
+          close(fd);
         }
         
 //        std::ofstream log;
@@ -644,21 +643,21 @@ int main(int argc, char** argv) {
           outname = output_fname;
         }
         if(!comparing_runs) {
-          unaligned_direct_write(outname, serialized_buffer.data(), serialized_buffer.size());
-//          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
-////          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
-//          if (fd == -1) {
-//              FATAL("cannot open " << outname << ", error = " << strerror(errno));
-//          }
-//          size_t transferred = 0, remaining = serialized_buffer.size();
-//          while (remaining > 0) {
-//          	auto ret = write(fd, serialized_buffer.data() + transferred, remaining);
-//          	if (ret < 0)
-//          	    FATAL("cannot write " << serialized_buffer.size() << " bytes to " << outname << " , error = " << std::strerror(errno));
-//          	remaining -= ret;
-//          	transferred += ret;
-//          }
-//          close(fd);
+//          unaligned_direct_write(outname, serialized_buffer.data(), serialized_buffer.size());
+          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
+//          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
+          if (fd == -1) {
+              FATAL("cannot open " << outname << ", error = " << strerror(errno));
+          }
+          size_t transferred = 0, remaining = serialized_buffer.size();
+          while (remaining > 0) {
+          	auto ret = write(fd, serialized_buffer.data() + transferred, remaining);
+          	if (ret < 0)
+          	    FATAL("cannot write " << serialized_buffer.size() << " bytes to " << outname << " , error = " << std::strerror(errno));
+          	remaining -= ret;
+          	transferred += ret;
+          }
+          close(fd);
         }
 //        if(!comparing_runs) {
 //          std::ofstream log;
@@ -675,17 +674,17 @@ int main(int argc, char** argv) {
         // ========================================================================================
         // Collect stats for logs
         // ========================================================================================
-        size_t changed_blocks_phase1;
+        size_t changed_blocks_phase1, changed_blocks_phase2;
         n_comparisons = comp_deduplicator.get_num_comparisons();
         n_hash_comp = comp_deduplicator.get_num_hash_comparisons();
         elem_changed = comp_deduplicator.get_num_changes();
-        changed_blocks = comp_deduplicator.changed_chunks.count();
-        changed_blocks_phase1 = comp_deduplicator.num_change_hashes_phase_1;
+        changed_blocks_phase1 = comp_deduplicator.diff_hash_vec.size();
+        changed_blocks_phase2 = comp_deduplicator.changed_chunks.count();
         printf("Rank %d: Number of different elements %zu\n", world_rank, elem_changed);
         printf("Rank %d: Number of comparisons %lu\n", world_rank, n_comparisons);
         printf("Rank %d: Number of hash comparisons %lu\n", world_rank, n_hash_comp);
         printf("Rank %d: Number of different hashes (Phase 1) %zu\n", world_rank, changed_blocks_phase1);
-        printf("Rank %d: Number of different hashes (Phase 2) %zu\n\n", world_rank, changed_blocks);
+        printf("Rank %d: Number of different hashes (Phase 2) %zu\n\n", world_rank, changed_blocks_phase2);
       }
       Kokkos::fence();
       // Write log
