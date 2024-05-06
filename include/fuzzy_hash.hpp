@@ -133,30 +133,30 @@ bool processData(const T1* data, T2 bitsDataType, uint64_t len, T1 errorValue, H
     // printf("After Truncation: %lu and %lu\n", seedLower[0], seedLower[1]);
     // printf("After Addition: %lu and %lu\n", seedUpper[0], seedUpper[1]);
   }
-//  // ------------------------------------------------------------------------
-//  // Handling data at the tail for fuzzy hash
-//  // ------------------------------------------------------------------------
-//  uint32_t remaining = len - (offset - blockSize);
+  // ------------------------------------------------------------------------
+  // Handling data at the tail for fuzzy hash
+  // ------------------------------------------------------------------------
+  uint32_t remaining = len - (offset - blockSize);
 //  assert(remaining  < elementsPerBlock * sizeof(T1));
-//  if ( offset > len && remaining > 0)  {
-//    // printf("Len: %lu; Offset: %u; blockSize: %zu; Remaining: %u\n", len, offset, blockSize, remaining);
-//    uint64_t* tail_digestLower = (uint64_t*)&digests[0];
-//    uint64_t* tail_digestUpper = (uint64_t*)&digests[1];
-//    memset(dataLower, 0, blockSize);
-//    memset(dataUpper, 0, blockSize);
-//    offset -= blockSize;
-//    memcpy(dataLower, (const uint8_t*)(data)+offset, remaining);
-//    memcpy(dataUpper, (const uint8_t*)(data)+offset, remaining);
-//    for(uint32_t j=0; j<remaining/sizeof(T1); j++) {
-//      processElement(dataLower[j], dataUpper[j], bitsDataType, errorValue);
-//    }
-//    kokkos_murmur3::MurmurHash3_x64_128(dataLower, blockSize, seedLower, tail_digestLower);
-//    kokkos_murmur3::MurmurHash3_x64_128(dataUpper, blockSize, seedUpper, tail_digestUpper);
-//    seedLower[0] = tail_digestLower[0];
-//    seedLower[1] = tail_digestLower[1];
-//    seedUpper[0] = tail_digestUpper[0];
-//    seedUpper[1] = tail_digestUpper[1];
-//  }  
+  if ( offset > len && remaining > 0)  {
+    // printf("Len: %lu; Offset: %u; blockSize: %zu; Remaining: %u\n", len, offset, blockSize, remaining);
+    uint64_t* tail_digestLower = (uint64_t*)&digests[0];
+    uint64_t* tail_digestUpper = (uint64_t*)&digests[1];
+    memset(dataLower, 0, blockSize);
+    memset(dataUpper, 0, blockSize);
+    offset -= blockSize;
+    memcpy(dataLower, (const uint8_t*)(data)+offset, remaining);
+    memcpy(dataUpper, (const uint8_t*)(data)+offset, remaining);
+    for(uint32_t j=0; j<remaining/sizeof(T1); j++) {
+      processElement(dataLower[j], dataUpper[j], bitsDataType, errorValue);
+    }
+    kokkos_murmur3::MurmurHash3_x64_128(dataLower, blockSize, seedLower, tail_digestLower);
+    kokkos_murmur3::MurmurHash3_x64_128(dataUpper, blockSize, seedUpper, tail_digestUpper);
+    seedLower[0] = tail_digestLower[0];
+    seedLower[1] = tail_digestLower[1];
+    seedUpper[0] = tail_digestUpper[0];
+    seedUpper[1] = tail_digestUpper[1];
+  }  
   // ------------------------------------------------------------------------
   // Handled data at the tail for fuzzy hash
   // ------------------------------------------------------------------------

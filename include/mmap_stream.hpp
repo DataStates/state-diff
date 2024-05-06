@@ -159,10 +159,10 @@ class MMapStream {
 #endif
       } else {
         // Calculate number of elements to read
-        transfer_slice_len = elem_per_chunk*chunks_per_slice;
+        transfer_slice_len = elem_per_slice;
         size_t elements_read = elem_per_chunk*transferred_chunks;
-        if(elements_read+transfer_slice_len > file_buffer.size/sizeof(DataType)) { 
-          transfer_slice_len = file_buffer.size/sizeof(DataType) - elements_read;
+        if(elements_read+transfer_slice_len > num_offsets*elem_per_chunk) { 
+          transfer_slice_len = num_offsets*elem_per_chunk - elements_read;
         }
 //        #pragma omp parallel
 //        #pragma omp single
@@ -171,7 +171,11 @@ class MMapStream {
         for(size_t i=0; i<chunks_per_slice; i++) {
           if(transferred_chunks+i<num_offsets) {
             DataType* chunk;
+if(host_offsets[transferred_chunks+i]*elem_per_chunk*sizeof(DataType) >= file_buffer.size)
+  printf("host_offsets[%zu+%zu](%zu)*%zu*%zu: %zu >= %zu\n", transferred_chunks, i, host_offsets[transferred_chunks+i], elem_per_chunk, sizeof(DataType), host_offsets[transferred_chunks+i]*elem_per_chunk*sizeof(DataType), file_buffer.size);
             size_t len = get_chunk(file_buffer, host_offsets[transferred_chunks+i]*elem_per_chunk, &chunk);
+            if(len != elem_per_chunk)
+              transfer_slice_len -= elem_per_chunk-len;
             assert(len <= elem_per_chunk);
             assert(i*elem_per_chunk+len*sizeof(DataType) <= bytes_per_slice);
             assert((size_t)host_buffer+i*elem_per_chunk+len <= (size_t)host_buffer+elem_per_slice);

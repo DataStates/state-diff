@@ -178,8 +178,8 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(size_t* offsets, cons
   IOUringStream<DataType> file_stream0(d_stream_buf_len, file0, true, true);
   IOUringStream<DataType> file_stream1(d_stream_buf_len, file1, true, true);
 #else
-  MMapStream<DataType> file_stream0(d_stream_buf_len, file0, true, true); 
-  MMapStream<DataType> file_stream1(d_stream_buf_len, file1, true, true); 
+  MMapStream<DataType> file_stream0(d_stream_buf_len, file0, true, false); 
+  MMapStream<DataType> file_stream1(d_stream_buf_len, file1, true, false); 
 #endif
   file_stream0.start_stream(offsets, noffsets, block_size);
   file_stream1.start_stream(offsets, noffsets, block_size);
@@ -225,6 +225,7 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(size_t* offsets, cons
     Kokkos::fence();
     data_processed += slice_len;
     num_diff += ndiff;
+assert(num_diff = changes.count());
     Timer::time_point end = Timer::now();
     compare_timer += std::chrono::duration_cast<Duration>(end - beg).count();
     Kokkos::Profiling::popRegion();
@@ -317,7 +318,6 @@ uint64_t DirectComparer<DataType,ExecDevice>::get_num_changed_blocks() const {
     }
   }, Kokkos::Sum<uint64_t>(num_diff));
   Kokkos::fence();
-//printf("Direct: num diff %lu\n", num_diff);
   return num_diff;
 }
 
