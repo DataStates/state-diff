@@ -2,6 +2,7 @@
 #define __KOKKOS_MERKLE_TREE_HPP
 #include <Kokkos_Core.hpp>
 #include "fuzzy_hash.hpp"
+#include "truncating_hash.hpp"
 #include "utils.hpp"
 #include "modified_kokkos_bitset.hpp"
 
@@ -84,52 +85,52 @@ public:
     return tree_d(i, j);
   }
 
-  /**
-   * Helper function for calculating hash digest for node u
-   */
-  KOKKOS_INLINE_FUNCTION bool calc_hash(uint32_t u, HashDigest* dig) const {
-    uint32_t child_l=2*u+1, child_r=2*u+2;
-    bool dual_hash = false;
-    HashDigest temp[2];
-    bool child_l_dual = dual_hash_d.test(child_l);
-    bool child_r_dual = dual_hash_d.test(child_r);
-    uint8_t* temp0 = (uint8_t*)(&temp[0]);
-    uint8_t* temp1 = (uint8_t*)(&temp[0]);
-    if(!child_l_dual && !child_r_dual) { // Both have 1 hash each
-      memcpy(temp0, (uint8_t*)(&tree_d(child_l,0)), sizeof(HashDigest)); 
-      memcpy(temp1, (uint8_t*)(&tree_d(child_r,0)), sizeof(HashDigest)); 
-      kokkos_murmur3::hash(&temp, 2*sizeof(HashDigest), dig[0].digest);
-    } else if(child_l_dual && !child_r_dual) { // Left has 2 hashes
-      memcpy(temp0, (uint8_t*)(&tree_d(child_l,0)), sizeof(HashDigest)); 
-      memcpy(temp1, (uint8_t*)(&tree_d(child_r,0)), sizeof(HashDigest)); 
-      kokkos_murmur3::hash(&temp, 2*sizeof(HashDigest), dig[0].digest);
-      memcpy(temp0, (uint8_t*)(&tree_d(child_l,1)), sizeof(HashDigest)); 
-      memcpy(temp1, (uint8_t*)(&tree_d(child_r,0)), sizeof(HashDigest)); 
-      kokkos_murmur3::hash(&temp, 2*sizeof(HashDigest), dig[1].digest);
-      dual_hash = true;
-    } else if(!child_l_dual && child_r_dual) { // Right has 2 hashes
-      memcpy(temp0, (uint8_t*)(&tree_d(child_l,0)), sizeof(HashDigest)); 
-      memcpy(temp1, (uint8_t*)(&tree_d(child_r,0)), sizeof(HashDigest)); 
-      kokkos_murmur3::hash(&temp, 2*sizeof(HashDigest), dig[0].digest);
-      memcpy(temp0, (uint8_t*)(&tree_d(child_l,0)), sizeof(HashDigest)); 
-      memcpy(temp1, (uint8_t*)(&tree_d(child_r,1)), sizeof(HashDigest)); 
-      kokkos_murmur3::hash(&temp, 2*sizeof(HashDigest), dig[1].digest);
-      dual_hash = true;
-    } else if(child_l_dual && child_r_dual) { // Both have 2 hashes
-      memcpy(temp0, (uint8_t*)(&tree_d(child_l,0)), sizeof(HashDigest)); 
-      memcpy(temp1, (uint8_t*)(&tree_d(child_r,0)), sizeof(HashDigest)); 
-      kokkos_murmur3::hash(&temp, 2*sizeof(HashDigest), dig[0].digest);
-      memcpy(temp0, (uint8_t*)(&tree_d(child_l,1)), sizeof(HashDigest)); 
-      memcpy(temp1, (uint8_t*)(&tree_d(child_r,1)), sizeof(HashDigest)); 
-      kokkos_murmur3::hash(&temp, 2*sizeof(HashDigest), dig[1].digest);
-      dual_hash = true;
-    }
-    if (dual_hash)   {
-      // Set the bit in the hashnum_bitset if both hashes are valid
-      dual_hash_d.set(u);
-    }
-    return dual_hash;
-  }
+  ///**
+  // * Helper function for calculating hash digest for node u
+  // */
+  //KOKKOS_INLINE_FUNCTION bool calc_hash(uint32_t u, HashDigest* dig) const {
+  //  uint32_t child_l=2*u+1, child_r=2*u+2;
+  //  bool dual_hash = false;
+  //  HashDigest temp[2];
+  //  bool child_l_dual = dual_hash_d.test(child_l);
+  //  bool child_r_dual = dual_hash_d.test(child_r);
+  //  uint8_t* temp0 = (uint8_t*)(&temp[0]);
+  //  uint8_t* temp1 = (uint8_t*)(&temp[1]);
+  //  if(!child_l_dual && !child_r_dual) { // Both have 1 hash each
+  //    memcpy(temp0, (uint8_t*)(&tree_d(child_l,0)), sizeof(HashDigest)); 
+  //    memcpy(temp1, (uint8_t*)(&tree_d(child_r,0)), sizeof(HashDigest)); 
+  //    kokkos_murmur3::hash(&temp, 2*sizeof(HashDigest), dig[0].digest);
+  //  } else if(child_l_dual && !child_r_dual) { // Left has 2 hashes
+  //    memcpy(temp0, (uint8_t*)(&tree_d(child_l,0)), sizeof(HashDigest)); 
+  //    memcpy(temp1, (uint8_t*)(&tree_d(child_r,0)), sizeof(HashDigest)); 
+  //    kokkos_murmur3::hash(&temp, 2*sizeof(HashDigest), dig[0].digest);
+  //    memcpy(temp0, (uint8_t*)(&tree_d(child_l,1)), sizeof(HashDigest)); 
+  //    memcpy(temp1, (uint8_t*)(&tree_d(child_r,0)), sizeof(HashDigest)); 
+  //    kokkos_murmur3::hash(&temp, 2*sizeof(HashDigest), dig[1].digest);
+  //    dual_hash = true;
+  //  } else if(!child_l_dual && child_r_dual) { // Right has 2 hashes
+  //    memcpy(temp0, (uint8_t*)(&tree_d(child_l,0)), sizeof(HashDigest)); 
+  //    memcpy(temp1, (uint8_t*)(&tree_d(child_r,0)), sizeof(HashDigest)); 
+  //    kokkos_murmur3::hash(&temp, 2*sizeof(HashDigest), dig[0].digest);
+  //    memcpy(temp0, (uint8_t*)(&tree_d(child_l,0)), sizeof(HashDigest)); 
+  //    memcpy(temp1, (uint8_t*)(&tree_d(child_r,1)), sizeof(HashDigest)); 
+  //    kokkos_murmur3::hash(&temp, 2*sizeof(HashDigest), dig[1].digest);
+  //    dual_hash = true;
+  //  } else if(child_l_dual && child_r_dual) { // Both have 2 hashes
+  //    memcpy(temp0, (uint8_t*)(&tree_d(child_l,0)), sizeof(HashDigest)); 
+  //    memcpy(temp1, (uint8_t*)(&tree_d(child_r,0)), sizeof(HashDigest)); 
+  //    kokkos_murmur3::hash(&temp, 2*sizeof(HashDigest), dig[0].digest);
+  //    memcpy(temp0, (uint8_t*)(&tree_d(child_l,1)), sizeof(HashDigest)); 
+  //    memcpy(temp1, (uint8_t*)(&tree_d(child_r,1)), sizeof(HashDigest)); 
+  //    kokkos_murmur3::hash(&temp, 2*sizeof(HashDigest), dig[1].digest);
+  //    dual_hash = true;
+  //  }
+  //  if (dual_hash)   {
+  //    // Set the bit in the hashnum_bitset if both hashes are valid
+  //    dual_hash_d.set(u);
+  //  }
+  //  return dual_hash;
+  //}
  
   KOKKOS_INLINE_FUNCTION bool calc_hash(uint32_t u) const {
     uint32_t child_l=2*u+1, child_r=2*u+2;
@@ -191,6 +192,7 @@ public:
     
     HashDigest digests[2] = {0};
     bool dualValid = fuzzyhash(data, len, dataType, errorValue, digests);
+    //bool dualValid = trunchash(data, len, dataType, errorValue, digests);
 
     // Set the bit in the hashnum_bitset if both hashes are valid
     tree_d(u,0) = digests[0];

@@ -225,7 +225,7 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(size_t* offsets, cons
     Kokkos::fence();
     data_processed += slice_len;
     num_diff += ndiff;
-assert(num_diff = changes.count());
+    assert(num_diff == changes.count());
     Timer::time_point end = Timer::now();
     compare_timer += std::chrono::duration_cast<Duration>(end - beg).count();
     Kokkos::Profiling::popRegion();
