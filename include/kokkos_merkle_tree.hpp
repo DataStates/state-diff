@@ -191,8 +191,8 @@ public:
                        float errorValue, const char dataType, uint32_t u) const {
     
     HashDigest digests[2] = {0};
-    bool dualValid = fuzzyhash(data, len, dataType, errorValue, digests);
-    //bool dualValid = trunchash(data, len, dataType, errorValue, digests);
+    //bool dualValid = fuzzyhash(data, len, dataType, errorValue, digests);
+    bool dualValid = trunchash(data, len, dataType, errorValue, digests);
 
     // Set the bit in the hashnum_bitset if both hashes are valid
     tree_d(u,0) = digests[0];
