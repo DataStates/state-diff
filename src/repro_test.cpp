@@ -454,21 +454,21 @@ int main(int argc, char** argv) {
           outname = output_fname;
         }
         if(!comparing_runs) {
-//          unaligned_direct_write(outname, data0_h.data(), data_len);
-          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
-//          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
-          if (fd == -1) {
-              FATAL("cannot open " << outname << ", error = " << strerror(errno));
-          }
-          size_t transferred = 0, remaining = data_len;
-          while (remaining > 0) {
-          	auto ret = write(fd, data0_h.data() + transferred, remaining);
-          	if (ret < 0)
-          	    FATAL("cannot write " << data_len << " bytes to " << outname << " , error = " << std::strerror(errno));
-          	remaining -= ret;
-          	transferred += ret;
-          }
-          close(fd);
+          unaligned_direct_write(outname, data0_h.data(), data_len);
+//          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
+////          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
+//          if (fd == -1) {
+//              FATAL("cannot open " << outname << ", error = " << strerror(errno));
+//          }
+//          size_t transferred = 0, remaining = data_len;
+//          while (remaining > 0) {
+//          	auto ret = write(fd, data0_h.data() + transferred, remaining);
+//          	if (ret < 0)
+//          	    FATAL("cannot write " << data_len << " bytes to " << outname << " , error = " << std::strerror(errno));
+//          	remaining -= ret;
+//          	transferred += ret;
+//          }
+//          close(fd);
         }
         
 //        std::ofstream log;
@@ -643,21 +643,21 @@ int main(int argc, char** argv) {
           outname = output_fname;
         }
         if(!comparing_runs) {
-//          unaligned_direct_write(outname, serialized_buffer.data(), serialized_buffer.size());
-          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
-//          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
-          if (fd == -1) {
-              FATAL("cannot open " << outname << ", error = " << strerror(errno));
-          }
-          size_t transferred = 0, remaining = serialized_buffer.size();
-          while (remaining > 0) {
-          	auto ret = write(fd, serialized_buffer.data() + transferred, remaining);
-          	if (ret < 0)
-          	    FATAL("cannot write " << serialized_buffer.size() << " bytes to " << outname << " , error = " << std::strerror(errno));
-          	remaining -= ret;
-          	transferred += ret;
-          }
-          close(fd);
+          unaligned_direct_write(outname, serialized_buffer.data(), serialized_buffer.size());
+//          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
+////          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
+//          if (fd == -1) {
+//              FATAL("cannot open " << outname << ", error = " << strerror(errno));
+//          }
+//          size_t transferred = 0, remaining = serialized_buffer.size();
+//          while (remaining > 0) {
+//          	auto ret = write(fd, serialized_buffer.data() + transferred, remaining);
+//          	if (ret < 0)
+//          	    FATAL("cannot write " << serialized_buffer.size() << " bytes to " << outname << " , error = " << std::strerror(errno));
+//          	remaining -= ret;
+//          	transferred += ret;
+//          }
+//          close(fd);
         }
 //        if(!comparing_runs) {
 //          std::ofstream log;

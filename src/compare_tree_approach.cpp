@@ -122,7 +122,7 @@ CompareTreeDeduplicator::create_tree(const uint8_t* data_ptr, const size_t data_
   //DEBUG_PRINT("Leaf range [%u,%u]\n", left_leaf, right_leaf);
   //DEBUG_PRINT("Start level [%u,%u]\n", last_lvl_beg, last_lvl_end);
 
-  // Temporary values to avoid capturing the this in the lambda
+  // Temporary values to avoid capturing this object in the lambda
   auto nchunks        = num_chunks;
   auto nnodes         = num_nodes;
   auto chunksize      = chunk_size;
@@ -265,11 +265,12 @@ CompareTreeDeduplicator::compare_trees_phase1() {
       if(!identical) {
         if( (n_chunks-1 <= node) && (node < n_nodes) ) {
           if(node < left_leaf) { // Leaf is not on the last level
-assert((n_nodes-left_leaf) + (node - ((n_nodes-1)/2)) < n_chunks);
-            diff_hashes.push((n_nodes-left_leaf) + (node - ((n_nodes-1)/2)));
+            size_t entry = (n_nodes-left_leaf) + (node - ((n_nodes-1)/2));
+            assert(entry < n_chunks);
+            diff_hashes.push(entry);
 //printf("Tree: Block %zu (%zu) changed\n", node, (n_nodes-left_leaf) + (node - ((n_nodes-1)/2)));
           } else { // Leaf is on the last level
-assert(node-left_leaf < n_chunks);
+            assert(node-left_leaf < n_chunks);
             diff_hashes.push(node-left_leaf);
 //printf("Tree: Block %zu (%zu) changed\n", node, node-left_leaf);
           }
@@ -580,6 +581,8 @@ uint64_t CompareTreeDeduplicator::deserialize(std::vector<uint8_t>& run0_buffer,
     offset0 += sizeof(hashes_per_node0);
     memcpy(&hashes_per_node1, run1_buffer.data() + offset1, sizeof(hashes_per_node1));
     offset1 += sizeof(hashes_per_node1);
+    if(hashes_per_node0 || hashes_per_node1)
+      fuzzyhash = true;
     
     Kokkos::Profiling::popRegion();
     Kokkos::Profiling::pushRegion("Deserialize: create/resize trees");
