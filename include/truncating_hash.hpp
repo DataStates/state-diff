@@ -65,7 +65,7 @@ bool truncProcessData(const T1* data, T2 bitsDataType, uint64_t len, T1 errorVal
     // Process each element
     for(uint32_t j=0; j<elementsPerBlock; j++) {
       dataLower[j] = round(dataLower[j]*(1.0/errorValue))*(errorValue);
-//      dataUpper[j] = (dataUpper[j]*(1.0/errorValue))*(errorValue);
+      dataUpper[j] = (dataUpper[j]*(1.0/errorValue))*(errorValue);
 //      dataUpper[j] = trunc(dataUpper[j]*(1.0/errorValue))*(errorValue);
 //      dataLower[j] = floor(dataLower[j]*(1.0/errorValue))*(errorValue);
 //      dataUpper[j] = ceil(dataUpper[j]*(1.0/errorValue))*(errorValue);
