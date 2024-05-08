@@ -131,7 +131,7 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(const DataType* data_
 #endif
   file_stream0.start_stream(offsets, noffsets, block_size);
 
-  changed_entries = Kokkos::Bitset<Kokkos::DefaultExecutionSpace>(block_size*noffsets);
+  changed_entries = Kokkos::Bitset<Kokkos::DefaultExecutionSpace>(noffsets);
   num_comparisons = 0;
   CompareFunc<DataType> compFunc;
   uint64_t num_diff = 0;
@@ -192,7 +192,7 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(size_t* offsets, cons
   size_t data_processed=0;
   // Stats
   num_comparisons = 0;
-  changed_entries = Kokkos::Bitset<Kokkos::DefaultExecutionSpace>(block_size*noffsets);
+  changed_entries = Kokkos::Bitset<Kokkos::DefaultExecutionSpace>(noffsets);
   changed_entries.reset();
   auto& changes = changed_entries;
   // Calculate number of iterations
@@ -219,13 +219,12 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(size_t* offsets, cons
       size_t data_idx = data_processed + i;
       if(!compFunc(sliceA[i], sliceB[i], err_tol)) {
         update += 1;
-        changes.set(data_idx);
+        changes.set(data_idx/block_size);
       }
     }, Kokkos::Sum<uint64_t>(ndiff));
     Kokkos::fence();
     data_processed += slice_len;
     num_diff += ndiff;
-    assert(num_diff == changes.count());
     Timer::time_point end = Timer::now();
     compare_timer += std::chrono::duration_cast<Duration>(end - beg).count();
     Kokkos::Profiling::popRegion();
@@ -246,7 +245,10 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(const DataType* data_
   CompareFunc<DataType> compFunc;
   uint64_t num_diff = 0;
   double err_tol = tol;
-  changed_entries = Kokkos::Bitset<Kokkos::DefaultExecutionSpace>(data_length);
+  uint32_t num_chunks = data_length/block_size;
+  if(num_chunks*block_size < data_length)
+    num_chunks += 1;
+  changed_entries = Kokkos::Bitset<Kokkos::DefaultExecutionSpace>(num_chunks);
   changed_entries.reset();
   auto& changes = changed_entries;
 
@@ -256,7 +258,7 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(const DataType* data_
   KOKKOS_LAMBDA(const size_t i, uint64_t& update) {
     if(!compFunc(data_a[i], data_b[i], err_tol)) {
       update += 1;
-      changes.set(i);
+      changes.set(i/block_size);
     }
   }, Kokkos::Sum<uint64_t>(num_diff));
   Kokkos::fence();
@@ -300,25 +302,26 @@ uint64_t DirectComparer<DataType,ExecDevice>::get_num_comparisons() const {
 
 template<typename DataType, typename ExecDevice>
 uint64_t DirectComparer<DataType,ExecDevice>::get_num_changed_blocks() const {
-  uint64_t num_diff = 0;
-  size_t nblocks = changed_entries.size()/block_size;
-  size_t elem_per_block = block_size;
-  auto& changes = changed_entries;
-  Kokkos::parallel_reduce("Count differences", Kokkos::RangePolicy<size_t>(0, nblocks),
-  KOKKOS_LAMBDA(const size_t i, uint64_t& update) {
-    bool changed = false;
-    for(size_t j=0; j<elem_per_block; j++) {
-      size_t idx = i*elem_per_block + j;
-      if(changes.test(idx))
-        changed = true;
-    }
-    if(changed) {
-//printf("Direct: Block %zu changed\n", i);
-      update += 1;
-    }
-  }, Kokkos::Sum<uint64_t>(num_diff));
-  Kokkos::fence();
-  return num_diff;
+  return changed_entries.count();
+  //uint64_t num_diff = 0;
+  //size_t nblocks = changed_entries.size()/block_size;
+  //size_t elem_per_block = block_size;
+  //auto& changes = changed_entries;
+  //Kokkos::parallel_reduce("Count differences", Kokkos::RangePolicy<size_t>(0, nblocks),
+  //KOKKOS_LAMBDA(const size_t i, uint64_t& update) {
+  //  bool changed = false;
+  //  for(size_t j=0; j<elem_per_block; j++) {
+  //    size_t idx = i*elem_per_block + j;
+  //    if(changes.test(idx))
+  //      changed = true;
+  //  }
+  //  if(changed) {
+////printf("Direct: Block %zu changed\n", i);
+  //    update += 1;
+  //  }
+  //}, Kokkos::Sum<uint64_t>(num_diff));
+  //Kokkos::fence();
+  //return num_diff;
 }
 
 template<typename DataType, typename ExecDevice>
