@@ -191,9 +191,17 @@ void processElement(T1& fpvalueLower, T1& fpvalueUpper, T2 bitsDataType, T1 erro
     *newFPbits = *bits;
   }
   else {
-    //int numBitsToKeep = exponent - errorExponent;
-    int exponentDifference = exponent - errorExponent;
-    int numBitsToKeep = (exponentDifference < 0) ? 0 : exponentDifference;
+    int numBitsToKeep;
+    int exponentDifference = exponent - errorExponent + 1;
+    if(exponentDifference < 0) {
+      // in this case, the error is higher than the float's error
+      numBitsToKeep = 0; 
+    } else if(exponentDifference > Info::MANTISSABITS) {
+      // in this case, the error is too small to clear even a single mantissa bit
+      numBitsToKeep = Info::MANTISSABITS; 
+    } else { 
+      numBitsToKeep = exponentDifference; 
+    }
     bool unchangedMantissa = clearLSBs(fpvalueLower, bits, mantissaBits, numBitsToKeep);
     T2 bitmask;
     if (unchangedMantissa) {
