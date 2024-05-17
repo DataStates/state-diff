@@ -98,7 +98,7 @@ class MMapStream {
       host_buffer = transfer_buffer;
 #endif
       DEBUG_PRINT("Constructor: Filename: %s\n", filename.c_str());
-      DEBUG_PRINT("File size: %zu\n", file_buffer.size);
+      DEBUG_PRINT("Constructor: File size: %zu\n", file_buffer.size);
       DEBUG_PRINT("Constructor: Full transfer? %d\n", full_transfer);
       DEBUG_PRINT("Constructor: Async transfer? %d\n", async);
       DEBUG_PRINT("Constructor: Elem per slice: %zu\n", elem_per_slice);
@@ -153,6 +153,19 @@ class MMapStream {
         // Copy chunk to host buffer
         if(transfer_slice_len > 0)
           memcpy(host_buffer, slice, transfer_slice_len*sizeof(DataType));
+        // Transfer buffer to GPU if needed
+        if(async) {
+          gpuErrchk( cudaMemcpyAsync(transfer_buffer, 
+                                     host_buffer, 
+                                     transfer_slice_len*sizeof(DataType), 
+                                     cudaMemcpyHostToDevice, 
+                                     transfer_stream) );
+        } else {
+          gpuErrchk( cudaMemcpy(transfer_buffer, 
+                                host_buffer, 
+                                transfer_slice_len*sizeof(DataType), 
+                                cudaMemcpyHostToDevice) );
+        }
 #else
         // Get pointer to chunk
         transfer_slice_len = get_chunk(file_buffer, offset, &transfer_buffer);
@@ -164,15 +177,20 @@ class MMapStream {
         if(elements_read+transfer_slice_len > num_offsets*elem_per_chunk) { 
           transfer_slice_len = num_offsets*elem_per_chunk - elements_read;
         }
+//        bool* chunk_read = (bool*) malloc(sizeof(bool)*chunks_per_slice);
+//        for(size_t i=0; i<chunks_per_slice; i++) {
+//          chunk_read[i] = false;
+//        }
 //        #pragma omp parallel
 //        #pragma omp single
+//{
 //        #pragma omp taskloop
-        #pragma omp parallel for
+        #pragma omp parallel for 
         for(size_t i=0; i<chunks_per_slice; i++) {
+//#pragma omp task depend(out: chunk_read[i])
+//{
           if(transferred_chunks+i<num_offsets) {
             DataType* chunk;
-if(host_offsets[transferred_chunks+i]*elem_per_chunk*sizeof(DataType) >= file_buffer.size)
-  printf("host_offsets[%zu+%zu](%zu)*%zu*%zu: %zu >= %zu\n", transferred_chunks, i, host_offsets[transferred_chunks+i], elem_per_chunk, sizeof(DataType), host_offsets[transferred_chunks+i]*elem_per_chunk*sizeof(DataType), file_buffer.size);
             size_t len = get_chunk(file_buffer, host_offsets[transferred_chunks+i]*elem_per_chunk, &chunk);
             if(len != elem_per_chunk)
               transfer_slice_len -= elem_per_chunk-len;
@@ -182,26 +200,31 @@ if(host_offsets[transferred_chunks+i]*elem_per_chunk*sizeof(DataType) >= file_bu
             if(len > 0)
               memcpy(host_buffer+i*elem_per_chunk, chunk, len*sizeof(DataType));
           }
+//          chunk_read[i] = true;
+//}
         }
-      }
 #ifdef __NVCC__
-      // Transfer buffer to GPU if needed
-//#pragma omp task depend(in: host_buffer[0:transfer_slice_len])
+        // Transfer buffer to GPU if needed
+//#pragma omp task depend(in: chunk_read[0:chunks_per_slice])
 //{
-      if(async) {
-        gpuErrchk( cudaMemcpyAsync(transfer_buffer, 
-                                   host_buffer, 
-                                   transfer_slice_len*sizeof(DataType), 
-                                   cudaMemcpyHostToDevice, 
-                                   transfer_stream) );
-      } else {
-        gpuErrchk( cudaMemcpy(transfer_buffer, 
-                              host_buffer, 
-                              transfer_slice_len*sizeof(DataType), 
-                              cudaMemcpyHostToDevice) );
-      }
+//        #pragma omp taskwait
+        if(async) {
+          gpuErrchk( cudaMemcpyAsync(transfer_buffer, 
+                                     host_buffer, 
+                                     transfer_slice_len*sizeof(DataType), 
+                                     cudaMemcpyHostToDevice, 
+                                     transfer_stream) );
+        } else {
+          gpuErrchk( cudaMemcpy(transfer_buffer, 
+                                host_buffer, 
+                                transfer_slice_len*sizeof(DataType), 
+                                cudaMemcpyHostToDevice) );
+        }
+//        free(chunk_read);
 //}
 #endif
+//}
+      }
       return transfer_slice_len;
     }
 
