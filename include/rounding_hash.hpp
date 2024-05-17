@@ -1,5 +1,5 @@
-#ifndef TRUNCATING_HASH_HPP
-#define TRUCNATING_HASH_HPP
+#ifndef ROUNDING_HASH_HPP
+#define ROUNDING_HASH_HPP
 #include "kokkos_murmur3.hpp"
 #include "utils.hpp"
 
@@ -12,27 +12,28 @@
 // Hashing approach tolerant to variations of floating point numbers
 template <typename T1, typename T2>
 KOKKOS_INLINE
-bool truncProcessData(const T1* data, T2 combinedBytes, uint64_t len,  T1 errorValue, HashDigest* digests);
+bool roundProcessData(const T1* data, T2 combinedBytes, uint64_t len,  T1 errorValue, HashDigest* digests);
 
 KOKKOS_INLINE
-bool trunchash(const void* data, uint64_t len, const char dataType,
+bool roundinghash(const void* data, uint64_t len, const char dataType,
                 double errorValue, HashDigest* digests)  {
   if (dataType == *("d")) {
     const double* doubleData = static_cast<const double*>(data);
     uint64_t bitsDataType = 0;
-    return truncProcessData(doubleData, bitsDataType, len, errorValue, digests);
+    return roundProcessData(doubleData, bitsDataType, len, errorValue, digests);
   } else if(dataType == *("f")) {
     const float* floatData = static_cast<const float*>(data);
     uint32_t bitsDataType = 0;
-    return truncProcessData(floatData, bitsDataType, len, static_cast<float>(errorValue), digests);
+    return roundProcessData(floatData, bitsDataType, len, static_cast<float>(errorValue), digests);
   } else {
     kokkos_murmur3::MurmurHash3_x64_128(data, len, 0, &(digests[0]));
+    return false;
   }
 }
 
 template <typename T1, typename T2>
 KOKKOS_INLINE
-bool truncProcessData(const T1* data, T2 bitsDataType, uint64_t len, T1 errorValue, HashDigest* digests) {
+bool roundProcessData(const T1* data, T2 bitsDataType, uint64_t len, T1 errorValue, HashDigest* digests) {
   // Given that every data point has two hashes, compute the modified
   // binary representations per data point and compute the hashes
   // for the entire chunk in a streaming fashion.
@@ -59,14 +60,14 @@ bool truncProcessData(const T1* data, T2 bitsDataType, uint64_t len, T1 errorVal
       }
       bytes_to_copy = len - offset;
     }
-    memcpy(dataLower, (const uint8_t*)(data)+offset, blockSize);
-    memcpy(dataUpper, (const uint8_t*)(data)+offset, blockSize);
+    memcpy(dataLower, (const uint8_t*)(data)+offset, bytes_to_copy);
+    memcpy(dataUpper, (const uint8_t*)(data)+offset, bytes_to_copy);
 
     // Process each element
     for(uint32_t j=0; j<elementsPerBlock; j++) {
       dataLower[j] = round(dataLower[j]*(1.0/errorValue))*(errorValue);
       dataUpper[j] = (dataUpper[j]*(1.0/errorValue))*(errorValue);
-//      dataUpper[j] = trunc(dataUpper[j]*(1.0/errorValue))*(errorValue);
+//      dataUpper[j] = round(dataUpper[j]*(1.0/errorValue))*(errorValue);
 //      dataLower[j] = floor(dataLower[j]*(1.0/errorValue))*(errorValue);
 //      dataUpper[j] = ceil(dataUpper[j]*(1.0/errorValue))*(errorValue);
     }
@@ -91,4 +92,4 @@ bool truncProcessData(const T1* data, T2 bitsDataType, uint64_t len, T1 errorVal
   return false;
 }
 
-#endif // TRUNcATING_HASH_HPP
+#endif // ROUNDING_HASH_HPP

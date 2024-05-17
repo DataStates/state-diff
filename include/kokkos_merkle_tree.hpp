@@ -2,7 +2,7 @@
 #define __KOKKOS_MERKLE_TREE_HPP
 #include <Kokkos_Core.hpp>
 #include "fuzzy_hash.hpp"
-#include "truncating_hash.hpp"
+#include "rounding_hash.hpp"
 #include "utils.hpp"
 #include "modified_kokkos_bitset.hpp"
 
@@ -191,8 +191,8 @@ public:
                        float errorValue, const char dataType, uint32_t u) const {
     
     HashDigest digests[2] = {0};
-    bool dualValid = fuzzyhash(data, len, dataType, errorValue, digests);
-    //bool dualValid = trunchash(data, len, dataType, errorValue, digests);
+    //bool dualValid = fuzzyhash(data, len, dataType, errorValue, digests);
+    bool dualValid = roundinghash(data, len, dataType, errorValue, digests);
 
     // Set the bit in the hashnum_bitset if both hashes are valid
     tree_d(u,0) = digests[0];
@@ -203,18 +203,18 @@ public:
     return dualValid;
   }
  
-  KOKKOS_INLINE_FUNCTION bool 
-  calc_leaf_fuzzy_hash(const void* data, uint64_t len, 
-                       float errorValue, const char dataType, HashDigest* digests, uint32_t u) const {
-    
-    bool dualValid = fuzzyhash(data, len, dataType, errorValue, digests);
-
-    // Set the bit in the hashnum_bitset if both hashes are valid
-    if (dualValid) {
-      dual_hash_d.set(u);
-    }
-    return dualValid;
-  }
+//  KOKKOS_INLINE_FUNCTION bool 
+//  calc_leaf_fuzzy_hash(const void* data, uint64_t len, 
+//                       float errorValue, const char dataType, HashDigest* digests, uint32_t u) const {
+//    
+//    bool dualValid = fuzzyhash(data, len, dataType, errorValue, digests);
+//
+//    // Set the bit in the hashnum_bitset if both hashes are valid
+//    if (dualValid) {
+//      dual_hash_d.set(u);
+//    }
+//    return dualValid;
+//  }
  
   /**
    * Print leaves of tree in hex
