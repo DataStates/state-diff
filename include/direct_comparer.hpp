@@ -178,8 +178,8 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(size_t* offsets, cons
   IOUringStream<DataType> file_stream0(d_stream_buf_len, file0, true, true);
   IOUringStream<DataType> file_stream1(d_stream_buf_len, file1, true, true);
 #else
-  MMapStream<DataType> file_stream0(d_stream_buf_len, file0, true, false); 
-  MMapStream<DataType> file_stream1(d_stream_buf_len, file1, true, false); 
+  MMapStream<DataType> file_stream0(d_stream_buf_len, file0, true, true); 
+  MMapStream<DataType> file_stream1(d_stream_buf_len, file1, true, true); 
 #endif
   file_stream0.start_stream(offsets, noffsets, block_size);
   file_stream1.start_stream(offsets, noffsets, block_size);
