@@ -113,11 +113,14 @@ int main(int argc, char** argv) {
     std::string dtype   = program.get<std::string>("--type");
     std::string comp    = program.get<std::string>("--comp");
     std::string logname = program.get<std::string>("--result-logname");
-//    logname = "Rank."logname;
     auto run0_all_files = program.get<std::vector<std::string>>("--run0");
     auto run1_all_files = program.get<std::vector<std::string>>("--run1");
     auto run0_all_full_files = program.get<std::vector<std::string>>("--run0-full");
     auto run1_all_full_files = program.get<std::vector<std::string>>("--run1-full");
+    std::sort(run0_all_files.begin(), run0_all_files.end());
+    std::sort(run1_all_files.begin(), run1_all_files.end());
+    std::sort(run0_all_full_files.begin(), run0_all_full_files.end());
+    std::sort(run1_all_full_files.begin(), run1_all_full_files.end());
 
     double err_tol = program.get<double>("--error");
     std::string output_fname = program.get<std::string>("--output-filename");
@@ -130,29 +133,50 @@ int main(int argc, char** argv) {
     int world_rank=0, world_size=1;
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-    //std::string rank_str = "mpirestart-" + std::to_string(world_rank);
-    std::string rank_str = "mpirestart-";
+    if(world_rank ==0) {
+      if(run0_all_files.size() > 0) {
+        for(std::string str: run0_all_files) {
+          printf("Run 0 File: %s\n", str.c_str());
+        }
+      }
+      if(run1_all_files.size() > 0) {
+        for(std::string str: run1_all_files) {
+          printf("Run 1 File: %s\n", str.c_str());
+        }
+      }
+      if(run0_all_full_files.size() > 0) {
+        for(std::string str: run0_all_full_files) {
+          printf("Run 0 Full File: %s\n", str.c_str());
+        }
+      }
+      if(run1_all_full_files.size() > 0) {
+        for(std::string str: run1_all_full_files) {
+          printf("Run 1 Full File: %s\n", str.c_str());
+        }
+      }
+    }
+    std::string rank_str = "-" + std::to_string(world_rank) + "-";
     std::vector<std::string> run0_files, run1_files, run0_full_files, run1_full_files;
     if(run0_all_files.size() > 0) {
       for(uint32_t i=0; i<run0_all_files.size(); i++) {
-        if(run0_all_files[i].find(rank_str) != std::string::npos) {
+        if(i % world_size == world_rank) {
           run0_files.push_back(run0_all_files[i]);
         }
       }
       for(uint32_t i=0; i<run0_all_full_files.size(); i++) {
-        if(run0_all_full_files[i].find(rank_str) != std::string::npos) {
+        if(i % world_size == world_rank) {
           run0_full_files.push_back(run0_all_full_files[i]);
         }
       }
     }
     if(run1_all_files.size() > 0) {
       for(uint32_t i=0; i<run1_all_files.size(); i++) {
-        if(run1_all_files[i].find(rank_str) != std::string::npos) {
+        if(i % world_size == world_rank) {
           run1_files.push_back(run1_all_files[i]);
         }
       }
       for(uint32_t i=0; i<run1_all_full_files.size(); i++) {
-        if(run1_all_full_files[i].find(rank_str) != std::string::npos) {
+        if(i % world_size == world_rank) {
           run1_full_files.push_back(run1_all_full_files[i]);
         }
       }
@@ -160,20 +184,18 @@ int main(int argc, char** argv) {
     uint32_t num_diffs = run0_files.size();
     bool comparing_runs = run1_files.size() == num_diffs;
     for(uint32_t i=0; i<run0_files.size(); i++) {
-      STDOUT_PRINT("File %d: %s\n", i, run0_files[i].c_str());
+      printf("Rank %d: Run 0 File %d: %s\n", world_rank, i, run0_files[i].c_str());
+    }
+    for(uint32_t i=0; i<run1_files.size(); i++) {
+      printf("Rank %d: Run 1 File %d: %s\n", world_rank, i, run1_files[i].c_str());
     }
 
     double timers[7] = {0.0};
     size_t elem_changed = 0;
     uint64_t changed_blocks = 0;
+    uint64_t filtered_blocks = 0;
     uint64_t n_comparisons = 0;
     uint64_t n_hash_comp = 0;
-    size_t data_type_size = 1;
-    if(dtype.compare("float") == 0) {
-      data_type_size = sizeof(float);
-    } else if(dtype.compare("double") == 0) {
-      data_type_size = sizeof(double);
-    }
 
     // Create deduplicators
     CompareTreeDeduplicator comp_deduplicator(chunk_size, level, fuzzy_hash, err_tol, dtype[0]);
@@ -188,6 +210,8 @@ int main(int argc, char** argv) {
     DirectComparer<float>   f32_comparer(err_tol, chunk_size/sizeof(float), buffer_len/sizeof(float)); 
     DirectComparer<double>  f64_comparer(err_tol, chunk_size/sizeof(double), buffer_len/sizeof(double)); 
 
+    MPI_Barrier(MPI_COMM_WORLD);
+
     // Iterate through files
     for(uint32_t idx=0; idx<num_diffs; idx++) {
       std::cout << "Rank " << world_rank << ": Checkpoint " << idx << std::endl;
@@ -200,46 +224,46 @@ int main(int argc, char** argv) {
         Kokkos::Profiling::pushRegion("Read");
 
         // Get length of file
-//        off_t filesize;
-//        get_file_size(run0_files[idx], &filesize);
-//        data_len = static_cast<size_t>(filesize);
-        std::ifstream f;
-        f.exceptions(std::ifstream::failbit | std::ifstream::badbit);
-        f.open(run0_files[idx], std::ifstream::in | std::ifstream::binary);
-        f.seekg(0, f.end);
-        data_len = f.tellg();
-        f.seekg(0, f.beg);
+        off_t filesize;
+        get_file_size(run0_files[idx], &filesize);
+        data_len = static_cast<size_t>(filesize);
+//        std::ifstream f;
+//        f.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+//        f.open(run0_files[idx], std::ifstream::in | std::ifstream::binary);
+//        f.seekg(0, f.end);
+//        data_len = f.tellg();
+//        f.seekg(0, f.beg);
 
         Kokkos::View<uint8_t*>::HostMirror data0_h, data1_h;
         if(!enable_file_streaming) { // Read files if not using file data streaming
-//          data0_h = Kokkos::View<uint8_t*>::HostMirror("Run 0 region mirror", data_len);
-//          unaligned_direct_read(run0_files[idx], data0_h.data(), data_len);
-//          if(comparing_runs) {
-//            data1_h = Kokkos::View<uint8_t*>::HostMirror("Run 1 region mirror", data_len);
-//            unaligned_direct_read(run1_files[idx], data1_h.data(), data_len);
-//          }
-          f.read((char*)(data0_h.data()), data_len);
-          f.close();
+          data0_h = Kokkos::View<uint8_t*>::HostMirror("Run 0 region mirror", data_len);
+          unaligned_direct_read(run0_files[idx], data0_h.data(), data_len);
           if(comparing_runs) {
             data1_h = Kokkos::View<uint8_t*>::HostMirror("Run 1 region mirror", data_len);
-            f.open(run1_files[idx], std::ifstream::in | std::ifstream::binary);
-            f.read((char*)(data1_h.data()), data_len);
-            f.close();
+            unaligned_direct_read(run1_files[idx], data1_h.data(), data_len);
           }
-        } else {
-//          if(!comparing_runs) {
-//            data0_h = Kokkos::View<uint8_t*>::HostMirror("Run 0 region mirror", data_len);
-//            unaligned_direct_read(run0_files[idx], data0_h.data(), data_len);
-//          }
-          if(comparing_runs) { // Read current file for later write
-//            data1_h = Kokkos::View<uint8_t*>::HostMirror("Run 0 region mirror", data_len);
+//          f.read((char*)(data0_h.data()), data_len);
+//          f.close();
+//          if(comparing_runs) {
+//            data1_h = Kokkos::View<uint8_t*>::HostMirror("Run 1 region mirror", data_len);
+//            f.open(run1_files[idx], std::ifstream::in | std::ifstream::binary);
 //            f.read((char*)(data1_h.data()), data_len);
-            f.close();
-          } else {
+//            f.close();
+//          }
+        } else {
+          if(!comparing_runs) {
             data0_h = Kokkos::View<uint8_t*>::HostMirror("Run 0 region mirror", data_len);
-            f.read((char*)(data0_h.data()), data_len);
-            f.close();
+            unaligned_direct_read(run0_files[idx], data0_h.data(), data_len);
           }
+//          if(comparing_runs) { // Read current file for later write
+////            data1_h = Kokkos::View<uint8_t*>::HostMirror("Run 0 region mirror", data_len);
+////            f.read((char*)(data1_h.data()), data_len);
+//            f.close();
+//          } else {
+////            data0_h = Kokkos::View<uint8_t*>::HostMirror("Run 0 region mirror", data_len);
+////            f.read((char*)(data0_h.data()), data_len);
+////            f.close();
+//          }
         }
 
         Kokkos::Profiling::popRegion();
@@ -303,8 +327,8 @@ int main(int argc, char** argv) {
         timers[2] = deserialize_time;
 
         // Create offsets for loading data
-        size_t blocksize = chunk_size;
-//        size_t blocksize = buffer_len;
+//        size_t blocksize = chunk_size;
+        size_t blocksize = buffer_len;
         size_t noffsets = data_len/blocksize;
         if(noffsets*blocksize < data_len)
           noffsets += 1;
@@ -426,7 +450,7 @@ int main(int argc, char** argv) {
         std::cout << "\tRank " << world_rank << ": Compare: " << comparison_time << std::endl;
         std::cout << "\t\tRank " << world_rank << ": IO Time (Per file): " << io_time << std::endl;
         std::cout << "\t\tRank " << world_rank << ": Compare Time: " << compare_time << std::endl;
-        timers[4] = compare_time;
+        timers[4] = comparison_time;
 
         // ========================================================================================
         // Serialize (does nothing since data is already serialized)
@@ -470,14 +494,6 @@ int main(int argc, char** argv) {
 //          }
 //          close(fd);
         }
-        
-//        std::ofstream log;
-//        if(!comparing_runs) {
-//          log.exceptions(std::ofstream::failbit | std::ofstream::badbit);
-//          log.open(outname, std::ofstream::out | std::ofstream::binary);
-//          log.write((char*)(data0_h.data()), data_len);
-//          log.close();
-//        }
         Kokkos::Profiling::popRegion();
         Timer::time_point end_write_tree = Timer::now();
         double write_tree_time = std::chrono::duration_cast<Duration>(end_write_tree - beg_write_tree).count();
@@ -508,17 +524,25 @@ int main(int argc, char** argv) {
         Timer::time_point beg_read = Timer::now();
         Kokkos::Profiling::pushRegion("Read");
 
-        std::ifstream f;
+        off_t filesize;
         if(comparing_runs) {
-          f.exceptions(std::ifstream::failbit | std::ifstream::badbit);
-          f.open(run1_files[idx], std::ifstream::in | std::ifstream::binary);
+          get_file_size(run1_files[idx], &filesize);
+          data_len = static_cast<size_t>(filesize);
         } else {
-          f.exceptions(std::ifstream::failbit | std::ifstream::badbit);
-          f.open(run0_files[idx], std::ifstream::in | std::ifstream::binary);
+          get_file_size(run0_files[idx], &filesize);
+          data_len = static_cast<size_t>(filesize);
         }
-        f.seekg(0, f.end);
-        data_len = f.tellg();
-        f.seekg(0, f.beg);
+//        std::ifstream f;
+//        if(comparing_runs) {
+//          f.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+//          f.open(run1_files[idx], std::ifstream::in | std::ifstream::binary);
+//        } else {
+//          f.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+//          f.open(run0_files[idx], std::ifstream::in | std::ifstream::binary);
+//        }
+//        f.seekg(0, f.end);
+//        data_len = f.tellg();
+//        f.seekg(0, f.beg);
 
         // Read diff file and load it into the device
         std::vector<uint8_t> run0_buffer, run1_buffer;
@@ -527,6 +551,28 @@ int main(int argc, char** argv) {
         if(comparing_runs) {
           run1_buffer = std::vector<uint8_t>(data_len, 0);
           run0_buffer = std::vector<uint8_t>(data_len, 0);
+          //unaligned_direct_read(run0_files[idx], run0_buffer.data(), data_len);
+          //unaligned_direct_read(run1_files[idx], run1_buffer.data(), data_len);
+          //int fd0 = open(run0_files[idx].c_str(), O_RDONLY, 0644);
+          //ssize_t nread = 0;
+          //while(nread < data_len) {
+          //  nread += read(fd0, run0_buffer.data()+nread, data_len);
+          //}
+          //uint8_t *buff0 = (uint8_t *)mmap(NULL, data_len, PROT_READ, MAP_PRIVATE, fd0, 0);
+          //memcpy(run0_buffer.data(), buff0, data_len);
+          //close(fd0);
+          //int fd1 = open(run1_files[idx].c_str(), O_RDONLY, 0644);
+          //nread = 0;
+          //while(nread < data_len) {
+          //  nread += read(fd1, run1_buffer.data()+nread, data_len);
+          //}
+          //uint8_t *buff1 = (uint8_t *)mmap(NULL, data_len, PROT_READ, MAP_PRIVATE, fd1, 0);
+          //memcpy(run1_buffer.data(), buff1, data_len);
+          //close(fd1);
+
+          std::ifstream f;
+          f.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+          f.open(run1_files[idx], std::ifstream::in | std::ifstream::binary);
           f.read((char*)(run1_buffer.data()), data_len);
           f.close();
           f.open(run0_files[idx], std::ifstream::in | std::ifstream::binary);
@@ -534,6 +580,13 @@ int main(int argc, char** argv) {
           f.close();
         } else {
           run_view_h = Kokkos::View<uint8_t*>::HostMirror("Host data", data_len);
+//          unaligned_direct_read(run0_files[idx], run_view_h.data(), data_len);
+//          int fd0 = open(run0_files[idx].c_str(), O_RDONLY | O_DIRECT, 0644);
+//          read(fd0, run_view_h.data(), data_len);
+//          close(fd0);
+          std::ifstream f;
+          f.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+          f.open(run0_files[idx], std::ifstream::in | std::ifstream::binary);
           f.read((char*)(run_view_h.data()), data_len);
           f.close();
         }
@@ -659,13 +712,6 @@ int main(int argc, char** argv) {
 //          }
 //          close(fd);
         }
-//        if(!comparing_runs) {
-//          std::ofstream log;
-//          log.exceptions(std::ofstream::failbit | std::ofstream::badbit);
-//          log.open(outname, std::ofstream::out | std::ofstream::binary);
-//          log.write((char*)(serialized_buffer.data()), serialized_buffer.size());
-//          log.close();
-//        }
         Kokkos::Profiling::popRegion();
         Timer::time_point end_write_tree = Timer::now();
         double write_tree_time = std::chrono::duration_cast<Duration>(end_write_tree - beg_write_tree).count();
@@ -674,17 +720,16 @@ int main(int argc, char** argv) {
         // ========================================================================================
         // Collect stats for logs
         // ========================================================================================
-        size_t changed_blocks_phase1, changed_blocks_phase2;
         n_comparisons = comp_deduplicator.get_num_comparisons();
         n_hash_comp = comp_deduplicator.get_num_hash_comparisons();
         elem_changed = comp_deduplicator.get_num_changes();
-        changed_blocks_phase1 = comp_deduplicator.diff_hash_vec.size();
-        changed_blocks_phase2 = comp_deduplicator.changed_chunks.count();
+        filtered_blocks = comp_deduplicator.diff_hash_vec.size();
+        changed_blocks = comp_deduplicator.changed_chunks.count();
         printf("Rank %d: Number of different elements %zu\n", world_rank, elem_changed);
         printf("Rank %d: Number of comparisons %lu\n", world_rank, n_comparisons);
         printf("Rank %d: Number of hash comparisons %lu\n", world_rank, n_hash_comp);
-        printf("Rank %d: Number of different hashes (Phase 1) %zu\n", world_rank, changed_blocks_phase1);
-        printf("Rank %d: Number of different hashes (Phase 2) %zu\n\n", world_rank, changed_blocks_phase2);
+        printf("Rank %d: Number of different hashes (Phase 1) %zu\n", world_rank, filtered_blocks);
+        printf("Rank %d: Number of different hashes (Phase 2) %zu\n\n", world_rank, changed_blocks);
       }
       Kokkos::fence();
       // Write log
@@ -695,7 +740,7 @@ int main(int argc, char** argv) {
         logfile << "Rank,File,File size,Baseline file,Baseline file size,Hash function,Chunk size,Algorithm,Data type,";
         logfile << "Comparison operator,Error tolerance,Start level,Synchronous,Device buffer length,";
         logfile << "Read time,Setup time,Deserialization time,Construction time,Compare tree time,Compare direct time,Serialization time,Write time,";
-        logfile << "Elements different,Hashes different,Num comparisons,Num hash comparisons\n";
+        logfile << "Elements different,Hashes different,Num comparisons,Num hash comparisons,Filtered hashes\n";
       }
       logfile << world_rank << ",";
       if(comparing_runs) {
@@ -740,7 +785,8 @@ int main(int argc, char** argv) {
       logfile << elem_changed << ",";
       logfile << changed_blocks << ",";
       logfile << n_comparisons << ",";
-      logfile << n_hash_comp << std::endl;
+      logfile << n_hash_comp << ",";
+      logfile << filtered_blocks << std::endl;
       logfile.close();
     }
   }
