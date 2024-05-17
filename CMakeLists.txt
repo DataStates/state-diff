@@ -7,6 +7,7 @@ set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}")
 #find_package(argparse REQUIRED)
 find_package(Kokkos REQUIRED)
 find_package(OpenSSL REQUIRED)
+find_package(MPI)
 
 include(GNUInstallDirs)
 
@@ -33,7 +34,9 @@ target_include_directories(StateDiff
 )
 target_link_libraries(StateDiff PRIVATE Kokkos::kokkos)
 if(ENABLE_IO_URING)
-  target_link_libraries(StateDiff PRIVATE uring)
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(uring REQUIRED IMPORTED_TARGET liburing)
+  target_link_libraries(StateDiff PRIVATE PkgConfig::uring)
   add_definitions(-DIO_URING_STREAM)
 endif(ENABLE_IO_URING)
 
@@ -86,6 +89,8 @@ set_target_properties(data_generator PROPERTIES
 
 add_executable(repro_test src/repro_test.cpp)
 target_include_directories(repro_test PUBLIC ${CMAKE_SOURCE_DIR}/include)
+#target_include_directories(repro_test PUBLIC ${MPI_INCLUDE_PATH})
+target_link_libraries(repro_test PRIVATE MPI::MPI_CXX)
 target_link_libraries(repro_test PRIVATE Kokkos::kokkos)
 target_link_libraries(repro_test PRIVATE OpenSSL::SSL)
 target_link_libraries(repro_test PRIVATE StateDiff)
