@@ -108,8 +108,8 @@ bool processData(const T1* data, T2 bitsDataType, uint64_t len, T1 errorValue, H
       }
       bytes_to_copy = len - offset;
     }
-    memcpy(dataLower, (const uint8_t*)(data)+offset, blockSize);
-    memcpy(dataUpper, (const uint8_t*)(data)+offset, blockSize);
+    memcpy(dataLower, (const uint8_t*)(data)+offset, bytes_to_copy);
+    memcpy(dataUpper, (const uint8_t*)(data)+offset, bytes_to_copy);
 
     // Process each element
     for(uint32_t j=0; j<elementsPerBlock; j++) {
