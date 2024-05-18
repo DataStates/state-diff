@@ -66,7 +66,7 @@ bool roundProcessData(const T1* data, T2 bitsDataType, uint64_t len, T1 errorVal
     // Process each element
     for(uint32_t j=0; j<elementsPerBlock; j++) {
       dataLower[j] = round(dataLower[j]*(1.0/errorValue))*(errorValue);
-      dataUpper[j] = (dataUpper[j]*(1.0/errorValue))*(errorValue);
+//      dataUpper[j] = (dataUpper[j]*(1.0/errorValue))*(errorValue);
 //      dataUpper[j] = round(dataUpper[j]*(1.0/errorValue))*(errorValue);
 //      dataLower[j] = floor(dataLower[j]*(1.0/errorValue))*(errorValue);
 //      dataUpper[j] = ceil(dataUpper[j]*(1.0/errorValue))*(errorValue);
@@ -85,10 +85,10 @@ bool roundProcessData(const T1* data, T2 bitsDataType, uint64_t len, T1 errorVal
   // ------------------------------------------------------------------------
   // Handled data at the tail for fuzzy hash
   // ------------------------------------------------------------------------
-  if ( (seedUpper[0] != seedLower[0]) || (seedUpper[1] != seedLower[1]) ) {
-    // The hashes are not identical. We need them both to proceed.
-    return true;
-  }
+//  if ( (seedUpper[0] != seedLower[0]) || (seedUpper[1] != seedLower[1]) ) {
+//    // The hashes are not identical. We need them both to proceed.
+//    return true;
+//  }
   return false;
 }
 

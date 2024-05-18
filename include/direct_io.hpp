@@ -69,12 +69,14 @@ ssize_t aligned_direct_read(const std::string& filename, void* data, size_t size
 
   // Read data
   ssize_t nread = read(fd, data, size);
+  ssize_t total_read = nread;
   if(nread == -1)
     FATAL("read failed for " << filename << ", error = " << std::strerror(errno));
-  if(nread != (ssize_t)size) {
-    nread += read(fd, data, size-nread);
+  while((total_read != (ssize_t)size) && (nread != -1)) {
+    nread = read(fd, data, size-nread);
+    total_read += nread;
   }
-  if(nread != (ssize_t)size) {
+  if(total_read == -1) {
     FATAL("read returned " << nread << " bytes instead of " << size << std::endl);
   }
 
