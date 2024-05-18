@@ -335,12 +335,13 @@ CompareTreeDeduplicator::compare_trees_phase2() {
       Kokkos::Profiling::pushRegion(diff_label + std::string("Compare Tree start file streams"));
       changed_chunks.reset();
 
+      size_t buffer_length = stream_buffer_len < num_diff_hash*blocksize ? stream_buffer_len : num_diff_hash*blocksize;
 #ifdef IO_URING_STREAM
-      IOUringStream<float> file_stream0(stream_buffer_len, file0, true, false); 
-      IOUringStream<float> file_stream1(stream_buffer_len, file1, true, false); 
+      IOUringStream<float> file_stream0(buffer_length, file0, true, false); 
+      IOUringStream<float> file_stream1(buffer_length, file1, true, false); 
 #else
-      MMapStream<float> file_stream0(stream_buffer_len, file0, true, false); 
-      MMapStream<float> file_stream1(stream_buffer_len, file1, true, false); 
+      MMapStream<float> file_stream0(buffer_length, file0, true, false); 
+      MMapStream<float> file_stream1(buffer_length, file1, true, false); 
 #endif
       file_stream0.start_stream(diff_hash_vec.vector_d.data(), num_diff_hash, blocksize);
       file_stream1.start_stream(diff_hash_vec.vector_d.data(), num_diff_hash, blocksize);
