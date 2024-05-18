@@ -51,7 +51,8 @@ CompareTreeDeduplicator::setup(const size_t data_size) {
 
   // Allocate or resize necessary variables for each approach
   if(prev_tree->tree_d.size() == 0) {
-    uint32_t hashes_per_node = fuzzyhash ? 2:1;
+//    uint32_t hashes_per_node = fuzzyhash ? 2:1;
+    uint32_t hashes_per_node = 1;
     *prev_tree = MerkleTree(num_chunks, hashes_per_node);
     *curr_tree = MerkleTree(num_chunks, hashes_per_node);
   }

@@ -553,8 +553,9 @@ int main(int argc, char** argv) {
         if(comparing_runs) {
           run1_buffer = std::vector<uint8_t>(data_len, 0);
           run0_buffer = std::vector<uint8_t>(data_len, 0);
-          //unaligned_direct_read(run0_files[idx], run0_buffer.data(), data_len);
-          //unaligned_direct_read(run1_files[idx], run1_buffer.data(), data_len);
+//          unaligned_direct_read(run0_files[idx], run0_buffer.data(), data_len);
+//          unaligned_direct_read(run1_files[idx], run1_buffer.data(), data_len);
+
           //int fd0 = open(run0_files[idx].c_str(), O_RDONLY, 0644);
           //ssize_t nread = 0;
           //while(nread < data_len) {
@@ -582,10 +583,13 @@ int main(int argc, char** argv) {
           f.close();
         } else {
           run_view_h = Kokkos::View<uint8_t*>::HostMirror("Host data", data_len);
+
 //          unaligned_direct_read(run0_files[idx], run_view_h.data(), data_len);
+
 //          int fd0 = open(run0_files[idx].c_str(), O_RDONLY | O_DIRECT, 0644);
 //          read(fd0, run_view_h.data(), data_len);
 //          close(fd0);
+
           std::ifstream f;
           f.exceptions(std::ifstream::failbit | std::ifstream::badbit);
           f.open(run0_files[idx], std::ifstream::in | std::ifstream::binary);
