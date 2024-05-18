@@ -195,6 +195,7 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(size_t* offsets, cons
   changed_entries = Kokkos::Bitset<Kokkos::DefaultExecutionSpace>(noffsets);
   changed_entries.reset();
   auto& changes = changed_entries;
+  auto elem_per_block = block_size;
   // Calculate number of iterations
   size_t num_iter = file_stream0.num_offsets/file_stream0.chunks_per_slice;
   if(num_iter * file_stream0.chunks_per_slice < file_stream0.num_offsets)
@@ -219,7 +220,7 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(size_t* offsets, cons
       size_t data_idx = data_processed + i;
       if(!compFunc(sliceA[i], sliceB[i], err_tol)) {
         update += 1;
-        changes.set(data_idx/block_size);
+        changes.set(data_idx/elem_per_block);
       }
     }, Kokkos::Sum<uint64_t>(ndiff));
     Kokkos::fence();
@@ -251,6 +252,7 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(const DataType* data_
   changed_entries = Kokkos::Bitset<Kokkos::DefaultExecutionSpace>(num_chunks);
   changed_entries.reset();
   auto& changes = changed_entries;
+  auto elem_per_block = block_size;
 
   // Parallel comparison
   auto range_policy = Kokkos::RangePolicy<size_t>(0, data_length);
@@ -258,7 +260,7 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(const DataType* data_
   KOKKOS_LAMBDA(const size_t i, uint64_t& update) {
     if(!compFunc(data_a[i], data_b[i], err_tol)) {
       update += 1;
-      changes.set(i/block_size);
+      changes.set(i/elem_per_block);
     }
   }, Kokkos::Sum<uint64_t>(num_diff));
   Kokkos::fence();

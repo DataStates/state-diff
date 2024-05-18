@@ -86,7 +86,7 @@ int main(int argc, char** argv) {
       .default_value(std::string(""));
     program.add_argument("-r", "--result-logname")
       .help("Filename for storing csv logs")
-      .default_value(std::string("result_log.csv"));
+      .default_value(std::string("result_log"));
     program.add_argument("-e", "--error")
       .help("Error tolerance for comparing floating-point data")
       .default_value(static_cast<double>(0.0f))
@@ -133,6 +133,8 @@ int main(int argc, char** argv) {
     int world_rank=0, world_size=1;
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+    logname += "." + std::to_string(world_rank) + ".csv";
+    //logname += ".csv";
     if(world_rank ==0) {
       if(run0_all_files.size() > 0) {
         for(std::string str: run0_all_files) {

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-#PBS -l select=1:system=polaris
+#PBS -l select=2:system=polaris
 #PBS -l place=scatter:exclhost
 #PBS -l walltime=01:00:00
 #PBS -l filesystems=home:eagle:grand
 #PBS -q debug
 #PBS -A Veloc
-#PBS -o output/testing.out
-#PBS -e output/testing.err
+#PBS -o output/testing_2nodes.out
+#PBS -e output/testing_2nodes.err
 ##PBS -o output/scratch_np1260_combined_gpu_roundhash_tree_perftest_polaris.out
 ##PBS -e output/scratch_np1260_combined_gpu_roundhash_tree_perftest_polaris.err
 
@@ -20,13 +20,14 @@ export CRAYPE_LINK_TYPE=dynamic
 #NDEPTH=2
 #NTHREADS=2
 
-nprocs=4
-nthreads=$(( 64 / $nprocs ))
+ndepth=16
+nprocs=8
+nthreads=16
 procs_per_node=4
 niters=1
 export OMP_NUM_THREADS=$nthreads
-export OMP_PLACES=threads
-export OMP_PROC_BIND=spread
+#export OMP_PLACES=threads
+#export OMP_PROC_BIND=spread
 
 #export NVCC_WRAPPER_DEFAULT_COMPILER=g++
 #df -h
@@ -82,7 +83,7 @@ GB=$(( 1024 * 1024 * 1024 ))
 #buffer_sizes=( 1024 2048 4096 8192 )
 buffer_sizes=( 1024 )
 #error_tols=( 0.0 0.0000001 0.000001 0.00001 0.0001 0.001 )
-error_tols=( 0.00001 )
+error_tols=( 0.0000001 )
 data_type=('float')
 cmd_flags="--fuzzy-hash --enable-file-streaming --comp absolute --level 13"
 #cmd_flags="--enable-file-streaming --comp absolute --level 6"
@@ -92,8 +93,8 @@ cmd_flags="--fuzzy-hash --enable-file-streaming --comp absolute --level 13"
 
 # Get filenames for different runs
 var_name=combined
-run0_filestr=run1_m000p
-run1_filestr=run2_m000p
+#run0_filestr=run1_m000p
+#run1_filestr=run2_m000p
 #dat_files=( $(ls ${project_dir}/*${filestr}.mpirestart-*.${var_name}.dat) )
 #run0_full_files=( $(ls ${project_dir}/${run0_filestr}.mpirestart-*.${var_name}.dat) )
 #run1_full_files=( $(ls ${project_dir}/${run1_filestr}.mpirestart-*.${var_name}.dat) )
@@ -132,8 +133,8 @@ do
             if [ "$approach" == "compare-tree" ]; then
               rm ${run0_dir}/*.${approach}
               rm ${run1_dir}/*.${approach}
-              mpiexec -n $nprocs --ppn $procs_per_node \
-                --env OMP_NUM_THREADS=$nthreads --env OMP_PLACES=threads \
+              mpiexec -n $nprocs --ppn $procs_per_node -d $ndepth --cpu-bind depth \
+                --env OMP_NUM_THREADS=$nthreads \
                 ./repro_test -c $chunk_size --alg $approach --type $dtype \
                 --buffer-len $(( $buffer_size * $MB)) $cmd_flags --error $tol \
                 --run0 ${run0_full_files[@]} ${run1_full_files[@]} \
@@ -169,8 +170,8 @@ do
             echo "Run 1 files: ${run1_files[@]}"
             echo "Run 0 full files: ${run0_full_files[@]}"
             echo "Run 1 full files: ${run1_full_files[@]}"
-            mpiexec -n $nprocs --ppn $procs_per_node \
-            --env OMP_NUM_THREADS=$nthreads --env OMP_PLACES=threads \
+            mpiexec -n $nprocs --ppn $procs_per_node -d $ndepth --cpu-bind depth \
+            --env OMP_NUM_THREADS=$nthreads \
             ./repro_test -c $chunk_size --alg $approach --type $dtype \
               --buffer-len $(( $buffer_size * $MB )) $cmd_flags --error $tol \
               --run0-full ${run0_full_files[@]} \
