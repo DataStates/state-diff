@@ -108,25 +108,58 @@ class MMapStream {
     }
 
     ~MMapStream() {
-      if(done && file_buffer.buff != NULL) {
+      if(done && (file_buffer.buff != NULL)) {
         munmap(file_buffer.buff, file_buffer.size);
         file_buffer.buff = NULL;
       }
-      if(!full_transfer) {
-        if(active_buffer != NULL)
-          device_free<DataType>(active_buffer);
-        if(transfer_buffer != NULL)
-          device_free<DataType>(transfer_buffer);
 #ifdef __NVCC__
-        if(host_buffer != NULL)
-          host_free<DataType>(host_buffer);
-#endif
+      if(done && (active_buffer != NULL)) {
+        device_free<DataType>(active_buffer);
+        active_buffer = NULL;
       }
-#ifdef __NVCC__
-      if(done && transfer_stream != 0) {
+      if(done && (transfer_buffer != NULL)) {
+        device_free<DataType>(transfer_buffer);
+        transfer_buffer = NULL:
+      }
+      if(done && (host_buffer != NULL)) {
+        host_free<DataType>(host_buffer);
+        host_buffer = NULL;
+      }
+      if(done && (transfer_stream != 0)) {
         gpuErrchk( cudaStreamDestroy(transfer_stream) );
+        transfer_stream = 0;
+      }
+#else
+      if(!full_transfer) {
+        if(active_buffer != NULL) {
+          device_free<DataType>(active_buffer);
+          active_buffer = NULL;
+        }
+        if(transfer_buffer != NULL) {
+          device_free<DataType>(transfer_buffer);
+          transfer_buffer = NULL;
+        }
       }
 #endif
+//      if(done && file_buffer.buff != NULL) {
+//        munmap(file_buffer.buff, file_buffer.size);
+//        file_buffer.buff = NULL;
+//      }
+//      if(!full_transfer) {
+//        if(active_buffer != NULL)
+//          device_free<DataType>(active_buffer);
+//        if(transfer_buffer != NULL)
+//          device_free<DataType>(transfer_buffer);
+//#ifdef __NVCC__
+//        if(host_buffer != NULL)
+//          host_free<DataType>(host_buffer);
+//#endif
+//      }
+//#ifdef __NVCC__
+//      if(done && transfer_stream != 0) {
+//        gpuErrchk( cudaStreamDestroy(transfer_stream) );
+//      }
+//#endif
     }
 
     // Get slice length for active buffer
