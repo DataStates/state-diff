@@ -119,7 +119,7 @@ class MMapStream {
       }
       if(done && (transfer_buffer != NULL)) {
         device_free<DataType>(transfer_buffer);
-        transfer_buffer = NULL:
+        transfer_buffer = NULL;
       }
       if(done && (host_buffer != NULL)) {
         host_free<DataType>(host_buffer);
@@ -128,6 +128,10 @@ class MMapStream {
       if(done && (transfer_stream != 0)) {
         gpuErrchk( cudaStreamDestroy(transfer_stream) );
         transfer_stream = 0;
+      }
+      if(done && (host_offsets != NULL)) {
+        host_free<size_t>(host_offsets);
+        host_offsets = NULL;
       }
 #else
       if(!full_transfer) {
