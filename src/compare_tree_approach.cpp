@@ -333,8 +333,7 @@ CompareTreeDeduplicator::compare_trees_phase2() {
   auto& changed_blocks = changed_chunks;
   if (num_diff_hash > 0) {
     if(dataType == 'f') {
-      Kokkos::Profiling::pushRegion(diff_label + std::string("Compare Tree start file streams"));
-      changed_chunks.reset();
+      Kokkos::Profiling::pushRegion(diff_label + std::string("Compare Tree create file streams"));
 
       size_t buffer_length = stream_buffer_len < num_diff_hash*blocksize ? stream_buffer_len : num_diff_hash*blocksize;
 #ifdef IO_URING_STREAM
@@ -344,9 +343,14 @@ CompareTreeDeduplicator::compare_trees_phase2() {
       MMapStream<float> file_stream0(buffer_length, file0, true, false); 
       MMapStream<float> file_stream1(buffer_length, file1, true, false); 
 #endif
+      Kokkos::Profiling::popRegion();
+      Kokkos::Profiling::pushRegion(diff_label + std::string("Compare Tree start file streams"));
       file_stream0.start_stream(diff_hash_vec.vector_d.data(), num_diff_hash, blocksize);
       file_stream1.start_stream(diff_hash_vec.vector_d.data(), num_diff_hash, blocksize);
+      Kokkos::Profiling::popRegion();
 
+      Kokkos::Profiling::pushRegion(diff_label + std::string("Compare Tree setup counters and variables"));
+      changed_chunks.reset();
       AbsoluteComp<float> abs_comp;
       size_t offset_idx = 0;
       double err_tol = errorValue;
@@ -402,10 +406,8 @@ CompareTreeDeduplicator::compare_trees_phase2() {
       }
       Kokkos::Profiling::pushRegion(diff_label + std::string("Compare Tree finalize"));
       Kokkos::Experimental::contribute(num_comparisons, num_comp);
-      io_timer = file_stream0.get_timer();
-      if(file_stream1.get_timer() > io_timer) {
-        io_timer = file_stream1.get_timer();
-      }
+      io_timer0 = file_stream0.get_timer();
+      io_timer1 = file_stream1.get_timer();
       file_stream0.end_stream();
       file_stream1.end_stream();
       Kokkos::deep_copy(num_changes, num_diff);
@@ -631,6 +633,95 @@ uint64_t CompareTreeDeduplicator::deserialize(std::vector<uint8_t>& run0_buffer,
     return run1_buffer.size();
 }
 
+int CompareTreeDeduplicator::deserialize(uint8_t* run0_buffer, uint8_t* run1_buffer) {
+
+    Kokkos::Profiling::pushRegion("Deserialize: copy constants");
+    size_t offset0 = 0, offset1 = 0;
+    uint32_t t_id0, t_id1, t_chunksize0, t_chunksize1;
+
+    memcpy(&t_id0, run0_buffer + offset0, sizeof(t_id0));
+    offset0 += sizeof(t_id0);
+    memcpy(&t_id1, run1_buffer + offset1, sizeof(t_id1));
+    offset1 += sizeof(t_id1);
+    if (current_id != t_id1) {
+        std::cerr << "deserialize_tree: Tree IDs do not match (" << current_id << " vs " << t_id1 << ").\n";
+        return -1;
+    }
+
+    memcpy(&t_chunksize0, run0_buffer + offset0, sizeof(t_chunksize0));
+    offset0 += sizeof(t_chunksize0);
+    if (chunk_size != t_chunksize0) {
+        std::cerr << "deserialize_tree: Tree chunk sizes do not match (" << chunk_size << " vs " << t_chunksize0 << ").\n";
+        return -1;
+    }
+    memcpy(&t_chunksize1, run1_buffer + offset1, sizeof(t_chunksize1));
+    offset1 += sizeof(t_chunksize1);
+    if (chunk_size != t_chunksize1) {
+        std::cerr << "deserialize_tree: Tree chunk sizes do not match (" << chunk_size << " vs " << t_chunksize1 << ").\n";
+        return -1;
+    }
+
+    memcpy(&num_chunks, run0_buffer + offset0, sizeof(num_chunks));
+    num_nodes = 2 * num_chunks - 1;
+    offset0 += sizeof(num_chunks);
+    memcpy(&num_chunks, run1_buffer + offset1, sizeof(num_chunks));
+    num_nodes = 2 * num_chunks - 1;
+    offset1 += sizeof(num_chunks);
+    changed_chunks = Kokkos::Bitset<>(num_chunks);
+
+    uint32_t hashes_per_node0 = 1, hashes_per_node1 = 1;
+    memcpy(&hashes_per_node0, run0_buffer + offset0, sizeof(hashes_per_node0));
+    offset0 += sizeof(hashes_per_node0);
+    memcpy(&hashes_per_node1, run1_buffer + offset1, sizeof(hashes_per_node1));
+    offset1 += sizeof(hashes_per_node1);
+    if(hashes_per_node0 || hashes_per_node1)
+      fuzzyhash = true;
+    
+    Kokkos::Profiling::popRegion();
+    Kokkos::Profiling::pushRegion("Deserialize: create/resize trees");
+
+    if (prev_tree != nullptr && (prev_tree->tree_d.extent(0) != num_nodes 
+                             || prev_tree->tree_d.extent(1) != hashes_per_node0)) 
+      *prev_tree = MerkleTree(num_chunks, hashes_per_node0);
+    if (curr_tree != nullptr && (curr_tree->tree_d.extent(0) != num_nodes 
+                             || curr_tree->tree_d.extent(1) != hashes_per_node1)) 
+      *curr_tree = MerkleTree(num_chunks, hashes_per_node1);
+
+    Kokkos::Profiling::popRegion();
+    Kokkos::Profiling::pushRegion("Deserialize: create unmanaged host views");
+
+    using HashDigest2DView = Kokkos::View<HashDigest**, MerkleTree::tree_type::array_layout, Kokkos::DefaultHostExecutionSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
+    HashDigest* raw_ptr0 = reinterpret_cast<HashDigest*>(run0_buffer + offset0);
+    HashDigest2DView unmanaged_view0(raw_ptr0, num_nodes, hashes_per_node0);
+    offset0 += static_cast<size_t>(num_nodes)*static_cast<size_t>(hashes_per_node0) * sizeof(HashDigest);
+    HashDigest* raw_ptr1 = reinterpret_cast<HashDigest*>(run1_buffer + offset1);
+    HashDigest2DView unmanaged_view1(raw_ptr1, num_nodes, hashes_per_node1);
+    offset1 += static_cast<size_t>(num_nodes)*static_cast<size_t>(hashes_per_node1) * sizeof(HashDigest);
+
+    Kokkos::Profiling::popRegion();
+    Kokkos::Profiling::pushRegion("Deserialize: copy bitset to host copy");
+
+    memcpy(prev_tree->dual_hash_h.data(), run0_buffer + offset0, sizeof(unsigned int)*((num_nodes+31)/32));
+    offset0 += sizeof(unsigned int)*((prev_tree->dual_hash_h.size() + 31) / 32);
+    memcpy(curr_tree->dual_hash_h.data(), run1_buffer + offset1, sizeof(unsigned int)*((num_nodes+31)/32));
+    offset1 += sizeof(unsigned int)*((curr_tree->dual_hash_h.size() + 31) / 32);
+
+    Kokkos::Profiling::popRegion();
+    Kokkos::Profiling::pushRegion("Deserialize: copy data to device");
+
+    Kokkos::deep_copy(prev_tree->tree_d, unmanaged_view0);
+    Dedupe::deep_copy(prev_tree->dual_hash_d, prev_tree->dual_hash_h);
+    Kokkos::deep_copy(curr_tree->tree_d, unmanaged_view1);
+    Dedupe::deep_copy(curr_tree->dual_hash_d, curr_tree->dual_hash_h);
+    Kokkos::resize(diff_hash_vec.vector_d, num_chunks);
+    Kokkos::resize(diff_hash_vec.vector_h, num_chunks);
+    Kokkos::fence();
+
+    Kokkos::Profiling::popRegion();
+
+    return 0;
+}
+
 uint64_t CompareTreeDeduplicator::get_num_hash_comparisons() const {
   auto num_hash_comp_h = Kokkos::create_mirror_view(num_hash_comp);
   Kokkos::deep_copy(num_hash_comp_h, num_hash_comp);
@@ -650,7 +741,7 @@ uint64_t CompareTreeDeduplicator::get_num_changes() const {
 }
 
 double CompareTreeDeduplicator::get_io_time() const {
-  return io_timer;
+  return io_timer0[0];
 }
 
 double CompareTreeDeduplicator::get_compare_time() const {

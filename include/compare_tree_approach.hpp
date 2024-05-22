@@ -25,7 +25,7 @@ class CompareTreeDeduplicator {
     std::pair<uint64_t,uint64_t> datasizes;
     double timers[4];
     double restore_timers[2];
-    double io_timer=0.0;
+    std::vector<double> io_timer0, io_timer1;
     double compare_timer=0.0;
     // Merkle trees
     MerkleTree tree1, tree2;
@@ -85,6 +85,7 @@ class CompareTreeDeduplicator {
      */
     uint64_t deserialize(std::vector<uint8_t>& buffer); 
     uint64_t deserialize(std::vector<uint8_t>& run0_buffer, std::vector<uint8_t>& run1_buffer); 
+    int deserialize(uint8_t* run0_buffer, uint8_t* run1_buffer);
 
     uint64_t get_num_hash_comparisons() const ;
     uint64_t get_num_comparisons() const ;
