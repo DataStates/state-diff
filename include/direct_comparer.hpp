@@ -22,7 +22,7 @@ class DirectComparer {
     size_t num_comparisons=0;
     std::string file0, file1;
     size_t block_size = 0;
-    double io_timer=0.0;
+    std::vector<double> io_timer0, io_timer1;
     double compare_timer=0.0;
 
   public:
@@ -164,7 +164,7 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(const DataType* data_
     num_diff += ndiff;
     num_comparisons += slice_len;
   }
-  io_timer = file_stream0.get_timer();
+  io_timer0 = file_stream0.get_timer();
   file_stream0.end_stream();
   return num_diff;
 }
@@ -173,7 +173,7 @@ template<typename DataType, typename ExecutionDevice>
 template<template<typename> typename CompareFunc> 
 uint64_t DirectComparer<DataType,ExecutionDevice>::compare(size_t* offsets, const size_t noffsets) {
 
-  Kokkos::Profiling::pushRegion("Direct: Compare: start streaming");
+  Kokkos::Profiling::pushRegion("Direct: Compare: create streams");
 #ifdef IO_URING_STREAM
   IOUringStream<DataType> file_stream0(d_stream_buf_len, file0, true, true);
   IOUringStream<DataType> file_stream1(d_stream_buf_len, file1, true, true);
@@ -181,6 +181,8 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(size_t* offsets, cons
   MMapStream<DataType> file_stream0(d_stream_buf_len, file0, true, true); 
   MMapStream<DataType> file_stream1(d_stream_buf_len, file1, true, true); 
 #endif
+  Kokkos::Profiling::popRegion();
+  Kokkos::Profiling::pushRegion("Direct: Compare: start streaming");
   file_stream0.start_stream(offsets, noffsets, block_size);
   file_stream1.start_stream(offsets, noffsets, block_size);
   Kokkos::Profiling::popRegion();
@@ -231,10 +233,8 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(size_t* offsets, cons
     Kokkos::Profiling::popRegion();
   }
   num_comparisons = data_processed;
-  io_timer = file_stream0.get_timer();
-  if(file_stream1.get_timer() > io_timer) {
-    io_timer = file_stream1.get_timer();
-  }
+  io_timer0 = file_stream0.get_timer();
+  io_timer1 = file_stream1.get_timer();
   file_stream0.end_stream();
   file_stream1.end_stream();
   return num_diff;
@@ -328,7 +328,7 @@ uint64_t DirectComparer<DataType,ExecDevice>::get_num_changed_blocks() const {
 
 template<typename DataType, typename ExecDevice>
 double DirectComparer<DataType, ExecDevice>::get_io_time() const {
-  return io_timer;
+  return io_timer0[0];
 }
 
 template<typename DataType, typename ExecDevice>

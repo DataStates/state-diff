@@ -37,7 +37,11 @@ ssize_t aligned_direct_write(const std::string& filename, void* data, size_t siz
   }
 
   // Close file
-  int ret = close(fd);
+  int ret = fsync(fd);
+  if(ret == -1)
+    FATAL("fsync failed for " << filename << ", error = " << std::strerror(errno));
+   
+  ret = close(fd);
   if(ret == -1)
     FATAL("close failed for " << filename << ", error = " << std::strerror(errno));
 

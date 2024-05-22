@@ -1,6 +1,7 @@
 #ifndef __MMAP_STREAM_HPP
 #define __MMAP_STREAM_HPP
 #include <type_traits>
+#include <vector>
 #include <string>
 #include <chrono>
 #include <unistd.h>
@@ -38,7 +39,7 @@ class MMapStream {
     DataType *mmapped_file=NULL; // Pointer to host data
     DataType *active_buffer=NULL, *transfer_buffer=NULL; // Convenient pointers
     DataType *host_buffer=NULL;
-    double timer = 0;
+    std::vector<double> timer;
 #ifdef __NVCC__
     cudaStream_t transfer_stream; // Stream for data transfers
 #endif
@@ -70,6 +71,7 @@ class MMapStream {
 
     // Constructor for Host -> Device stream
     MMapStream(size_t buff_len, std::string& file_name, bool async_memcpy=true, bool transfer_all=true) {
+      timer = std::vector<double>(3, 0.0);
       full_transfer = transfer_all;
       async = async_memcpy;
       elem_per_slice = buff_len;
@@ -214,6 +216,7 @@ class MMapStream {
         if(elements_read+transfer_slice_len > num_offsets*elem_per_chunk) { 
           transfer_slice_len = num_offsets*elem_per_chunk - elements_read;
         }
+      Timer::time_point beg_read = Timer::now();
 //        bool* chunk_read = (bool*) malloc(sizeof(bool)*chunks_per_slice);
 //        for(size_t i=0; i<chunks_per_slice; i++) {
 //          chunk_read[i] = false;
@@ -240,7 +243,10 @@ class MMapStream {
 //          chunk_read[i] = true;
 //}
         }
+      Timer::time_point end_read = Timer::now();
+      timer[1] += std::chrono::duration_cast<Duration>(end_read - beg_read).count();
 #ifdef __NVCC__
+      Timer::time_point beg_copy = Timer::now();
         // Transfer buffer to GPU if needed
 //#pragma omp task depend(in: chunk_read[0:chunks_per_slice])
 //{
@@ -259,6 +265,8 @@ class MMapStream {
         }
 //        free(chunk_read);
 //}
+      Timer::time_point end_copy = Timer::now();
+      timer[2] += std::chrono::duration_cast<Duration>(end_copy - beg_copy).count();
 #endif
 //}
       }
@@ -298,7 +306,7 @@ class MMapStream {
       Timer::time_point beg = Timer::now();
       prepare_slice();
       Timer::time_point end = Timer::now();
-      timer += std::chrono::duration_cast<Duration>(end - beg).count();
+      timer[0] += std::chrono::duration_cast<Duration>(end - beg).count();
       return;
     }
     
@@ -330,7 +338,7 @@ class MMapStream {
         Timer::time_point beg = Timer::now();
         prepare_slice();
         Timer::time_point end = Timer::now();
-        timer += std::chrono::duration_cast<Duration>(end - beg).count();
+        timer[0] += std::chrono::duration_cast<Duration>(end - beg).count();
       }
       return active_buffer;
     }
@@ -338,10 +346,10 @@ class MMapStream {
     // Reset Host to Device stream
     void end_stream() {
       done = true;
-      timer = 0.0;
+      timer = {0.0};
     }
 
-    double get_timer() {
+    std::vector<double> get_timer() {
       return timer;
     }
 };
