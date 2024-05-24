@@ -86,6 +86,8 @@ class DirectComparer {
 template<typename DataType, typename ExecutionDevice>
 DirectComparer<DataType,ExecutionDevice>::DirectComparer() {
   tol = 0.0;
+  io_timer0 = std::vector<double>(3, 0.0);
+  io_timer1 = std::vector<double>(3, 0.0);
 }
 
 template<typename DataType, typename ExecutionDevice>
@@ -96,6 +98,8 @@ DirectComparer<DataType,ExecutionDevice>::DirectComparer(double tolerance,
   tol = tolerance;
   d_stream_buf_len = device_buf_len;
   block_size = chunk_size;
+  io_timer0 = std::vector<double>(3, 0.0);
+  io_timer1 = std::vector<double>(3, 0.0);
 }
 
 /**
