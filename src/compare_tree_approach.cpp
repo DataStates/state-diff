@@ -481,10 +481,10 @@ CompareTreeDeduplicator::serialize() {
   offset += size*sizeof(HashDigest);
   STDOUT_PRINT("Time for inserting tree_h: %f seconds.\n", timer_section.seconds() );
   
-  //inserting dual_hash_h
-  timer_section.reset();
-  memcpy(buffer.data() + offset, curr_tree->dual_hash_h.data(), sizeof(unsigned int)*((curr_tree->dual_hash_h.size()+31)/32));
-  STDOUT_PRINT("Time for inserting dual_hash_h: %f seconds.\n", timer_section.seconds() );
+  ////inserting dual_hash_h
+  //timer_section.reset();
+  //memcpy(buffer.data() + offset, curr_tree->dual_hash_h.data(), sizeof(unsigned int)*((curr_tree->dual_hash_h.size()+31)/32));
+  //STDOUT_PRINT("Time for inserting dual_hash_h: %f seconds.\n", timer_section.seconds() );
 
   STDOUT_PRINT("Total time for serialize function: %f seconds.\n", timer_total.seconds() );
 
@@ -534,11 +534,11 @@ uint64_t CompareTreeDeduplicator::deserialize(std::vector<uint8_t>& buffer) {
     HashDigest2DView unmanaged_view(raw_ptr, num_nodes, hashes_per_node);
     offset += static_cast<size_t>(num_nodes)*static_cast<size_t>(hashes_per_node) * sizeof(HashDigest);
   
-    memcpy(prev_tree->dual_hash_h.data(), buffer.data() + offset, sizeof(unsigned int)*((num_nodes+31)/32));
-    offset += sizeof(unsigned int)*((prev_tree->dual_hash_h.size() + 31) / 32);
+    //memcpy(prev_tree->dual_hash_h.data(), buffer.data() + offset, sizeof(unsigned int)*((num_nodes+31)/32));
+    //offset += sizeof(unsigned int)*((prev_tree->dual_hash_h.size() + 31) / 32);
 
     Kokkos::deep_copy(prev_tree->tree_d, unmanaged_view);
-    Dedupe::deep_copy(prev_tree->dual_hash_d, prev_tree->dual_hash_h);
+    //Dedupe::deep_copy(prev_tree->dual_hash_d, prev_tree->dual_hash_h);
     Kokkos::fence();
 
     return buffer.size();
@@ -610,20 +610,20 @@ uint64_t CompareTreeDeduplicator::deserialize(std::vector<uint8_t>& run0_buffer,
     offset1 += static_cast<size_t>(num_nodes)*static_cast<size_t>(hashes_per_node1) * sizeof(HashDigest);
 
     Kokkos::Profiling::popRegion();
-    Kokkos::Profiling::pushRegion("Deserialize: copy bitset to host copy");
+    //Kokkos::Profiling::pushRegion("Deserialize: copy bitset to host copy");
 
-    memcpy(prev_tree->dual_hash_h.data(), run0_buffer.data() + offset0, sizeof(unsigned int)*((num_nodes+31)/32));
-    offset0 += sizeof(unsigned int)*((prev_tree->dual_hash_h.size() + 31) / 32);
-    memcpy(curr_tree->dual_hash_h.data(), run1_buffer.data() + offset1, sizeof(unsigned int)*((num_nodes+31)/32));
-    offset1 += sizeof(unsigned int)*((curr_tree->dual_hash_h.size() + 31) / 32);
+    //memcpy(prev_tree->dual_hash_h.data(), run0_buffer.data() + offset0, sizeof(unsigned int)*((num_nodes+31)/32));
+    //offset0 += sizeof(unsigned int)*((prev_tree->dual_hash_h.size() + 31) / 32);
+    //memcpy(curr_tree->dual_hash_h.data(), run1_buffer.data() + offset1, sizeof(unsigned int)*((num_nodes+31)/32));
+    //offset1 += sizeof(unsigned int)*((curr_tree->dual_hash_h.size() + 31) / 32);
 
-    Kokkos::Profiling::popRegion();
+    //Kokkos::Profiling::popRegion();
     Kokkos::Profiling::pushRegion("Deserialize: copy data to device");
 
     Kokkos::deep_copy(prev_tree->tree_d, unmanaged_view0);
-    Dedupe::deep_copy(prev_tree->dual_hash_d, prev_tree->dual_hash_h);
+    //Dedupe::deep_copy(prev_tree->dual_hash_d, prev_tree->dual_hash_h);
     Kokkos::deep_copy(curr_tree->tree_d, unmanaged_view1);
-    Dedupe::deep_copy(curr_tree->dual_hash_d, curr_tree->dual_hash_h);
+    //Dedupe::deep_copy(curr_tree->dual_hash_d, curr_tree->dual_hash_h);
     Kokkos::resize(diff_hash_vec.vector_d, num_chunks);
     Kokkos::resize(diff_hash_vec.vector_h, num_chunks);
     Kokkos::fence();
@@ -699,20 +699,20 @@ int CompareTreeDeduplicator::deserialize(uint8_t* run0_buffer, uint8_t* run1_buf
     offset1 += static_cast<size_t>(num_nodes)*static_cast<size_t>(hashes_per_node1) * sizeof(HashDigest);
 
     Kokkos::Profiling::popRegion();
-    Kokkos::Profiling::pushRegion("Deserialize: copy bitset to host copy");
+    //Kokkos::Profiling::pushRegion("Deserialize: copy bitset to host copy");
 
-    memcpy(prev_tree->dual_hash_h.data(), run0_buffer + offset0, sizeof(unsigned int)*((num_nodes+31)/32));
-    offset0 += sizeof(unsigned int)*((prev_tree->dual_hash_h.size() + 31) / 32);
-    memcpy(curr_tree->dual_hash_h.data(), run1_buffer + offset1, sizeof(unsigned int)*((num_nodes+31)/32));
-    offset1 += sizeof(unsigned int)*((curr_tree->dual_hash_h.size() + 31) / 32);
+    //memcpy(prev_tree->dual_hash_h.data(), run0_buffer + offset0, sizeof(unsigned int)*((num_nodes+31)/32));
+    //offset0 += sizeof(unsigned int)*((prev_tree->dual_hash_h.size() + 31) / 32);
+    //memcpy(curr_tree->dual_hash_h.data(), run1_buffer + offset1, sizeof(unsigned int)*((num_nodes+31)/32));
+    //offset1 += sizeof(unsigned int)*((curr_tree->dual_hash_h.size() + 31) / 32);
 
-    Kokkos::Profiling::popRegion();
+    //Kokkos::Profiling::popRegion();
     Kokkos::Profiling::pushRegion("Deserialize: copy data to device");
 
     Kokkos::deep_copy(prev_tree->tree_d, unmanaged_view0);
-    Dedupe::deep_copy(prev_tree->dual_hash_d, prev_tree->dual_hash_h);
+    //Dedupe::deep_copy(prev_tree->dual_hash_d, prev_tree->dual_hash_h);
     Kokkos::deep_copy(curr_tree->tree_d, unmanaged_view1);
-    Dedupe::deep_copy(curr_tree->dual_hash_d, curr_tree->dual_hash_h);
+    //Dedupe::deep_copy(curr_tree->dual_hash_d, curr_tree->dual_hash_h);
     Kokkos::resize(diff_hash_vec.vector_d, num_chunks);
     Kokkos::resize(diff_hash_vec.vector_h, num_chunks);
     Kokkos::fence();
