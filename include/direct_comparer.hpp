@@ -24,6 +24,13 @@ class DirectComparer {
     size_t block_size = 0;
     std::vector<double> io_timer0, io_timer1;
     double compare_timer=0.0;
+#ifdef IO_URING_STREAM
+    IOUringStream<DataType> file_stream0;
+    IOUringStream<DataType> file_stream1;
+#else
+    MMapStream<DataType> file_stream0; 
+    MMapStream<DataType> file_stream1; 
+#endif
 
   public:
     // Default empty constructor
@@ -43,6 +50,7 @@ class DirectComparer {
      * \param data_device_len   Length of data in bytes
      */
     void setup(const uint64_t  data_device_len);
+    void setup(const size_t data_len, const size_t bufflen, std::string& filename0, std::string& filename1);
 
     /**
      * Main deduplicate function. Given a Device pointer, create an incremental diff using 
@@ -112,6 +120,19 @@ DirectComparer<DataType,ExecutionDevice>::DirectComparer(double tolerance,
 template<typename DataType, typename ExecutionDevice>
 void DirectComparer<DataType,ExecutionDevice>::setup(const uint64_t data_device_len) {
 }
+template<typename DataType, typename ExecutionDevice>
+void DirectComparer<DataType,ExecutionDevice>::setup(const size_t data_len, const size_t bufflen, 
+                                                     std::string& filename0, std::string& filename1) {
+  file0 = filename0;
+  file1 = filename1;
+#ifdef IO_URING_STREAM
+  file_stream0 = IOUringStream<DataType>(bufflen, file0, true, true);
+  file_stream1 = IOUringStream<DataType>(bufflen, file1, true, true);
+#else
+  file_stream0 = MMapStream<DataType>(bufflen, file0, block_size, true, true); 
+  file_stream1 = MMapStream<DataType>(bufflen, file1, block_size, true, true); 
+#endif
+}
 
 /**
  * Direct Comparison Function. Given a data source and length, will compare data
@@ -128,11 +149,11 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(const DataType* data_
                                                            size_t*   offsets,
                                                            const size_t    noffsets) {
   // Start streaming data
-#ifdef IO_URING_STREAM
-  IOUringStream<DataType> file_stream0(d_stream_buf_len, file0);
-#else
-  MMapStream<DataType> file_stream0(d_stream_buf_len, file0); 
-#endif
+//#ifdef IO_URING_STREAM
+//  IOUringStream<DataType> file_stream0(d_stream_buf_len, file0);
+//#else
+//  MMapStream<DataType> file_stream0(d_stream_buf_len, file0, block_size); 
+//#endif
   file_stream0.start_stream(offsets, noffsets, block_size);
 
   changed_entries = Kokkos::Bitset<Kokkos::DefaultExecutionSpace>(noffsets);
@@ -178,13 +199,13 @@ template<template<typename> typename CompareFunc>
 uint64_t DirectComparer<DataType,ExecutionDevice>::compare(size_t* offsets, const size_t noffsets) {
 
   Kokkos::Profiling::pushRegion("Direct: Compare: create streams");
-#ifdef IO_URING_STREAM
-  IOUringStream<DataType> file_stream0(d_stream_buf_len, file0, true, true);
-  IOUringStream<DataType> file_stream1(d_stream_buf_len, file1, true, true);
-#else
-  MMapStream<DataType> file_stream0(d_stream_buf_len, file0, true, true); 
-  MMapStream<DataType> file_stream1(d_stream_buf_len, file1, true, true); 
-#endif
+//#ifdef IO_URING_STREAM
+//  IOUringStream<DataType> file_stream0(d_stream_buf_len, file0, true, true);
+//  IOUringStream<DataType> file_stream1(d_stream_buf_len, file1, true, true);
+//#else
+//  MMapStream<DataType> file_stream0(d_stream_buf_len, file0, block_size, true, true); 
+//  MMapStream<DataType> file_stream1(d_stream_buf_len, file1, block_size, true, true); 
+//#endif
   Kokkos::Profiling::popRegion();
   Kokkos::Profiling::pushRegion("Direct: Compare: start streaming");
   file_stream0.start_stream(offsets, noffsets, block_size);
@@ -290,6 +311,11 @@ template<typename DataType, typename ExecDevice>
 int
 DirectComparer<DataType,ExecDevice>::deserialize(std::string& filename) {
   file0 = filename;
+#ifdef IO_URING_STREAM
+  file_stream0 = IOUringStream<DataType>(d_stream_buf_len, file0);
+#else
+  file_stream0 = MMapStream<DataType>(d_stream_buf_len, file0, block_size); 
+#endif
   return 0;
 }
 

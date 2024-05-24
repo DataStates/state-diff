@@ -36,7 +36,6 @@ class MMapStream {
     size_t chunks_per_slice=0;
     bool async=true, full_transfer=true, done=false;
     std::string filename;
-    DataType *mmapped_file=NULL; // Pointer to host data
     DataType *active_buffer=NULL, *transfer_buffer=NULL; // Convenient pointers
     DataType *host_buffer=NULL;
     std::vector<double> timer;
@@ -70,7 +69,7 @@ class MMapStream {
     MMapStream() {}
 
     // Constructor for Host -> Device stream
-    MMapStream(size_t buff_len, std::string& file_name, bool async_memcpy=true, bool transfer_all=true) {
+    MMapStream(size_t buff_len, std::string& file_name, const size_t chunk_size, bool async_memcpy=true, bool transfer_all=true) {
       timer = std::vector<double>(3, 0.0);
       full_transfer = transfer_all;
       async = async_memcpy;
@@ -79,6 +78,18 @@ class MMapStream {
       filename = file_name; // Save file name
       active_slice_len = elem_per_slice;
       transfer_slice_len = elem_per_slice;
+      
+      // Calculate useful values
+      if(full_transfer) {
+        elem_per_chunk = elem_per_slice;
+        bytes_per_chunk = bytes_per_slice;
+        chunks_per_slice = 1;
+      } else {
+        elem_per_chunk = chunk_size;
+        bytes_per_chunk = elem_per_chunk*sizeof(DataType);
+        chunks_per_slice = elem_per_slice/elem_per_chunk;
+      }
+
       file_buffer = map_file(filename);
       if(transfer_all) {
         madvise(file_buffer.buff, file_buffer.size, MADV_SEQUENTIAL);
@@ -91,6 +102,10 @@ class MMapStream {
       active_buffer = device_alloc<DataType>(bytes_per_slice);
       transfer_buffer = device_alloc<DataType>(bytes_per_slice);
       host_buffer = host_alloc<DataType>(bytes_per_slice);
+      size_t max_offsets = file_buffer.size / bytes_per_chunk;
+      if(bytes_per_chunk*max_offsets < file_buffer.size)
+        max_offsets += 1;
+      host_offsets = host_alloc<size_t>(sizeof(size_t)*max_offsets);
       gpuErrchk( cudaStreamCreate(&transfer_stream) );
 #else
       if(!full_transfer) {
@@ -99,6 +114,7 @@ class MMapStream {
       }
       host_buffer = transfer_buffer;
 #endif
+
       DEBUG_PRINT("Constructor: Filename: %s\n", filename.c_str());
       DEBUG_PRINT("Constructor: File size: %zu\n", file_buffer.size);
       DEBUG_PRINT("Constructor: Full transfer? %d\n", full_transfer);
@@ -267,16 +283,16 @@ class MMapStream {
       transferred_chunks = 0; // Initialize stream
       file_offsets = offset_ptr; // Store pointer to device offsets
       num_offsets = n_offsets; // Store number of offsets
-      // Calculate useful values
-      if(full_transfer) {
-        elem_per_chunk = elem_per_slice;
-        bytes_per_chunk = bytes_per_slice;
-        chunks_per_slice = 1;
-      } else {
-        elem_per_chunk = chunk_size;
-        bytes_per_chunk = elem_per_chunk*sizeof(DataType);
-        chunks_per_slice = elem_per_slice/elem_per_chunk;
-      }
+//      // Calculate useful values
+//      if(full_transfer) {
+//        elem_per_chunk = elem_per_slice;
+//        bytes_per_chunk = bytes_per_slice;
+//        chunks_per_slice = 1;
+//      } else {
+//        elem_per_chunk = chunk_size;
+//        bytes_per_chunk = elem_per_chunk*sizeof(DataType);
+//        chunks_per_slice = elem_per_slice/elem_per_chunk;
+//      }
       DEBUG_PRINT("Elem per chunk: %zu\n", elem_per_chunk);
       DEBUG_PRINT("Bytes per chunk: %zu\n", bytes_per_chunk);
       DEBUG_PRINT("Elem per slice: %zu\n", elem_per_slice);
@@ -286,7 +302,7 @@ class MMapStream {
 
       // Copy offsets to device if necessary
 #ifdef __NVCC__
-      host_offsets = host_alloc<size_t>(n_offsets*sizeof(size_t));
+//      host_offsets = host_alloc<size_t>(n_offsets*sizeof(size_t));
       gpuErrchk( cudaMemcpy(host_offsets, offset_ptr, n_offsets*sizeof(size_t), cudaMemcpyDeviceToHost) );
 #else
       host_offsets = offset_ptr;

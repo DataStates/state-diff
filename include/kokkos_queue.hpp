@@ -19,6 +19,8 @@ class Queue {
     Kokkos::View<uint32_t[1]>::HostMirror end_h;
     
     /// Constructor
+    Queue() {}
+
     Queue(uint32_t max_size) {
       queue_d = Kokkos::View<uint32_t*>("Queue", max_size);
       len_d   = Kokkos::View<uint32_t[1]>("Queue length");
