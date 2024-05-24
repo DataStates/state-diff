@@ -36,6 +36,7 @@ class CompareTreeDeduplicator {
     double errorValue;
     char dataType = static_cast<char>(*("f"));
     CompareOp comp_op=Equivalence;
+    Queue working_queue;
     // Stats
     Kokkos::View<uint64_t[1]> num_comparisons;
     Kokkos::View<uint64_t[1]> num_changed;
@@ -46,7 +47,15 @@ class CompareTreeDeduplicator {
     std::string file0, file1; // Filenames for file streaming
     size_t stream_buffer_len=1024*1024;
 
-    void setup(const size_t data_len, std::string& filename0, std::string& filename1);
+#ifdef IO_URING_STREAM
+    IOUringStream<float> file_stream0; 
+    IOUringStream<float> file_stream1; 
+#else
+    MMapStream<float> file_stream0; 
+    MMapStream<float> file_stream1; 
+#endif
+
+    void setup(const size_t data_len, const size_t bufflen, std::string& filename0, std::string& filename1);
 
     void setup(const size_t data_len);
 

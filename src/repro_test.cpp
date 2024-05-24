@@ -161,13 +161,13 @@ int main(int argc, char** argv) {
     std::vector<std::string> run0_files, run1_files, run0_full_files, run1_full_files;
     if(run0_all_files.size() > 0) {
       for(uint32_t i=0; i<run0_all_files.size(); i++) {
-        if(i % world_size == world_rank) {
+        if((int)i % world_size == world_rank) {
           run0_files.push_back(run0_all_files[i]);
           try_free_page_cache(run0_all_files[i]);
         }
       }
       for(uint32_t i=0; i<run0_all_full_files.size(); i++) {
-        if(i % world_size == world_rank) {
+        if((int)i % world_size == world_rank) {
           run0_full_files.push_back(run0_all_full_files[i]);
           try_free_page_cache(run0_all_full_files[i]);
         }
@@ -175,13 +175,13 @@ int main(int argc, char** argv) {
     }
     if(run1_all_files.size() > 0) {
       for(uint32_t i=0; i<run1_all_files.size(); i++) {
-        if(i % world_size == world_rank) {
+        if((int)i % world_size == world_rank) {
           run1_files.push_back(run1_all_files[i]);
           try_free_page_cache(run1_all_files[i]);
         }
       }
       for(uint32_t i=0; i<run1_all_full_files.size(); i++) {
-        if(i % world_size == world_rank) {
+        if((int)i % world_size == world_rank) {
           run1_full_files.push_back(run1_all_full_files[i]);
           try_free_page_cache(run1_all_full_files[i]);
         }
@@ -257,12 +257,16 @@ int main(int argc, char** argv) {
         // ========================================================================================
         Timer::time_point beg_setup = Timer::now();
         Kokkos::Profiling::pushRegion("Setup");
-        if(dtype.compare("float") == 0) {
-          f32_comparer.setup(data_len/sizeof(float));
-        } else if(dtype.compare("double") == 0) {
-          f64_comparer.setup(data_len/sizeof(double));
-        } else {
-          u8_comparer.setup(data_len);
+        if(comparing_runs) {
+          if(enable_file_streaming) { // Start loading of data from files
+            if(dtype.compare("float") == 0) {
+              f32_comparer.setup(data_len, buffer_len/sizeof(float), run0_files[idx], run1_files[idx]);
+            } else if(dtype.compare("double") == 0) {
+              f64_comparer.setup(data_len, buffer_len/sizeof(double), run0_files[idx], run1_files[idx]);
+            } else {
+              u8_comparer.setup(data_len, buffer_len, run0_files[idx], run1_files[idx]);
+            }
+          }
         }
         if(!comparing_runs || !enable_file_streaming) { // Setup comparer
           if(data0_h.size() < data_len) {
@@ -302,21 +306,6 @@ int main(int argc, char** argv) {
         // ========================================================================================
         Timer::time_point beg_read = Timer::now();
         Kokkos::Profiling::pushRegion("Read");
-
-        // Get length of file
-//        off_t filesize;
-//        get_file_size(run0_files[idx], &filesize);
-//        data_len = static_cast<size_t>(filesize);
-//        size_t npages = (data_len % pagesize) == 0 ? data_len/pagesize : (data_len/pagesize) + 1;
-
-//        std::ifstream f;
-//        f.exceptions(std::ifstream::failbit | std::ifstream::badbit);
-//        f.open(run0_files[idx], std::ifstream::in | std::ifstream::binary);
-//        f.seekg(0, f.end);
-//        data_len = f.tellg();
-//        f.seekg(0, f.beg);
-
-//        Kokkos::View<uint8_t*>::HostMirror data0_h, data1_h;
         if(!enable_file_streaming) { // Read files if not using file data streaming
 //          data0_h = Kokkos::View<uint8_t*>::HostMirror("Run 0 region mirror", data_len);
 //          unaligned_direct_read(run0_files[idx], data0_h.data(), data_len);
@@ -341,7 +330,6 @@ int main(int argc, char** argv) {
           if (fd0 == -1) {
             FATAL("cannot open " << run0_files[idx] << ", error = " << strerror(errno));
           }
-          posix_fadvise(fd0, 0,0,POSIX_FADV_DONTNEED);
           size_t transferred = 0, remaining = data_len;
           while (remaining > 0) {
           	auto ret = read(fd0, data0_h.data() + transferred, remaining);
@@ -354,14 +342,10 @@ int main(int argc, char** argv) {
           close(fd0);
 
           if(comparing_runs) {
-//            data1_ptr = (uint8_t*) aligned_alloc(pagesize, npages*pagesize);
-//            data1_h = UnmanagedByteHostView(data1_ptr, npages*pagesize);
-
             int fd1 = open(run1_files[idx].c_str(), O_RDONLY, 0644);
             if (fd1 == -1) {
               FATAL("cannot open " << run0_files[idx] << ", error = " << strerror(errno));
             }
-            posix_fadvise(fd1, 0,0,POSIX_FADV_DONTNEED);
             transferred = 0, remaining = data_len;
             while (remaining > 0) {
             	auto ret = read(fd1, data1_h.data() + transferred, remaining);
@@ -379,25 +363,20 @@ int main(int argc, char** argv) {
 //            unaligned_direct_read(run0_files[idx], data0_h.data(), data_len);
 //          }
 
-//          if(comparing_runs) { // Read current file for later write
-////            data1_h = Kokkos::View<uint8_t*>::HostMirror("Run 0 region mirror", data_len);
-////            f.read((char*)(data1_h.data()), data_len);
-//            f.close();
-//          } else {
+//          if(!comparing_runs) { // Read current file for later write
+//            std::ifstream f;
+//            f.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+//            f.open(run0_files[idx], std::ifstream::in | std::ifstream::binary);
 //            data0_h = Kokkos::View<uint8_t*>::HostMirror("Run 0 region mirror", data_len);
 //            f.read((char*)(data0_h.data()), data_len);
 //            f.close();
 //          }
 
           if(!comparing_runs) {
-//            data0_ptr = (uint8_t*) aligned_alloc(pagesize, npages*pagesize);
-
-            //data0_h = Kokkos::View<uint8_t*>::HostMirror("Run 0 region mirror", data_len);
             int fd0 = open(run0_files[idx].c_str(), O_RDONLY, 0644);
             if (fd0 == -1) {
               FATAL("cannot open " << run0_files[idx] << ", error = " << strerror(errno));
             }
-            posix_fadvise(fd0, 0,0,POSIX_FADV_DONTNEED);
             size_t transferred = 0, remaining = data_len;
             while (remaining > 0) {
             	auto ret = read(fd0, data0_h.data() + transferred, remaining);
@@ -408,7 +387,6 @@ int main(int argc, char** argv) {
             }
             fsync(fd0);
             close(fd0);
-//            data0_h = UnmanagedByteHostView(data0_ptr, npages*pagesize);
           }
         }
 
@@ -641,8 +619,8 @@ int main(int argc, char** argv) {
         Timer::time_point beg_setup = Timer::now();
         Kokkos::Profiling::pushRegion("Setup");
         if(comparing_runs) {
-          comp_deduplicator.setup(data_len, run0_full_files[idx], run1_full_files[idx]);
-          comp_deduplicator.stream_buffer_len = buffer_len/sizeof(float);
+          comp_deduplicator.setup(data_len, buffer_len/sizeof(float), run0_full_files[idx], run1_full_files[idx]);
+//          comp_deduplicator.stream_buffer_len = buffer_len/sizeof(float);
 //          run0_buffer = (uint8_t*) aligned_alloc(pagesize, data_len_pages);
 //          run1_buffer = (uint8_t*) aligned_alloc(pagesize, data_len_pages);
           //run1_buffer = std::vector<uint8_t>(data_len, 0);
@@ -657,8 +635,6 @@ int main(int argc, char** argv) {
             Kokkos::resize(data0_h, data_len);
             Kokkos::resize(data0_d, data_len);
           }
-          //run_view_d = Kokkos::View<uint8_t*>("Device data", data_len);
-          //run_view_h = Kokkos::View<uint8_t*>::HostMirror("Host data", data_len);
         }
         Kokkos::Profiling::popRegion();
         Timer::time_point end_setup = Timer::now();
@@ -670,44 +646,8 @@ int main(int argc, char** argv) {
         // Open file and read/calc important values
         // ========================================================================================
         Timer::time_point beg_read = Timer::now();
-//        Kokkos::Profiling::pushRegion("Read");
-
-//        off_t filesize;
-//        if(comparing_runs) {
-//          get_file_size(run1_files[idx], &filesize);
-//          data_len = static_cast<size_t>(filesize);
-//        } else {
-//          get_file_size(run0_files[idx], &filesize);
-//          data_len = static_cast<size_t>(filesize);
-//        }
-
-//        std::ifstream f;
-//        if(comparing_runs) {
-//          f.exceptions(std::ifstream::failbit | std::ifstream::badbit);
-//          f.open(run1_files[idx], std::ifstream::in | std::ifstream::binary);
-//        } else {
-//          f.exceptions(std::ifstream::failbit | std::ifstream::badbit);
-//          f.open(run0_files[idx], std::ifstream::in | std::ifstream::binary);
-//        }
-//        f.seekg(0, f.end);
-//        data_len = f.tellg();
-//        f.seekg(0, f.beg);
-
-        // Read diff file and load it into the device
-//        std::vector<uint8_t> run0_buffer, run1_buffer;
-//        Kokkos::View<uint8_t*> run_view_d;
-//        Kokkos::View<uint8_t*>::HostMirror run_view_h;
-//        size_t pagesize = sysconf(_SC_PAGESIZE);
-//        size_t data_len_pages = (data_len % pagesize) == 0 ? data_len : ((data_len/pagesize)+1)*pagesize;
-//        uint8_t *run0_buffer, *run1_buffer;
-        //Kokkos::View<uint8_t*> run_view_d;
-        //using UnmanagedByteView = Kokkos::View<uint8_t*, Kokkos::DefaultHostExecutionSpace, 
-        //                                       Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
-        //UnmanagedByteView run_view_h;
-        if(comparing_runs) {
-        beg_read = Timer::now();
         Kokkos::Profiling::pushRegion("Read");
-
+        if(comparing_runs) {
 //      int f0 = open(run0_files[idx].c_str(), O_RDONLY | O_DIRECT);
 //      if (f0 == -1)
 //        FATAL("cannot open " << run0_files[idx] << ", error = " << std::strerror(errno));
@@ -736,7 +676,6 @@ int main(int argc, char** argv) {
           if (fd0 == -1) {
             FATAL("cannot open " << run0_files[idx] << ", error = " << strerror(errno));
           }
-          posix_fadvise(fd0, 0,0,POSIX_FADV_DONTNEED);
           size_t transferred = 0, remaining = data_len;
           while (remaining > 0) {
           	auto ret = read(fd0, data0_h.data() + transferred, remaining);
@@ -752,7 +691,6 @@ int main(int argc, char** argv) {
           if (fd1 == -1) {
             FATAL("cannot open " << run1_files[idx] << ", error = " << strerror(errno));
           }
-          posix_fadvise(fd1, 0,0,POSIX_FADV_DONTNEED);
           transferred = 0, remaining = data_len;
           while (remaining > 0) {
           	auto ret = read(fd1, data1_h.data() + transferred, remaining);
@@ -773,8 +711,6 @@ int main(int argc, char** argv) {
 //          f.read((char*)(run0_buffer.data()), data_len);
 //          f.close();
         } else {
-        beg_read = Timer::now();
-        Kokkos::Profiling::pushRegion("Read");
 //          uint8_t* run_ptr_h = (uint8_t*) aligned_alloc(pagesize, data_len_pages);
 //          aligned_direct_read(run0_files[idx], run_ptr_h, data_len);
 //          run_view_h = UnmanagedByteView(run_ptr_h, data_len);
@@ -787,7 +723,7 @@ int main(int argc, char** argv) {
           if (fd0 == -1) {
             FATAL("cannot open " << run0_files[idx] << ", error = " << strerror(errno));
           }
-          posix_fadvise(fd0, 0,0,POSIX_FADV_DONTNEED);
+//          posix_fadvise(fd0, 0,0,POSIX_FADV_DONTNEED);
           size_t transferred = 0, remaining = data_len;
           while (remaining > 0) {
           	auto ret = read(fd0, data0_h.data() + transferred, remaining);
