@@ -111,11 +111,11 @@ CompareTreeDeduplicator::setup(const size_t data_size, const size_t bufflen,
       blocksize /= sizeof(double);
     }
 #ifdef IO_URING_STREAM
-    file_stream0 = IOUringStream<float>(buffer_length, file0, true, false); 
-    file_stream1 = IOUringStream<float>(buffer_length, file1, true, false); 
+//    file_stream0 = IOUringStream<float>(buffer_length, file0, blocksize, true, false); 
+//    file_stream1 = IOUringStream<float>(buffer_length, file1, blocksize, true, false); 
 #else
-    file_stream0 = MMapStream<float>(buffer_length, file0, blocksize, false, false); 
-    file_stream1 = MMapStream<float>(buffer_length, file1, blocksize, false, false); 
+    file_stream0 = MMapStream<float>(buffer_length, file0, blocksize, true, false); 
+    file_stream1 = MMapStream<float>(buffer_length, file1, blocksize, true, false); 
 #endif
 }
 
@@ -356,14 +356,14 @@ CompareTreeDeduplicator::compare_trees_phase2() {
     if(dataType == 'f') {
       Kokkos::Profiling::pushRegion(diff_label + std::string("Compare Tree create file streams"));
 
-//      size_t buffer_length = stream_buffer_len < num_diff_hash*blocksize ? stream_buffer_len : num_diff_hash*blocksize;
-//#ifdef IO_URING_STREAM
-//      IOUringStream<float> file_stream0(buffer_length, file0, true, false); 
-//      IOUringStream<float> file_stream1(buffer_length, file1, true, false); 
+      size_t buffer_length = stream_buffer_len < num_diff_hash*blocksize ? stream_buffer_len : num_diff_hash*blocksize;
+#ifdef IO_URING_STREAM
+      IOUringStream<float> file_stream0(buffer_length, file0, blocksize, true, false); 
+      IOUringStream<float> file_stream1(buffer_length, file1, blocksize, true, false); 
 //#else
 //      MMapStream<float> file_stream0(buffer_length, file0, blocksize, false, false); 
 //      MMapStream<float> file_stream1(buffer_length, file1, blocksize, false, false); 
-//#endif
+#endif
       Kokkos::Profiling::popRegion();
       Kokkos::Profiling::pushRegion(diff_label + std::string("Compare Tree start file streams"));
       file_stream0.start_stream(diff_hash_vec.vector_d.data(), num_diff_hash, blocksize);

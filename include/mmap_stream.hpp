@@ -181,7 +181,7 @@ class MMapStream {
     size_t prepare_slice() {
       if(full_transfer) {
         // Offset into file
-      Timer::time_point beg_read = Timer::now();
+        Timer::time_point beg_read = Timer::now();
         size_t offset = host_offsets[transferred_chunks]*elem_per_slice;
 #ifdef __NVCC__
         // Get pointer to chunk
@@ -190,10 +190,10 @@ class MMapStream {
         // Copy chunk to host buffer
         if(transfer_slice_len > 0)
           memcpy(host_buffer, slice, transfer_slice_len*sizeof(DataType));
-      Timer::time_point end_read = Timer::now();
-      timer[1] += std::chrono::duration_cast<Duration>(end_read - beg_read).count();
+        Timer::time_point end_read = Timer::now();
+        timer[1] += std::chrono::duration_cast<Duration>(end_read - beg_read).count();
         // Transfer buffer to GPU if needed
-      Timer::time_point beg_copy = Timer::now();
+        Timer::time_point beg_copy = Timer::now();
         if(async) {
           gpuErrchk( cudaMemcpyAsync(transfer_buffer, 
                                      host_buffer, 
@@ -206,13 +206,13 @@ class MMapStream {
                                 transfer_slice_len*sizeof(DataType), 
                                 cudaMemcpyHostToDevice) );
         }
-      Timer::time_point end_copy = Timer::now();
-      timer[2] += std::chrono::duration_cast<Duration>(end_copy - beg_copy).count();
+        Timer::time_point end_copy = Timer::now();
+        timer[2] += std::chrono::duration_cast<Duration>(end_copy - beg_copy).count();
 #else
         // Get pointer to chunk
         transfer_slice_len = get_chunk(file_buffer, offset, &transfer_buffer);
-      Timer::time_point end_read = Timer::now();
-      timer[1] += std::chrono::duration_cast<Duration>(end_read - beg_read).count();
+        Timer::time_point end_read = Timer::now();
+        timer[1] += std::chrono::duration_cast<Duration>(end_read - beg_read).count();
 #endif
       } else {
         // Calculate number of elements to read
