@@ -95,6 +95,9 @@ target_link_libraries(repro_test PRIVATE Kokkos::kokkos)
 target_link_libraries(repro_test PRIVATE OpenSSL::SSL)
 target_link_libraries(repro_test PRIVATE StateDiff)
 target_link_libraries(repro_test PRIVATE argparse)
+if(ENABLE_IO_URING)
+  target_link_libraries(repro_test PRIVATE PkgConfig::uring)
+endif(ENABLE_IO_URING)
 #target_include_directories(data_generator PRIVATE $<TARGET_PROPERTY:argparse,INTERFACE_INCLUDE_DIRECTORIES>)
 set_target_properties(repro_test PROPERTIES
     CXX_STANDARD 14

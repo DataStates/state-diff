@@ -163,13 +163,13 @@ int main(int argc, char** argv) {
       for(uint32_t i=0; i<run0_all_files.size(); i++) {
         if((int)i % world_size == world_rank) {
           run0_files.push_back(run0_all_files[i]);
-          try_free_page_cache(run0_all_files[i]);
+//          try_free_page_cache(run0_all_files[i]);
         }
       }
       for(uint32_t i=0; i<run0_all_full_files.size(); i++) {
         if((int)i % world_size == world_rank) {
           run0_full_files.push_back(run0_all_full_files[i]);
-          try_free_page_cache(run0_all_full_files[i]);
+//          try_free_page_cache(run0_all_full_files[i]);
         }
       }
     }
@@ -177,13 +177,13 @@ int main(int argc, char** argv) {
       for(uint32_t i=0; i<run1_all_files.size(); i++) {
         if((int)i % world_size == world_rank) {
           run1_files.push_back(run1_all_files[i]);
-          try_free_page_cache(run1_all_files[i]);
+//          try_free_page_cache(run1_all_files[i]);
         }
       }
       for(uint32_t i=0; i<run1_all_full_files.size(); i++) {
         if((int)i % world_size == world_rank) {
           run1_full_files.push_back(run1_all_full_files[i]);
-          try_free_page_cache(run1_all_full_files[i]);
+//          try_free_page_cache(run1_all_full_files[i]);
         }
       }
     }
@@ -307,13 +307,14 @@ int main(int argc, char** argv) {
         Timer::time_point beg_read = Timer::now();
         Kokkos::Profiling::pushRegion("Read");
         if(!enable_file_streaming) { // Read files if not using file data streaming
-//          data0_h = Kokkos::View<uint8_t*>::HostMirror("Run 0 region mirror", data_len);
-//          unaligned_direct_read(run0_files[idx], data0_h.data(), data_len);
-//          if(comparing_runs) {
-//            data1_h = Kokkos::View<uint8_t*>::HostMirror("Run 1 region mirror", data_len);
-//            unaligned_direct_read(run1_files[idx], data1_h.data(), data_len);
-//          }
+          unaligned_direct_read(run0_files[idx], data0_h.data(), data_len);
+          if(comparing_runs) {
+            unaligned_direct_read(run1_files[idx], data1_h.data(), data_len);
+          }
 
+//          std::ifstream f;
+//          f.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+//          f.open(run0_files[idx], std::ifstream::in | std::ifstream::binary);
 //          f.read((char*)(data0_h.data()), data_len);
 //          f.close();
 //          if(comparing_runs) {
@@ -326,42 +327,41 @@ int main(int argc, char** argv) {
 //          data0_ptr = (uint8_t*) aligned_alloc(pagesize, npages*pagesize);
 //          data0_h = UnmanagedByteHostView(data0_ptr, npages*pagesize);
 
-          int fd0 = open(run0_files[idx].c_str(), O_RDONLY, 0644);
-          if (fd0 == -1) {
-            FATAL("cannot open " << run0_files[idx] << ", error = " << strerror(errno));
-          }
-          size_t transferred = 0, remaining = data_len;
-          while (remaining > 0) {
-          	auto ret = read(fd0, data0_h.data() + transferred, remaining);
-          	if (ret < 0)
-          	  FATAL("cannot read " << data_len << " bytes from " << run0_files[idx] << " , error = " << std::strerror(errno));
-          	remaining -= ret;
-          	transferred += ret;
-          }
-          fsync(fd0);
-          close(fd0);
-
-          if(comparing_runs) {
-            int fd1 = open(run1_files[idx].c_str(), O_RDONLY, 0644);
-            if (fd1 == -1) {
-              FATAL("cannot open " << run0_files[idx] << ", error = " << strerror(errno));
-            }
-            transferred = 0, remaining = data_len;
-            while (remaining > 0) {
-            	auto ret = read(fd1, data1_h.data() + transferred, remaining);
-            	if (ret < 0)
-            	  FATAL("cannot read " << data_len << " bytes from " << run1_files[idx] << " , error = " << std::strerror(errno));
-            	remaining -= ret;
-            	transferred += ret;
-            }
-            fsync(fd1);
-            close(fd1);
-          }
-        } else {
-//          if(!comparing_runs) {
-//            data0_h = Kokkos::View<uint8_t*>::HostMirror("Run 0 region mirror", data_len);
-//            unaligned_direct_read(run0_files[idx], data0_h.data(), data_len);
+//          int fd0 = open(run0_files[idx].c_str(), O_RDONLY, 0644);
+//          if (fd0 == -1) {
+//            FATAL("cannot open " << run0_files[idx] << ", error = " << strerror(errno));
 //          }
+//          size_t transferred = 0, remaining = data_len;
+//          while (remaining > 0) {
+//          	auto ret = read(fd0, data0_h.data() + transferred, remaining);
+//          	if (ret < 0)
+//          	  FATAL("cannot read " << data_len << " bytes from " << run0_files[idx] << " , error = " << std::strerror(errno));
+//          	remaining -= ret;
+//          	transferred += ret;
+//          }
+//          fsync(fd0);
+//          close(fd0);
+//
+//          if(comparing_runs) {
+//            int fd1 = open(run1_files[idx].c_str(), O_RDONLY, 0644);
+//            if (fd1 == -1) {
+//              FATAL("cannot open " << run0_files[idx] << ", error = " << strerror(errno));
+//            }
+//            transferred = 0, remaining = data_len;
+//            while (remaining > 0) {
+//            	auto ret = read(fd1, data1_h.data() + transferred, remaining);
+//            	if (ret < 0)
+//            	  FATAL("cannot read " << data_len << " bytes from " << run1_files[idx] << " , error = " << std::strerror(errno));
+//            	remaining -= ret;
+//            	transferred += ret;
+//            }
+//            fsync(fd1);
+//            close(fd1);
+//          }
+        } else {
+          if(!comparing_runs) {
+            unaligned_direct_read(run0_files[idx], data0_h.data(), data_len);
+          }
 
 //          if(!comparing_runs) { // Read current file for later write
 //            std::ifstream f;
@@ -372,22 +372,22 @@ int main(int argc, char** argv) {
 //            f.close();
 //          }
 
-          if(!comparing_runs) {
-            int fd0 = open(run0_files[idx].c_str(), O_RDONLY, 0644);
-            if (fd0 == -1) {
-              FATAL("cannot open " << run0_files[idx] << ", error = " << strerror(errno));
-            }
-            size_t transferred = 0, remaining = data_len;
-            while (remaining > 0) {
-            	auto ret = read(fd0, data0_h.data() + transferred, remaining);
-            	if (ret < 0)
-            	  FATAL("cannot read " << data_len << " bytes from " << run0_files[idx] << " , error = " << std::strerror(errno));
-            	remaining -= ret;
-            	transferred += ret;
-            }
-            fsync(fd0);
-            close(fd0);
-          }
+//          if(!comparing_runs) {
+//            int fd0 = open(run0_files[idx].c_str(), O_RDONLY, 0644);
+//            if (fd0 == -1) {
+//              FATAL("cannot open " << run0_files[idx] << ", error = " << strerror(errno));
+//            }
+//            size_t transferred = 0, remaining = data_len;
+//            while (remaining > 0) {
+//            	auto ret = read(fd0, data0_h.data() + transferred, remaining);
+//            	if (ret < 0)
+//            	  FATAL("cannot read " << data_len << " bytes from " << run0_files[idx] << " , error = " << std::strerror(errno));
+//            	remaining -= ret;
+//            	transferred += ret;
+//            }
+//            fsync(fd0);
+//            close(fd0);
+//          }
         }
 
         Kokkos::Profiling::popRegion();
@@ -571,23 +571,23 @@ int main(int argc, char** argv) {
           outname = output_fname;
         }
         if(!comparing_runs) {
-//          unaligned_direct_write(outname, data0_h.data(), data_len);
-//          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
-          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
-          if (fd == -1) {
-              FATAL("cannot open " << outname << ", error = " << strerror(errno));
-          }
-          size_t transferred = 0, remaining = data_len;
-          while (remaining > 0) {
-          	auto ret = write(fd, data0_h.data() + transferred, remaining);
-          	if (ret < 0)
-          	    FATAL("cannot write " << data_len << " bytes to " << outname << " , error = " << std::strerror(errno));
-          	remaining -= ret;
-          	transferred += ret;
-          }
-          fsync(fd);
-          posix_fadvise(fd, 0,0,POSIX_FADV_DONTNEED);
-          close(fd);
+          unaligned_direct_write(outname, data0_h.data(), data_len);
+
+//          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
+//          if (fd == -1) {
+//              FATAL("cannot open " << outname << ", error = " << strerror(errno));
+//          }
+//          size_t transferred = 0, remaining = data_len;
+//          while (remaining > 0) {
+//          	auto ret = write(fd, data0_h.data() + transferred, remaining);
+//          	if (ret < 0)
+//          	    FATAL("cannot write " << data_len << " bytes to " << outname << " , error = " << std::strerror(errno));
+//          	remaining -= ret;
+//          	transferred += ret;
+//          }
+//          fsync(fd);
+//          posix_fadvise(fd, 0,0,POSIX_FADV_DONTNEED);
+//          close(fd);
         }
         Kokkos::Profiling::popRegion();
         Timer::time_point end_write_tree = Timer::now();
@@ -648,59 +648,42 @@ int main(int argc, char** argv) {
         Timer::time_point beg_read = Timer::now();
         Kokkos::Profiling::pushRegion("Read");
         if(comparing_runs) {
-//      int f0 = open(run0_files[idx].c_str(), O_RDONLY | O_DIRECT);
-//      if (f0 == -1)
-//        FATAL("cannot open " << run0_files[idx] << ", error = " << std::strerror(errno));
-//      run0_buffer = (uint8_t *)mmap(NULL, data_len, PROT_READ, MAP_PRIVATE, f0, 0);
-//      close(f0);
-//      if (run0_buffer == MAP_FAILED)
-//        FATAL("cannot mmap " << run0_files[idx] << ", error = " << std::strerror(errno));
-//
-//      int f1 = open(run1_files[idx].c_str(), O_RDONLY | O_DIRECT);
-//      if (f1 == -1)
-//        FATAL("cannot open " << run1_files[idx] << ", error = " << std::strerror(errno));
-//      run1_buffer = (uint8_t *)mmap(NULL, data_len, PROT_READ, MAP_PRIVATE, f1, 0);
-//      close(f1);
-//      if (run1_buffer == MAP_FAILED)
-//        FATAL("cannot mmap " << run1_files[idx] << ", error = " << std::strerror(errno));
           
 //          aligned_direct_read(run0_files[idx], run0_buffer, data_len_pages);
 //          aligned_direct_read(run1_files[idx], run1_buffer, data_len_pages);
 
-//          run1_buffer = std::vector<uint8_t>(data_len, 0);
-//          run0_buffer = std::vector<uint8_t>(data_len, 0);
-//          unaligned_direct_read(run0_files[idx], run0_buffer.data(), data_len);
-//          unaligned_direct_read(run1_files[idx], run1_buffer.data(), data_len);
+          unaligned_direct_read(run0_files[idx], data0_h.data(), data_len);
+          unaligned_direct_read(run1_files[idx], data1_h.data(), data_len);
 
-          int fd0 = open(run0_files[idx].c_str(), O_RDONLY, 0644);
-          if (fd0 == -1) {
-            FATAL("cannot open " << run0_files[idx] << ", error = " << strerror(errno));
-          }
-          size_t transferred = 0, remaining = data_len;
-          while (remaining > 0) {
-          	auto ret = read(fd0, data0_h.data() + transferred, remaining);
-          	if (ret < 0)
-          	  FATAL("cannot read " << data_len << " bytes from " << run0_files[idx] << " , error = " << std::strerror(errno));
-          	remaining -= ret;
-          	transferred += ret;
-          }
-          fsync(fd0);
-          close(fd0);
-
-          int fd1 = open(run1_files[idx].c_str(), O_RDONLY, 0644);
-          if (fd1 == -1) {
-            FATAL("cannot open " << run1_files[idx] << ", error = " << strerror(errno));
-          }
-          transferred = 0, remaining = data_len;
-          while (remaining > 0) {
-          	auto ret = read(fd1, data1_h.data() + transferred, remaining);
-          	if (ret < 0)
-          	  FATAL("cannot read " << data_len << " bytes from " << run1_files[idx] << " , error = " << std::strerror(errno));
-          	remaining -= ret;
-          	transferred += ret;
-          }
-          fsync(fd1);
-          close(fd1);
+//          int fd0 = open(run0_files[idx].c_str(), O_RDONLY, 0644);
+//          if (fd0 == -1) {
+//            FATAL("cannot open " << run0_files[idx] << ", error = " << strerror(errno));
+//          }
+//          size_t transferred = 0, remaining = data_len;
+//          while (remaining > 0) {
+//          	auto ret = read(fd0, data0_h.data() + transferred, remaining);
+//          	if (ret < 0)
+//          	  FATAL("cannot read " << data_len << " bytes from " << run0_files[idx] << " , error = " << std::strerror(errno));
+//          	remaining -= ret;
+//          	transferred += ret;
+//          }
+//          fsync(fd0);
+//          close(fd0);
+//
+//          int fd1 = open(run1_files[idx].c_str(), O_RDONLY, 0644);
+//          if (fd1 == -1) {
+//            FATAL("cannot open " << run1_files[idx] << ", error = " << strerror(errno));
+//          }
+//          transferred = 0, remaining = data_len;
+//          while (remaining > 0) {
+//          	auto ret = read(fd1, data1_h.data() + transferred, remaining);
+//          	if (ret < 0)
+//          	  FATAL("cannot read " << data_len << " bytes from " << run1_files[idx] << " , error = " << std::strerror(errno));
+//          	remaining -= ret;
+//          	transferred += ret;
+//          }
+//          fsync(fd1);
+//          close(fd1);
 
 //          std::ifstream f;
 //          f.exceptions(std::ifstream::failbit | std::ifstream::badbit);
@@ -711,29 +694,25 @@ int main(int argc, char** argv) {
 //          f.read((char*)(run0_buffer.data()), data_len);
 //          f.close();
         } else {
-//          uint8_t* run_ptr_h = (uint8_t*) aligned_alloc(pagesize, data_len_pages);
 //          aligned_direct_read(run0_files[idx], run_ptr_h, data_len);
-//          run_view_h = UnmanagedByteView(run_ptr_h, data_len);
 
-//          run_view_h = Kokkos::View<uint8_t*>::HostMirror("Host data", data_len);
+          unaligned_direct_read(run0_files[idx], data0_h.data(), data_len);
 
-//          unaligned_direct_read(run0_files[idx], run_view_h.data(), data_len);
-
-          int fd0 = open(run0_files[idx].c_str(), O_RDONLY, 0644);
-          if (fd0 == -1) {
-            FATAL("cannot open " << run0_files[idx] << ", error = " << strerror(errno));
-          }
-//          posix_fadvise(fd0, 0,0,POSIX_FADV_DONTNEED);
-          size_t transferred = 0, remaining = data_len;
-          while (remaining > 0) {
-          	auto ret = read(fd0, data0_h.data() + transferred, remaining);
-          	if (ret < 0)
-          	  FATAL("cannot read " << data_len << " bytes from " << run0_files[idx] << " , error = " << std::strerror(errno));
-          	remaining -= ret;
-          	transferred += ret;
-          }
-          fsync(fd0);
-          close(fd0);
+//          int fd0 = open(run0_files[idx].c_str(), O_RDONLY, 0644);
+//          if (fd0 == -1) {
+//            FATAL("cannot open " << run0_files[idx] << ", error = " << strerror(errno));
+//          }
+////          posix_fadvise(fd0, 0,0,POSIX_FADV_DONTNEED);
+//          size_t transferred = 0, remaining = data_len;
+//          while (remaining > 0) {
+//          	auto ret = read(fd0, data0_h.data() + transferred, remaining);
+//          	if (ret < 0)
+//          	  FATAL("cannot read " << data_len << " bytes from " << run0_files[idx] << " , error = " << std::strerror(errno));
+//          	remaining -= ret;
+//          	transferred += ret;
+//          }
+//          fsync(fd0);
+//          close(fd0);
 
 //          std::ifstream f;
 //          f.exceptions(std::ifstream::failbit | std::ifstream::badbit);
@@ -836,24 +815,23 @@ int main(int argc, char** argv) {
           outname = output_fname;
         }
         if(!comparing_runs) {
-//          unaligned_direct_write(outname, serialized_buffer.data(), serialized_buffer.size());
+          unaligned_direct_write(outname, serialized_buffer.data(), serialized_buffer.size());
 
-//          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_DIRECT, 0644);
-          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
-          if (fd == -1) {
-              FATAL("cannot open " << outname << ", error = " << strerror(errno));
-          }
-          size_t transferred = 0, remaining = serialized_buffer.size();
-          while (remaining > 0) {
-          	auto ret = write(fd, serialized_buffer.data() + transferred, remaining);
-          	if (ret < 0)
-          	    FATAL("cannot write " << serialized_buffer.size() << " bytes to " << outname << " , error = " << std::strerror(errno));
-          	remaining -= ret;
-          	transferred += ret;
-          }
-          fsync(fd);
-          posix_fadvise(fd, 0,0,POSIX_FADV_DONTNEED);
-          close(fd);
+//          int fd = open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
+//          if (fd == -1) {
+//              FATAL("cannot open " << outname << ", error = " << strerror(errno));
+//          }
+//          size_t transferred = 0, remaining = serialized_buffer.size();
+//          while (remaining > 0) {
+//          	auto ret = write(fd, serialized_buffer.data() + transferred, remaining);
+//          	if (ret < 0)
+//          	    FATAL("cannot write " << serialized_buffer.size() << " bytes to " << outname << " , error = " << std::strerror(errno));
+//          	remaining -= ret;
+//          	transferred += ret;
+//          }
+//          fsync(fd);
+//          posix_fadvise(fd, 0,0,POSIX_FADV_DONTNEED);
+//          close(fd);
         }
         Kokkos::Profiling::popRegion();
         Timer::time_point end_write_tree = Timer::now();

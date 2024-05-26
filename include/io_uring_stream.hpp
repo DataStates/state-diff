@@ -48,10 +48,10 @@ class IOUringStream {
     DataType *active_buffer=NULL, *transfer_buffer=NULL; // Convenient pointers
     DataType *host_buffer=NULL;
     std::future<int> fut;
+    std::vector<double> timer;
 #ifdef __NVCC__
     cudaStream_t transfer_stream; // Stream for data transfers
 #endif
-    double timer=0.0;
 
   private:
     int setup_context(uint32_t entries, struct io_uring* ring) {
@@ -100,8 +100,9 @@ class IOUringStream {
     IOUringStream() {}
 
     // Constructor for Host -> Device stream
-    IOUringStream(size_t buff_len, std::string& file_name, 
+    IOUringStream(size_t buff_len, std::string& file_name, const size_t chunk_size,
                   bool async_memcpy=true, bool transfer_all=true) {
+      timer = std::vector<double>(3, 0.0);
       full_transfer = transfer_all;
       async = async_memcpy;
       elem_per_slice = buff_len;
@@ -109,6 +110,18 @@ class IOUringStream {
       filename = file_name; // Save file name
       active_slice_len = elem_per_slice;
       transfer_slice_len = elem_per_slice;
+
+      // Calculate useful values
+      if(full_transfer) {
+        elem_per_chunk = elem_per_slice;
+        bytes_per_chunk = bytes_per_slice;
+        chunks_per_slice = 1;
+      } else {
+        elem_per_chunk = chunk_size;
+        bytes_per_chunk = elem_per_chunk*sizeof(DataType);
+        chunks_per_slice = elem_per_slice/elem_per_chunk;
+      }
+
       file = open(filename.c_str(), O_RDONLY);
       if( file < 0 ) {
         fprintf(stderr, "Failed to open file %s\n", filename.c_str());
@@ -117,14 +130,21 @@ class IOUringStream {
         fprintf(stderr, "Failed to retrieve file size for %s\n", filename.c_str());
       }
       INFO("mapping " << first.size / sizeof(DataType) << " elements");
+#ifdef __NVCC__
       active_buffer = device_alloc<DataType>(bytes_per_slice);
       transfer_buffer = device_alloc<DataType>(bytes_per_slice);
-      host_buffer = transfer_buffer;
-#ifdef __NVCC__
-      if(!full_transfer) {
-        host_buffer = host_alloc<DataType>(bytes_per_slice);
-      }
+      host_buffer = host_alloc<DataType>(bytes_per_slice);
+      size_t max_offsets = filesize / bytes_per_chunk;
+      if(bytes_per_chunk*max_offsets < filesize)
+        max_offsets += 1;
+      host_offsets = host_alloc<size_t>(sizeof(size_t)*max_offsets);
       gpuErrchk( cudaStreamCreate(&transfer_stream) );
+#else
+      if(!full_transfer) {
+        active_buffer = device_alloc<DataType>(bytes_per_slice);
+        transfer_buffer = device_alloc<DataType>(bytes_per_slice);
+      }
+      host_buffer = transfer_buffer;
 #endif
       
       DEBUG_PRINT("Constructor: Filename: %s\n", filename.c_str());
@@ -137,61 +157,42 @@ class IOUringStream {
       DEBUG_PRINT("Constructor: Transfer slice len: %zu\n", transfer_slice_len);
     }
 
-    // Move assignment operator
-    IOUringStream& operator=(IOUringStream&& right) {
-      host_offsets = right.host_offsets;
-      right.host_offsets = NULL;
-      file_offsets = right.file_offsets;
-      right.file_offsets = NULL;
-      num_offsets = right.num_offsets;
-      active_slice_len = right.active_slice_len;
-      transfer_slice_len = right.transfer_slice_len;
-      elem_per_slice = right.elem_per_slice;
-      bytes_per_slice = right.bytes_per_slice;
-      elem_per_chunk = right.elem_per_chunk;
-      bytes_per_chunk = right.bytes_per_chunk;
-      chunks_per_slice = right.chunks_per_slice;
-      async = right.async;
-      full_transfer = right.full_transfer;
-      done = right.done;
-      filename = right.filename;
-      filesize = right.filesize;
-      file = right.file;
-      right.file = 0;
-      ring = right.ring;
-      ring_size = right.ring_size;
-      host_buffer = right.host_buffer;
-      right.host_buffer = NULL;
-      active_buffer = right.active_buffer;
-      right.active_buffer = NULL;
-      transfer_buffer = right.transfer_buffer;
-      right.transfer_buffer = NULL;
-#ifdef __NVCC__
-      transfer_stream = right.transfer_stream;
-      right.transfer_stream = 0;
-#endif
-      return *this;
-    }
-
-    // Move constructor
-    IOUringStream(IOUringStream&& src) {
-      *this = src;
-    }
-
     ~IOUringStream() {
-      if(done && file != 0) {
+      if(done && (file != -1)) {
         close(file);
-        file=0;
+        file = -1;
       }
-      if(active_buffer != NULL)
-        device_free<DataType>(active_buffer);
-      if(transfer_buffer != NULL)
-        device_free<DataType>(transfer_buffer);
 #ifdef __NVCC__
-      if(host_buffer != NULL)
+      if(done && (active_buffer != NULL)) {
+        device_free<DataType>(active_buffer);
+        active_buffer = NULL;
+      }
+      if(done && (transfer_buffer != NULL)) {
+        device_free<DataType>(transfer_buffer);
+        transfer_buffer = NULL;
+      }
+      if(done && (host_buffer != NULL)) {
         host_free<DataType>(host_buffer);
-      if(done && transfer_stream != 0) {
+        host_buffer = NULL;
+      }
+      if(done && (transfer_stream != 0)) {
         gpuErrchk( cudaStreamDestroy(transfer_stream) );
+        transfer_stream = 0;
+      }
+      if(done && (host_offsets != NULL)) {
+        host_free<size_t>(host_offsets);
+        host_offsets = NULL;
+      }
+#else
+      if(!full_transfer) {
+        if(active_buffer != NULL) {
+          device_free<DataType>(active_buffer);
+          active_buffer = NULL;
+        }
+        if(transfer_buffer != NULL) {
+          device_free<DataType>(transfer_buffer);
+          transfer_buffer = NULL;
+        }
       }
 #endif
     }
@@ -218,6 +219,7 @@ class IOUringStream {
       }
       io_uring_cq_advance(&ring, num_cqe);
       
+      Timer::time_point beg_copy = Timer::now();
 #ifdef __NVCC__
       if(async) {
         gpuErrchk( cudaMemcpyAsync(transfer_buffer, 
@@ -232,24 +234,25 @@ class IOUringStream {
                               cudaMemcpyHostToDevice) );
       }
 #endif
+      Timer::time_point end_copy = Timer::now();
+      timer[2] += std::chrono::duration_cast<Duration>(end_copy - beg_copy).count();
       return 0;
     }
 
     size_t prepare_slice() {
-      int had_reads, got_comp, ret;
+      Timer::time_point beg_read = Timer::now();
+      int ret;
       uint32_t reads=0;
-      struct io_uring_cqe *cqe;
-      if(elem_per_chunk*(transferred_chunks+chunks_per_slice) > filesize/sizeof(DataType)) { 
-        transfer_slice_len = filesize/sizeof(DataType) - transferred_chunks*elem_per_chunk;
-      } else {
-        transfer_slice_len = elem_per_chunk*chunks_per_slice;
+      transfer_slice_len = elem_per_slice;
+      size_t elements_read = elem_per_chunk*transferred_chunks;
+      if(elements_read+transfer_slice_len > num_offsets*elem_per_chunk) { 
+        transfer_slice_len = num_offsets*elem_per_chunk - elements_read;
       }
       size_t chunks_left = chunks_per_slice;
       if(transferred_chunks+chunks_left>num_offsets) {
         chunks_left = num_offsets - transferred_chunks;
       }
 
-      had_reads = reads;
       num_cqe = 0;
       for(size_t i=0; i<chunks_left; i++) {
         if(reads >= ring_size)
@@ -267,6 +270,9 @@ class IOUringStream {
       if(ret < 0) {
         fprintf(stderr, "io_uring_submit: %s\n", strerror(-ret));
       }
+      Timer::time_point end_read = Timer::now();
+      timer[1] += std::chrono::duration_cast<Duration>(end_read - beg_read).count();
+      
       fut = std::async(std::launch::async, &IOUringStream::async_memcpy, this);
       return transfer_slice_len;
     }
@@ -302,7 +308,6 @@ class IOUringStream {
       }
 
 #ifdef __NVCC__
-      host_offsets = host_alloc<size_t>(n_offsets*sizeof(size_t));
       gpuErrchk( cudaMemcpy(host_offsets, offset_ptr, n_offsets*sizeof(size_t), cudaMemcpyDeviceToHost) );
 #else
       host_offsets = offset_ptr;
@@ -310,7 +315,7 @@ class IOUringStream {
       Timer::time_point beg = Timer::now();
       prepare_slice();
       Timer::time_point end = Timer::now();
-      timer += std::chrono::duration_cast<Duration>(end - beg).count();
+      timer[0] += std::chrono::duration_cast<Duration>(end - beg).count();
       return;
     }
     
@@ -340,7 +345,7 @@ class IOUringStream {
         Timer::time_point beg = Timer::now();
         prepare_slice();
         Timer::time_point end = Timer::now();
-        timer += std::chrono::duration_cast<Duration>(end - beg).count();
+        timer[0] += std::chrono::duration_cast<Duration>(end - beg).count();
       }
       return active_buffer;
     }
@@ -350,7 +355,7 @@ class IOUringStream {
       done = true;
     }
 
-    double get_timer() {
+    std::vector<double> get_timer() {
       return timer;
     }
 };
