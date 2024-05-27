@@ -153,11 +153,10 @@ ssize_t aligned_direct_read(const std::string& filename, void* data, size_t size
     if (fd == -1)
       FATAL("cannot open " << filename << ", error = " << std::strerror(errno));
 
-//    // Seek previous starting point
-//printf("Seek %zu of %zu\n", nread, size);
-//    ret = lseek(fd, nread, SEEK_SET);
-//    if(ret == -1)
-//      FATAL("lseek failed for " << filename << ", error = " << std::strerror(errno));
+    // Seek previous starting point
+    ret = lseek(fd, direct_size, SEEK_SET);
+    if(ret == -1)
+      FATAL("lseek failed for " << filename << ", error = " << std::strerror(errno));
 
     // Read data
     size_t nread = 0, remaining = size - nread;
