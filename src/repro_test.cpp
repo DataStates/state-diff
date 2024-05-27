@@ -163,13 +163,13 @@ int main(int argc, char** argv) {
       for(uint32_t i=0; i<run0_all_files.size(); i++) {
         if((int)i % world_size == world_rank) {
           run0_files.push_back(run0_all_files[i]);
-//          try_free_page_cache(run0_all_files[i]);
+          try_free_page_cache(run0_all_files[i]);
         }
       }
       for(uint32_t i=0; i<run0_all_full_files.size(); i++) {
         if((int)i % world_size == world_rank) {
           run0_full_files.push_back(run0_all_full_files[i]);
-//          try_free_page_cache(run0_all_full_files[i]);
+          try_free_page_cache(run0_all_full_files[i]);
         }
       }
     }
@@ -177,13 +177,13 @@ int main(int argc, char** argv) {
       for(uint32_t i=0; i<run1_all_files.size(); i++) {
         if((int)i % world_size == world_rank) {
           run1_files.push_back(run1_all_files[i]);
-//          try_free_page_cache(run1_all_files[i]);
+          try_free_page_cache(run1_all_files[i]);
         }
       }
       for(uint32_t i=0; i<run1_all_full_files.size(); i++) {
         if((int)i % world_size == world_rank) {
           run1_full_files.push_back(run1_all_full_files[i]);
-//          try_free_page_cache(run1_all_full_files[i]);
+          try_free_page_cache(run1_all_full_files[i]);
         }
       }
     }
