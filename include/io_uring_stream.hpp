@@ -35,6 +35,13 @@ class IOUringStream {
     uint32_t num_cqe=0;
   };
 
+  struct read_call_data_t {
+    uint64_t beg;
+    uint64_t end;
+    uint64_t fileoffset;
+    uint64_t offset;
+  };
+
   int setup_context(uint32_t entries, struct io_uring* ring) {
     int ret;
     ret = io_uring_queue_init(entries, ring, 0);
@@ -67,14 +74,17 @@ class IOUringStream {
       return -1;
   }
 
-  int queue_read(struct io_uring *ring, off_t size, off_t offset, void* dst_buf) {
+  int queue_read(struct io_uring *ring, off_t size, off_t offset, void* dst_buf, uint64_t data_index) {
       struct io_uring_sqe *sqe;
 
       sqe = io_uring_get_sqe(ring);
       if (!sqe) {
-          return 1;
+        fprintf(stderr, "Could not get sqe\n");
+          return -1;
       }
   
+      io_uring_sqe_set_data64(sqe, data_index);
+
       io_uring_prep_read(sqe, file, dst_buf, size, offset);
       return 0;
   }
@@ -94,7 +104,6 @@ class IOUringStream {
     int num_threads=16;
     int max_ring_size=32768;
     int32_t num_cqe=0;
-    std::vector<ring_state_t> rings;
     struct io_uring ring;
     DataType *mmapped_file=NULL; // Pointer to host data
     DataType *active_buffer=NULL, *transfer_buffer=NULL; // Convenient pointers
@@ -124,9 +133,18 @@ class IOUringStream {
 
       // Calculate useful values
       if(full_transfer) {
-        elem_per_chunk = elem_per_slice;
-        bytes_per_chunk = bytes_per_slice;
-        chunks_per_slice = 1;
+//        if(sizeof(DataType)*elem_per_slice > 1024*1024*1024) {
+//          elem_per_chunk = 1024*1024*1024/sizeof(DataType);
+//          bytes_per_chunk = elem_per_chunk*sizeof(DataType);
+//          chunks_per_slice = elem_per_slice / elem_per_chunk;
+//printf("Elem per chunk: %zu\n", elem_per_chunk);
+//printf("Bytes per chunk: %zu\n", bytes_per_chunk);
+//printf("Chunks per slice: %zu\n", chunks_per_slice);
+//        } else {
+          elem_per_chunk = elem_per_slice;
+          bytes_per_chunk = bytes_per_slice;
+          chunks_per_slice = 1;
+//        }
       } else {
         elem_per_chunk = chunk_size;
         bytes_per_chunk = elem_per_chunk*sizeof(DataType);
@@ -141,10 +159,6 @@ class IOUringStream {
       if( get_file_size(file, &filesize) != 0) {
         fprintf(stderr, "Failed to retrieve file size for %s\n", filename.c_str());
       }
-      INFO("mapping " << first.size / sizeof(DataType) << " elements");
-
-      // Create rings
-//      rings = std::vector<ring_state_t>(num_threads);
 
 #ifdef __NVCC__
       active_buffer = device_alloc<DataType>(bytes_per_slice);
@@ -194,7 +208,6 @@ class IOUringStream {
       num_threads = other.num_threads;
       max_ring_size = other.max_ring_size;
       num_cqe = other.num_cqe;
-      rings = other.rings;
       ring = other.ring;
       mmapped_file = other.mmapped_file;
       active_buffer = other.active_buffer;
@@ -237,11 +250,11 @@ class IOUringStream {
       }
 #else
       if(!full_transfer) {
-        if(active_buffer != NULL) {
+        if(done && (active_buffer != NULL)) {
           device_free<DataType>(active_buffer);
           active_buffer = NULL;
         }
-        if(transfer_buffer != NULL) {
+        if(done && (transfer_buffer != NULL)) {
           device_free<DataType>(transfer_buffer);
           transfer_buffer = NULL;
         }
@@ -263,20 +276,12 @@ class IOUringStream {
     }
 
     int async_memcpy() {
-      for(int i=0; i<num_threads; i++) {
+      for(int i=0; i<futures.size(); i++) {
         int res = futures[i].get();
         if(res < 0) 
           fprintf(stderr, "read_chunks: %s\n", strerror(-res));
       }
       futures.clear();
-
-//      struct io_uring_cqe *cqe;
-//      int ret = io_uring_wait_cqe_nr(&(ring), &cqe, num_cqe);
-//      if(ret < 0) {
-//        fprintf(stderr, "io_uring_wait_cqe_nr: %s\n", strerror(-ret));
-//        return ret;
-//      }
-//      io_uring_cq_advance(&(ring), num_cqe);
       
       Timer::time_point beg_copy = Timer::now();
 #ifdef __NVCC__
@@ -306,6 +311,8 @@ class IOUringStream {
         FATAL("Failed to setup ring of size " << max_ring_size);
       }
 
+      std::vector<read_call_data_t> read_data;
+
       // Fill submission queue with reads
       uint32_t num_cqe = 0;
       for(size_t i=beg; i<end; i++) {
@@ -313,7 +320,13 @@ class IOUringStream {
         size_t len = bytes_per_chunk;
         if(fileoffset+len > filesize)
           len = filesize - fileoffset;
-        queue_read(&ring, len, fileoffset, host_buffer+i*elem_per_chunk);
+        read_call_data_t data;
+        data.beg = beg;
+        data.end = end;
+        data.fileoffset = fileoffset;
+        data.offset = i*elem_per_chunk;
+        read_data.push_back(data);
+        queue_read(&ring, len, fileoffset, host_buffer+i*elem_per_chunk, i);
         num_cqe++;
       }
      
@@ -325,13 +338,100 @@ class IOUringStream {
       }
 
       // Wait for queue to finish
-      io_uring_cqe *cqe;
-      ret = io_uring_wait_cqe_nr(&ring, &cqe, num_cqe);
+      io_uring_cqe *cqe[32768];
+      ret = io_uring_wait_cqe_nr(&ring, &cqe[0], num_cqe);
       if(ret < 0) {
         fprintf(stderr, "io_uring_wait_cqe_nr: %s\n", strerror(-ret));
         return ret;
       }
       io_uring_cq_advance(&ring, num_cqe);
+
+//      // Fill submission queue with reads
+//      uint32_t num_cqe = 0;
+//      for(size_t i=beg; i<end; i++) {
+//        size_t fileoffset = host_offsets[transferred_chunks+i]*bytes_per_chunk;
+//        size_t len = bytes_per_chunk;
+//        if(fileoffset+len > filesize)
+//          len = filesize - fileoffset;
+//        read_call_data_t data;
+//        data.beg = 0;
+//        data.end = len;
+//        data.fileoffset = fileoffset;
+//        data.offset = i*elem_per_chunk;
+//        read_data.push_back(data);
+//printf("Queueing read of %zu byes from %zu\n", len, fileoffset);
+//fflush(stdout);
+//        ret = queue_read(&ring, len, fileoffset, host_buffer+i*elem_per_chunk, i);
+//        if(ret < 0) {
+//          fprintf(stderr, "queue_read failed\n");
+//  fflush(stderr);
+//          return ret;
+//        }
+//        num_cqe++;
+//      }
+//      // Submit queue
+//      ret = io_uring_submit(&ring);
+//      if(ret < 0) {
+//        fprintf(stderr, "io_uring_submit: %s\n", strerror(-ret));
+//fflush(stderr);
+//        return ret;
+//      }
+//printf("Submitted queue with %u events\n", num_cqe);
+//fflush(stdout);
+//      io_uring_cqe *cqe[32768];
+//      while(num_cqe > 0) {
+//printf("Waiting for %u events\n", num_cqe);
+//        ret = io_uring_wait_cqe_nr(&ring, &cqe[0], num_cqe);
+//        if(ret < 0) {
+//          fprintf(stderr, "io_uring_wait_cqe_nr: %s\n", strerror(-ret));
+//          return ret;
+//        }
+//        ret = io_uring_peek_batch_cqe(&ring, &cqe[0], num_cqe);
+//        if(ret < 0) {
+//          fprintf(stderr, "io_uring_peek_batch_cqe: %s\n", strerror(-ret));
+//          return ret;
+//        }
+//        uint32_t nevents = num_cqe;
+//        num_cqe = 0;
+//        for(uint32_t i=0; i<nevents; i++) {
+//          uint64_t bytes_read = cqe[i]->res;
+//          if(cqe[i]->res < 0) {
+//            fprintf(stderr, "Async read for cqe failed\n");
+//            bytes_read = 0;
+//          }
+//printf("Bytes read: %zu\n", bytes_read);
+//fflush(stdout);
+//          uint64_t index = io_uring_cqe_get_data64(cqe[i]);
+//          uint64_t beg_offset = read_data[index].beg;
+//          uint64_t end_offset = read_data[index].end;
+//          uint64_t fileoffset = read_data[index].fileoffset;
+//          uint64_t hostoffset = read_data[index].offset;
+//          if(bytes_read == 0) {
+//            queue_read(&ring, end_offset - beg_offset, fileoffset, host_buffer+hostoffset, i);
+//            num_cqe += 1;
+//printf("Resending read of %zu bytes\n", end_offset-beg_offset);
+//fflush(stdout);
+//          } else if(bytes_read != end_offset - beg_offset) {
+//            read_data[index].beg = beg_offset + bytes_read;
+//            read_data[index].fileoffset = fileoffset + bytes_read;
+//            read_data[index].offset = hostoffset + bytes_read;
+//printf("Queueing remaining read of %zu byes from %zu to %zu\n", end_offset-beg_offset-bytes_read, fileoffset+bytes_read, hostoffset+bytes_read);
+//fflush(stdout);
+//            queue_read(&ring, end_offset - beg_offset - bytes_read, fileoffset+bytes_read, host_buffer+hostoffset+bytes_read, i);
+//            num_cqe += 1;
+//          }
+//        }
+//        io_uring_cq_advance(&ring, nevents);
+//        if(num_cqe > 0) {
+//          ret = io_uring_submit(&ring);
+//          if(ret < 0) {
+//            fprintf(stderr, "io_uring_submit: %s\n", strerror(-ret));
+//fflush(stderr);
+//            return ret;
+//          }
+//        }
+//      }
+      
 
       // Destroy queue
       io_uring_queue_exit(&ring);
@@ -347,10 +447,14 @@ class IOUringStream {
       if(elements_read+transfer_slice_len > num_offsets*elem_per_chunk) { 
         transfer_slice_len = num_offsets*elem_per_chunk - elements_read;
       }
+      if((full_transfer) && (elements_read+transfer_slice_len > filesize)) { 
+        transfer_slice_len = filesize - elements_read;
+      }
       size_t chunks_left = chunks_per_slice;
       if(transferred_chunks+chunks_left>num_offsets) {
         chunks_left = num_offsets - transferred_chunks;
       }
+//printf("Chunks left: %zu, chunks per slice: %zu, transferred chunks: %zu, num_offsets: %zu\n", chunks_left, chunks_per_slice, transferred_chunks, num_offsets);
 
       size_t chunks_per_thread = chunks_left / num_threads;
       if(chunks_per_thread*num_threads < chunks_left)
@@ -358,39 +462,17 @@ class IOUringStream {
 
 //printf("Reading %zu chunks with %d threads\n", chunks_left, num_threads);
 
-      for(int tid=0; tid<num_threads; tid++) {
+      int active_threads = num_threads > chunks_left ? chunks_left : num_threads;
+//printf("Num therads: %d, active_threads: %d\n", num_threads, active_threads);
+      for(int tid=0; tid<active_threads; tid++) {
         size_t beg = tid*chunks_per_thread;
         size_t end = (tid+1)*chunks_per_thread;
         if(end > chunks_left)
           end = chunks_left;
+//printf("Thread %d reading data [%zu,%zu)\n", tid, beg, end);
         //std::thread read_thread(&IOUringStream::read_chunks, this, (int) tid, beg, end);
-        futures.push_back(std::async(std::launch::async | std::launch::deferred, &IOUringStream::read_chunks, this, tid, beg, end));
+        futures.push_back(std::async(std::launch::async | std::launch::deferred , &IOUringStream::read_chunks, this, tid, beg, end));
       }
-
-//      #pragma omp parallel for num_threads(2)
-//      for(size_t i=0; i<chunks_left; i++) {
-//        int tid = omp_get_thread_num();
-//        //int tid = 0;
-////        if(reads > num_threads*max_ring_size) {
-////          FATAL("Number of reads exceeds ring size " << reads << " vs " << max_ring_size);
-////          break;
-////        }
-//        size_t file_offset = host_offsets[transferred_chunks+i]*bytes_per_chunk;
-//        size_t len = bytes_per_chunk;
-//        if(file_offset+len > filesize)
-//          len = filesize - file_offset;
-//        queue_read(&(rings[tid].ring), len, file_offset, host_buffer+i*elem_per_chunk);
-////        if(queue_read(&(rings[tid].ring), len, file_offset, host_buffer+i*elem_per_chunk))
-////          break;
-//        rings[tid].num_cqe += 1;
-//        reads++;
-//      }
-//      for(int i=0; i<num_threads; i++) {
-//        ret = io_uring_submit(&(rings[i].ring));
-//        if(ret < 0) {
-//          FATAL("io_uring_submit: " << strerror(-ret));
-//        }
-//      }
 
 //      num_cqe = 0;
 //      for(size_t i=0; i<chunks_left; i++) {
@@ -423,9 +505,18 @@ class IOUringStream {
       file_offsets = offset_ptr;
       num_offsets = n_offsets;
       if(full_transfer) {
-        elem_per_chunk = elem_per_slice;
-        bytes_per_chunk = bytes_per_slice;
-        chunks_per_slice = 1;
+//        if(sizeof(DataType)*elem_per_slice > 1024*1024*1024) {
+//          elem_per_chunk = 1024*1024*1024/sizeof(DataType);
+//          bytes_per_chunk = elem_per_chunk*sizeof(DataType);
+//          chunks_per_slice = elem_per_slice / elem_per_chunk;
+//printf("Elem per chunk: %zu\n", elem_per_chunk);
+//printf("Bytes per chunk: %zu\n", bytes_per_chunk);
+//printf("Chunks per slice: %zu\n", chunks_per_slice);
+//        } else {
+          elem_per_chunk = elem_per_slice;
+          bytes_per_chunk = bytes_per_slice;
+          chunks_per_slice = 1;
+//        }
       } else {
         elem_per_chunk = chunk_size;
         bytes_per_chunk = elem_per_chunk*sizeof(DataType);
@@ -439,15 +530,6 @@ class IOUringStream {
       DEBUG_PRINT("Bytes per slice: %zu\n", bytes_per_slice);
       DEBUG_PRINT("Chunks per slice: %zu\n", chunks_per_slice);
       DEBUG_PRINT("Num offsets: %zu\n", num_offsets);
-
-//      for(int i=0; i<num_threads; i++) {
-//        rings[i].id = i;
-//        rings[i].ring_size = 32768;
-//        rings[i].num_cqe = 0;
-//        if (setup_context(rings[i].ring_size, &(rings[i].ring))) {
-//          FATAL("Failed to setup ring " << i << " of size " << rings[i].ring_size);
-//        }
-//      }
 
 //      if (setup_context(max_ring_size, &ring)) {
 //        FATAL("Failed to setup ring of size " << max_ring_size);
@@ -470,7 +552,6 @@ class IOUringStream {
     
     // Get next slice of data on Device buffer
     DataType* next_slice() {
-//      async_memcpy();
       int ret = fut.get();
       if(ret < 0)
         FATAL("failed to get future" << ", error = " << std::strerror(errno)); 

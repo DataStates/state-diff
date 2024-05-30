@@ -12,7 +12,7 @@ find_package(MPI)
 include(GNUInstallDirs)
 
 option(ENABLE_TESTS "enable tests" OFF)
-option(ENABLE_IOURING "Enable IO Uring support" OFF)
+option(ENABLE_IO_URING "Enable IO Uring support" OFF)
 option(ENABLE_KOKKOS "Enable Kokkos specific flags" ON)
 
 #==============================================================================

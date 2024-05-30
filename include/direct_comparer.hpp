@@ -24,13 +24,13 @@ class DirectComparer {
     size_t block_size = 0;
     std::vector<double> io_timer0, io_timer1;
     double compare_timer=0.0;
-//#ifdef IO_URING_STREAM
-//    IOUringStream<DataType> file_stream0;
-//    IOUringStream<DataType> file_stream1;
-//#else
+#ifdef IO_URING_STREAM
+    IOUringStream<DataType> file_stream0;
+    IOUringStream<DataType> file_stream1;
+#else
     MMapStream<DataType> file_stream0; 
     MMapStream<DataType> file_stream1; 
-//#endif
+#endif
 
   public:
     // Default empty constructor
@@ -125,13 +125,14 @@ void DirectComparer<DataType,ExecutionDevice>::setup(const size_t data_len, cons
                                                      std::string& filename0, std::string& filename1) {
   file0 = filename0;
   file1 = filename1;
-//#ifdef IO_URING_STREAM
-//  file_stream0 = IOUringStream<DataType>(bufflen, file0, true, true);
-//  file_stream1 = IOUringStream<DataType>(bufflen, file1, true, true);
-//#else
+  size_t chunk_size = bufflen*sizeof(DataType) > 1024*1024*1024 ? 1024*1024*1024/sizeof(DataType) : bufflen;
+#ifdef IO_URING_STREAM
+  file_stream0 = IOUringStream<DataType>(bufflen, file0, chunk_size, true, true, 16);
+  file_stream1 = IOUringStream<DataType>(bufflen, file1, chunk_size, true, true, 16);
+#else
   file_stream0 = MMapStream<DataType>(bufflen, file0, block_size, true, true); 
   file_stream1 = MMapStream<DataType>(bufflen, file1, block_size, true, true); 
-//#endif
+#endif
 }
 
 /**
@@ -221,6 +222,7 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(size_t* offsets, cons
   num_comparisons = 0;
   changed_entries = Kokkos::Bitset<Kokkos::DefaultExecutionSpace>(noffsets);
   changed_entries.reset();
+  size_t filesize = file_stream0.get_file_size();
   auto& changes = changed_entries;
   auto elem_per_block = block_size;
   // Calculate number of iterations
@@ -245,7 +247,7 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(size_t* offsets, cons
     Kokkos::parallel_reduce("Count differences", range_policy, 
     KOKKOS_LAMBDA(const size_t i, uint64_t& update) {
       size_t data_idx = data_processed + i;
-      if(!compFunc(sliceA[i], sliceB[i], err_tol)) {
+      if((data_idx*sizeof(float) < filesize) && !compFunc(sliceA[i], sliceB[i], err_tol)) {
         update += 1;
         changes.set(data_idx/elem_per_block);
       }

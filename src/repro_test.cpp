@@ -290,6 +290,8 @@ int main(int argc, char** argv) {
         // Create offsets for loading data
 //        size_t blocksize = chunk_size;
         size_t blocksize = buffer_len;
+//        if(blocksize > 1024*1024*1024)
+//          blocksize = 1024*1024*1024;
         size_t noffsets = data_len/blocksize;
         if(noffsets*blocksize < data_len)
           noffsets += 1;
