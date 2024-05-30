@@ -38,6 +38,9 @@ class MMapStream {
     std::string filename;
     DataType *active_buffer=NULL, *transfer_buffer=NULL; // Convenient pointers
     DataType *host_buffer=NULL;
+    int num_threads=16;
+    std::vector<std::future<int>> futures;
+    std::future<int> fut;
     std::vector<double> timer;
 #ifdef __NVCC__
     cudaStream_t transfer_stream; // Stream for data transfers
@@ -69,10 +72,11 @@ class MMapStream {
     MMapStream() {}
 
     // Constructor for Host -> Device stream
-    MMapStream(size_t buff_len, std::string& file_name, const size_t chunk_size, bool async_memcpy=true, bool transfer_all=true) {
+    MMapStream(size_t buff_len, std::string& file_name, const size_t chunk_size, bool async_memcpy=true, bool transfer_all=true, int nthreads=2) {
       timer = std::vector<double>(3, 0.0);
       full_transfer = transfer_all;
       async = async_memcpy;
+      num_threads = nthreads;
       elem_per_slice = buff_len;
       bytes_per_slice = elem_per_slice*sizeof(DataType);
       filename = file_name; // Save file name
@@ -125,6 +129,36 @@ class MMapStream {
       DEBUG_PRINT("Constructor: Transfer slice len: %zu\n", transfer_slice_len);
     }
 
+    MMapStream& operator=(const MMapStream& other) {
+      file_buffer = other.file_buffer;
+      host_offsets = other.host_offsets;
+      file_offsets = other.file_offsets;
+      num_offsets = other.num_offsets;
+      transferred_chunks = other.transferred_chunks;
+      active_slice_len = other.active_slice_len;
+      transfer_slice_len = other.transfer_slice_len;
+      elem_per_slice = other.elem_per_slice;
+      bytes_per_slice = other.bytes_per_slice;
+      elem_per_chunk = other.elem_per_chunk;
+      bytes_per_chunk = other.bytes_per_chunk;
+      chunks_per_slice = other.chunks_per_slice;
+      async = other.async;
+      full_transfer = other.full_transfer;
+      done = other.done;
+      filename = other.filename;
+      active_buffer = other.active_buffer;
+      transfer_buffer = other.transfer_buffer;
+      host_buffer = other.host_buffer;
+      num_threads = other.num_threads;
+      //futures = other.futures;
+      //fut = std::move(other.fut);
+      timer = other.timer;
+#ifdef __NVCC__
+      transfer_stream = other.transfer_stream; 
+#endif
+      return *this;
+    }
+
     ~MMapStream() {
       if(done && (file_buffer.buff != NULL)) {
         munmap(file_buffer.buff, file_buffer.size);
@@ -153,11 +187,11 @@ class MMapStream {
       }
 #else
       if(!full_transfer) {
-        if(active_buffer != NULL) {
+        if(done && (active_buffer != NULL)) {
           device_free<DataType>(active_buffer);
           active_buffer = NULL;
         }
-        if(transfer_buffer != NULL) {
+        if(done && (transfer_buffer != NULL)) {
           device_free<DataType>(transfer_buffer);
           transfer_buffer = NULL;
         }
@@ -178,42 +212,90 @@ class MMapStream {
       return file_buffer.size;
     }
 
+    int async_memcpy() {
+      for(int i=0; i<futures.size(); i++) {
+        int res = futures[i].get();
+        if(res < 0) 
+          fprintf(stderr, "read_chunks: %s\n", strerror(-res));
+      }
+      futures.clear();
+      
+      Timer::time_point beg_copy = Timer::now();
+#ifdef __NVCC__
+      if(async) {
+        gpuErrchk( cudaMemcpyAsync(transfer_buffer, 
+                                   host_buffer, 
+                                   transfer_slice_len*sizeof(DataType), 
+                                   cudaMemcpyHostToDevice, 
+                                   transfer_stream) );
+      } else {
+        gpuErrchk( cudaMemcpy(transfer_buffer, 
+                              host_buffer, 
+                              transfer_slice_len*sizeof(DataType), 
+                              cudaMemcpyHostToDevice) );
+      }
+#endif
+      Timer::time_point end_copy = Timer::now();
+      timer[2] += std::chrono::duration_cast<Duration>(end_copy - beg_copy).count();
+      return 0;
+    }
+
+    int read_chunks(int tid, size_t beg, size_t end) {
+      for(size_t i=beg; i<end; i++) {
+        if(transferred_chunks+i<num_offsets) {
+          DataType* chunk;
+          size_t len = get_chunk(file_buffer, host_offsets[transferred_chunks+i]*elem_per_chunk, &chunk);
+          if(len != elem_per_chunk)
+            transfer_slice_len -= elem_per_chunk-len;
+          assert(len <= elem_per_chunk);
+          assert(i*elem_per_chunk+len*sizeof(DataType) <= bytes_per_slice);
+          assert((size_t)host_buffer+i*elem_per_chunk+len <= (size_t)host_buffer+elem_per_slice);
+          if(len > 0)
+            memcpy(host_buffer+i*elem_per_chunk, chunk, len*sizeof(DataType));
+        }
+      }
+      return 0;
+    }
+
     size_t prepare_slice() {
       if(full_transfer) {
         // Offset into file
         Timer::time_point beg_read = Timer::now();
         size_t offset = host_offsets[transferred_chunks]*elem_per_slice;
 #ifdef __NVCC__
-        // Get pointer to chunk
-        DataType* slice;
-        transfer_slice_len = get_chunk(file_buffer, offset, &slice);
-        // Copy chunk to host buffer
-        if(transfer_slice_len > 0)
-          memcpy(host_buffer, slice, transfer_slice_len*sizeof(DataType));
-        Timer::time_point end_read = Timer::now();
-        timer[1] += std::chrono::duration_cast<Duration>(end_read - beg_read).count();
-        // Transfer buffer to GPU if needed
-        Timer::time_point beg_copy = Timer::now();
-        if(async) {
-          gpuErrchk( cudaMemcpyAsync(transfer_buffer, 
-                                     host_buffer, 
-                                     transfer_slice_len*sizeof(DataType), 
-                                     cudaMemcpyHostToDevice, 
-                                     transfer_stream) );
-        } else {
-          gpuErrchk( cudaMemcpy(transfer_buffer, 
-                                host_buffer, 
-                                transfer_slice_len*sizeof(DataType), 
-                                cudaMemcpyHostToDevice) );
-        }
-        Timer::time_point end_copy = Timer::now();
-        timer[2] += std::chrono::duration_cast<Duration>(end_copy - beg_copy).count();
-#else
+        futures.push_back(std::async(std::launch::async | std::launch::deferred, &MMapStream::read_chunks, this, 0, 0, 1));
+        fut = std::async(std::launch::async | std::launch::deferred, &MMapStream::async_memcpy, this);
+#endif
+//#ifdef __NVCC__
+//        // Get pointer to chunk
+//        DataType* slice;
+//        transfer_slice_len = get_chunk(file_buffer, offset, &slice);
+//        // Copy chunk to host buffer
+//        if(transfer_slice_len > 0)
+//          memcpy(host_buffer, slice, transfer_slice_len*sizeof(DataType));
+//        Timer::time_point end_read = Timer::now();
+//        timer[1] += std::chrono::duration_cast<Duration>(end_read - beg_read).count();
+//        // Transfer buffer to GPU if needed
+//        Timer::time_point beg_copy = Timer::now();
+//        if(async) {
+//          gpuErrchk( cudaMemcpyAsync(transfer_buffer, 
+//                                     host_buffer, 
+//                                     transfer_slice_len*sizeof(DataType), 
+//                                     cudaMemcpyHostToDevice, 
+//                                     transfer_stream) );
+//        } else {
+//          gpuErrchk( cudaMemcpy(transfer_buffer, 
+//                                host_buffer, 
+//                                transfer_slice_len*sizeof(DataType), 
+//                                cudaMemcpyHostToDevice) );
+//        }
+//        Timer::time_point end_copy = Timer::now();
+//        timer[2] += std::chrono::duration_cast<Duration>(end_copy - beg_copy).count();
+//#else
         // Get pointer to chunk
         transfer_slice_len = get_chunk(file_buffer, offset, &transfer_buffer);
         Timer::time_point end_read = Timer::now();
         timer[1] += std::chrono::duration_cast<Duration>(end_read - beg_read).count();
-#endif
       } else {
         // Calculate number of elements to read
         transfer_slice_len = elem_per_slice;
@@ -221,60 +303,63 @@ class MMapStream {
         if(elements_read+transfer_slice_len > num_offsets*elem_per_chunk) { 
           transfer_slice_len = num_offsets*elem_per_chunk - elements_read;
         }
-      Timer::time_point beg_read = Timer::now();
-//        bool* chunk_read = (bool*) malloc(sizeof(bool)*chunks_per_slice);
+        Timer::time_point beg_read = Timer::now();
+
+        size_t chunks_left = chunks_per_slice;
+        if(transferred_chunks+chunks_left>num_offsets) {
+          chunks_left = num_offsets - transferred_chunks;
+        }
+
+        size_t chunks_per_thread = chunks_left / num_threads;
+        if(chunks_per_thread*num_threads < chunks_left)
+          chunks_per_thread += 1;
+
+
+        int active_threads = num_threads > chunks_left ? chunks_left : num_threads;
+        for(int tid=0; tid<active_threads; tid++) {
+          size_t beg = tid*chunks_per_thread;
+          size_t end = (tid+1)*chunks_per_thread;
+          if(end > chunks_left)
+            end = chunks_left;
+          futures.push_back(std::async(std::launch::async | std::launch::deferred, &MMapStream::read_chunks, this, tid, beg, end));
+        }
+//        #pragma omp parallel for 
 //        for(size_t i=0; i<chunks_per_slice; i++) {
-//          chunk_read[i] = false;
+//          if(transferred_chunks+i<num_offsets) {
+//            DataType* chunk;
+//            size_t len = get_chunk(file_buffer, host_offsets[transferred_chunks+i]*elem_per_chunk, &chunk);
+//            if(len != elem_per_chunk)
+//              transfer_slice_len -= elem_per_chunk-len;
+//            assert(len <= elem_per_chunk);
+//            assert(i*elem_per_chunk+len*sizeof(DataType) <= bytes_per_slice);
+//            assert((size_t)host_buffer+i*elem_per_chunk+len <= (size_t)host_buffer+elem_per_slice);
+//            if(len > 0) {
+//              memcpy(host_buffer+i*elem_per_chunk, chunk, len*sizeof(DataType));
+//            }
+//          }
 //        }
-//        #pragma omp parallel
-//        #pragma omp single
-//{
-//        #pragma omp taskloop
-        #pragma omp parallel for 
-        for(size_t i=0; i<chunks_per_slice; i++) {
-//#pragma omp task depend(out: chunk_read[i])
-//{
-          if(transferred_chunks+i<num_offsets) {
-            DataType* chunk;
-            size_t len = get_chunk(file_buffer, host_offsets[transferred_chunks+i]*elem_per_chunk, &chunk);
-            if(len != elem_per_chunk)
-              transfer_slice_len -= elem_per_chunk-len;
-            assert(len <= elem_per_chunk);
-            assert(i*elem_per_chunk+len*sizeof(DataType) <= bytes_per_slice);
-            assert((size_t)host_buffer+i*elem_per_chunk+len <= (size_t)host_buffer+elem_per_slice);
-            if(len > 0)
-              memcpy(host_buffer+i*elem_per_chunk, chunk, len*sizeof(DataType));
-          }
-//          chunk_read[i] = true;
-//}
-        }
-      Timer::time_point end_read = Timer::now();
-      timer[1] += std::chrono::duration_cast<Duration>(end_read - beg_read).count();
-#ifdef __NVCC__
-      Timer::time_point beg_copy = Timer::now();
-        // Transfer buffer to GPU if needed
-//#pragma omp task depend(in: chunk_read[0:chunks_per_slice])
-//{
-//        #pragma omp taskwait
-        if(async) {
-          gpuErrchk( cudaMemcpyAsync(transfer_buffer, 
-                                     host_buffer, 
-                                     transfer_slice_len*sizeof(DataType), 
-                                     cudaMemcpyHostToDevice, 
-                                     transfer_stream) );
-        } else {
-          gpuErrchk( cudaMemcpy(transfer_buffer, 
-                                host_buffer, 
-                                transfer_slice_len*sizeof(DataType), 
-                                cudaMemcpyHostToDevice) );
-        }
-//        free(chunk_read);
-//}
-      Timer::time_point end_copy = Timer::now();
-      timer[2] += std::chrono::duration_cast<Duration>(end_copy - beg_copy).count();
-#endif
-//}
+        Timer::time_point end_read = Timer::now();
+        timer[1] += std::chrono::duration_cast<Duration>(end_read - beg_read).count();
+//#ifdef __NVCC__
+//      Timer::time_point beg_copy = Timer::now();
+//        // Transfer buffer to GPU if needed
+//        if(async) {
+//          gpuErrchk( cudaMemcpyAsync(transfer_buffer, 
+//                                     host_buffer, 
+//                                     transfer_slice_len*sizeof(DataType), 
+//                                     cudaMemcpyHostToDevice, 
+//                                     transfer_stream) );
+//        } else {
+//          gpuErrchk( cudaMemcpy(transfer_buffer, 
+//                                host_buffer, 
+//                                transfer_slice_len*sizeof(DataType), 
+//                                cudaMemcpyHostToDevice) );
+//        }
+//      Timer::time_point end_copy = Timer::now();
+//      timer[2] += std::chrono::duration_cast<Duration>(end_copy - beg_copy).count();
+//#endif
       }
+      fut = std::async(std::launch::async | std::launch::deferred, &MMapStream::async_memcpy, this);
       return transfer_slice_len;
     }
 
@@ -318,6 +403,9 @@ class MMapStream {
     // Get next slice of data on Device buffer
     DataType* next_slice() {
 //#pragma omp taskwait
+      int ret = fut.get();
+      if(ret < 0)
+        FATAL("failed to get future" << ", error = " << std::strerror(errno)); 
 #ifdef __NVCC__
       if(async) {
         gpuErrchk( cudaStreamSynchronize(transfer_stream) ); // Wait for slice to finish async copy
