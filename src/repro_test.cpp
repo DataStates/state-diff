@@ -260,7 +260,7 @@ int main(int argc, char** argv) {
         if(comparing_runs) {
           if(enable_file_streaming) { // Start loading of data from files
             if(dtype.compare("float") == 0) {
-              f32_comparer.setup(data_len, buffer_len/sizeof(float), run0_files[idx], run1_files[idx]);
+              f32_comparer.setup(data_len, buffer_len/(Kokkos::num_threads()*sizeof(float)), run0_files[idx], run1_files[idx]);
             } else if(dtype.compare("double") == 0) {
               f64_comparer.setup(data_len, buffer_len/sizeof(double), run0_files[idx], run1_files[idx]);
             } else {
@@ -290,8 +290,7 @@ int main(int argc, char** argv) {
         // Create offsets for loading data
 //        size_t blocksize = chunk_size;
         size_t blocksize = buffer_len;
-//        if(blocksize > 1024*1024*1024)
-//          blocksize = 1024*1024*1024;
+blocksize /= Kokkos::num_threads();
         size_t noffsets = data_len/blocksize;
         if(noffsets*blocksize < data_len)
           noffsets += 1;

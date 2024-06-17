@@ -193,6 +193,9 @@ public:
     HashDigest digests[2] = {0};
     //bool dualValid = fuzzyhash(data, len, dataType, errorValue, digests);
     bool dualValid = roundinghash(data, len, dataType, errorValue, digests);
+    //kokkos_murmur3::hash(data, len, (uint8_t*)(&tree_d(u,0)));
+//    dual_hash_d.reset(u);
+//    return false;
 
     // Set the bit in the hashnum_bitset if both hashes are valid
     tree_d(u,0) = digests[0];

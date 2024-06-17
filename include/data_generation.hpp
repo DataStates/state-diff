@@ -113,8 +113,8 @@ void perturb_data(Kokkos::View<DataType*>&          data0,
         Kokkos::parallel_for("Gen random indicies", policy, KOKKOS_LAMBDA(const uint64_t j) {
             auto rand_gen = rand_pool.get_state();
             if(bitset.test(j)) {
-                while( (data0(j) == original(j)) || (Kokkos::abs((double)data0(j) - (double)original(j)) >= perturb)) {
-                  data0(j) = original(j) + generate_random(rand_gen, (DataType)(-perturb), (DataType)(perturb));
+                while( (data0(j) == original(j)) || (Kokkos::abs((double)data0(j) - (double)original(j)) < perturb)) {
+                  data0(j) = original(j) + generate_random(rand_gen, (DataType)(-2*perturb), (DataType)(2*perturb));
                 }
             }
             rand_pool.free_state(rand_gen);
@@ -123,7 +123,7 @@ void perturb_data(Kokkos::View<DataType*>&          data0,
 
         uint64_t ndiff=0;
         Kokkos::parallel_reduce("Verify perturbations", policy, KOKKOS_LAMBDA(const uint64_t i, uint64_t& update) {
-          if( (data0(i) != original(i)) )
+          if( Kokkos::abs((double)data0(i) - (double)original(i)) < perturb )
             update += 1;
         }, Kokkos::Sum<uint64_t>(ndiff));
         Kokkos::fence();

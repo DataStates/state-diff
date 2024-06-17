@@ -26,6 +26,11 @@ int main(int argc, char** argv) {
       .default_value(static_cast<uint32_t>(10))
       .nargs(1)
       .scan<'u', uint32_t>();
+    program.add_argument("-s", "--seed")
+      .help("RNG seed")
+      .default_value(static_cast<uint32_t>(1931))
+      .nargs(1)
+      .scan<'u', uint32_t>();
     program.add_argument("-p", "--perturb-mode")
       .help("Mode for perturbing the data")
       .choices("R", "B", "C", "I", "S", "Z", "W", "P")
@@ -61,7 +66,9 @@ int main(int argc, char** argv) {
     uint64_t    data_len       = program.get<uint64_t>("--data-len");
     printf("Data length in elements: %lu\n", data_len);
     uint32_t    num_files      = program.get<uint32_t>("-n");
-    printf("Number of files:         %d\n",  num_files);
+    printf("Number of files:         %u\n",  num_files);
+    uint32_t    seed           = program.get<uint32_t>("-s");
+    printf("RNG seed:                %u\n",  seed);
     std::string generator_mode = program.get<std::string>("-p");
     printf("Perturb mode:            %s\n",  generator_mode.c_str());
     uint64_t    num_changes    = program.get<uint64_t>("--num-changes");
@@ -80,8 +87,8 @@ int main(int argc, char** argv) {
     printf("Data type:               %s\n",  data_type.c_str());
     printf("File name:               %s\n",  out_filename.c_str());
 
-    Kokkos::Random_XorShift64_Pool<> rand_pool(1931);
-    std::default_random_engine generator(1931);
+    Kokkos::Random_XorShift64_Pool<> rand_pool(seed);
+    std::default_random_engine generator(seed);
 
     if(data_type.compare("bytes") == 0) {
       Kokkos::View<uint8_t*> data = generate_initial_data<uint8_t>(data_len);
