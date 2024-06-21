@@ -4,7 +4,6 @@
 #include <Kokkos_ScatterView.hpp>
 #include <Kokkos_Bitset.hpp>
 #include <Kokkos_Sort.hpp>
-#include <climits>
 #include "kokkos_merkle_tree.hpp"
 #include "utils.hpp"
 #include "kokkos_vector.hpp"
@@ -17,7 +16,6 @@
 #endif
 
 class CompareTreeDeduplicator {
-  public:
     uint32_t chunk_size;
     uint32_t current_id, baseline_id;
     uint64_t data_len;
@@ -55,13 +53,13 @@ class CompareTreeDeduplicator {
     MMapStream<float> file_stream1; 
 #endif
 
+  public:
     void setup(const size_t data_len, const size_t bufflen, std::string& filename0, std::string& filename1);
 
     void setup(const size_t data_len);
 
     void create_tree(const uint8_t* data_ptr, const size_t len);
 
-  public:
     CompareTreeDeduplicator();
 
     CompareTreeDeduplicator(uint32_t bytes_per_chunk);
@@ -96,7 +94,10 @@ class CompareTreeDeduplicator {
     uint64_t deserialize(std::vector<uint8_t>& run0_buffer, std::vector<uint8_t>& run1_buffer); 
     int deserialize(uint8_t* run0_buffer, uint8_t* run1_buffer);
 
+    void set_comp_op(CompareOp op);
     uint64_t get_num_hash_comparisons() const ;
+    uint64_t get_num_filtered_chunks() const;
+    uint64_t get_num_changed_chunks() const;
     uint64_t get_num_comparisons() const ;
     uint64_t get_num_changes() const ;
     double get_io_time() const ;

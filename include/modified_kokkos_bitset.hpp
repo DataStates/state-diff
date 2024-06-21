@@ -6,6 +6,7 @@
 // Assuming necessary Kokkos implementation details are included or accessible
 
 namespace Dedupe {
+
 template<typename Device = Kokkos::DefaultExecutionSpace>
 class Bitset;
 template <typename DstDevice, typename SrcDevice>
@@ -130,6 +131,7 @@ void deep_copy(Bitset<DstDevice>& dst, Bitset<SrcDevice> const& src) {
       sizeof(unsigned) * src.m_blocks.extent(0));
   Kokkos::fence("Bitset::deep_copy: fence after copy operation");
 }
-} // namespace Kokkos
+
+} // namespace Dedupe
 
 #endif // __MODIFIED_KOKKOS_BITSET_HPP

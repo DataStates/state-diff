@@ -543,9 +543,6 @@ namespace kokkos_murmur3 {
 
     KOKKOS_FORCEINLINE_FUNCTION
     void hash(const void* data, uint64_t len, uint8_t* digest)  {
-  //    uint32_t* dig_u32 = (uint32_t*)(digest);
-  //    *digest = MurmurHash3_x86_32(data, len, 0);
-  //    MurmurHash3_x64_64(data, len, 0, digest);
       MurmurHash3_x64_128(data, (int)len, (uint32_t)(0), digest);
     }
 }

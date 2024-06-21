@@ -1,7 +1,8 @@
 #ifndef UTILS_HPP
 #define UTILS_HPP
 
-#include <Kokkos_Core.hpp>
+#include <chrono>
+//#include <Kokkos_Core.hpp>
 
 //#define STDOUT
 //#define DEBUG
@@ -39,18 +40,18 @@ bool digests_same(const HashDigest& lhs, const HashDigest& rhs) {
   return true;
 }
 
-template <typename TeamMember>
-KOKKOS_FORCEINLINE_FUNCTION
-void team_memcpy(uint8_t* dst, uint8_t* src, size_t len, TeamMember& team_member) {
-  uint32_t* src_u32 = (uint32_t*)(src);
-  uint32_t* dst_u32 = (uint32_t*)(dst);
-  Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member, len/4), [&] (const uint64_t& j) {
-    dst_u32[j] = src_u32[j];
-  });
-  Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member, len%4), [&] (const uint64_t& j) {
-    dst[((len/4)*4)+j] = src[((len/4)*4)+j];
-  });
-}
+//template <typename TeamMember>
+//KOKKOS_FORCEINLINE_FUNCTION
+//void team_memcpy(uint8_t* dst, uint8_t* src, size_t len, TeamMember& team_member) {
+//  uint32_t* src_u32 = (uint32_t*)(src);
+//  uint32_t* dst_u32 = (uint32_t*)(dst);
+//  Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member, len/4), [&] (const uint64_t& j) {
+//    dst_u32[j] = src_u32[j];
+//  });
+//  Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member, len%4), [&] (const uint64_t& j) {
+//    dst[((len/4)*4)+j] = src[((len/4)*4)+j];
+//  });
+//}
 
 typedef struct header_t {
   uint32_t ref_id;           // ID of reference diff

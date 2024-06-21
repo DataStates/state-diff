@@ -3,18 +3,12 @@
 #include "kokkos_murmur3.hpp"
 #include "utils.hpp"
 
-#if defined(KOKKOS_CORE_HPP)
-  #define KOKKOS_INLINE KOKKOS_INLINE_FUNCTION
-#else
-  #define KOKKOS_INLINE inline
-#endif
-
 // Hashing approach tolerant to variations of floating point numbers
 template <typename T1, typename T2>
-KOKKOS_INLINE
+KOKKOS_INLINE_FUNCTION
 bool roundProcessData(const T1* data, T2 combinedBytes, uint64_t len,  T1 errorValue, HashDigest* digests);
 
-KOKKOS_INLINE
+KOKKOS_INLINE_FUNCTION
 bool roundinghash(const void* data, uint64_t len, const char dataType,
                 double errorValue, HashDigest* digests)  {
   if (dataType == *("d")) {
@@ -32,7 +26,7 @@ bool roundinghash(const void* data, uint64_t len, const char dataType,
 }
 
 template <typename T1, typename T2>
-KOKKOS_INLINE
+KOKKOS_INLINE_FUNCTION
 bool roundProcessData(const T1* data, T2 bitsDataType, uint64_t len, T1 errorValue, HashDigest* digests) {
   // Given that every data point has two hashes, compute the modified
   // binary representations per data point and compute the hashes

@@ -206,11 +206,14 @@ int main(int argc, char** argv) {
     // Create deduplicators
     CompareTreeDeduplicator comp_deduplicator(chunk_size, level, fuzzy_hash, err_tol, dtype[0]);
     if (comp.compare("absolute") ==  0) { 
-      comp_deduplicator.comp_op = Absolute;
+      comp_deduplicator.set_comp_op(Absolute);
+//      comp_deduplicator.comp_op = Absolute;
     } else if(comp.compare("relative") == 0) {
-      comp_deduplicator.comp_op = Relative;
+      comp_deduplicator.set_comp_op(Relative);
+//      comp_deduplicator.comp_op = Relative;
     } else if(comp.compare("equivalence") == 0) {
-      comp_deduplicator.comp_op = Equivalence;
+      comp_deduplicator.set_comp_op(Equivalence);
+//      comp_deduplicator.comp_op = Equivalence;
     }
     DirectComparer<uint8_t> u8_comparer( err_tol, chunk_size, buffer_len);  
     DirectComparer<float>   f32_comparer(err_tol, chunk_size/sizeof(float), buffer_len/sizeof(float)); 
@@ -218,10 +221,10 @@ int main(int argc, char** argv) {
 
     MPI_Barrier(MPI_COMM_WORLD);
 
-    const size_t pagesize = sysconf(_SC_PAGESIZE);
-    using ByteDeviceView = Kokkos::View<uint8_t*>;
-    using UnmanagedByteHostView = Kokkos::View<uint8_t*, Kokkos::DefaultHostExecutionSpace, 
-                                           Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
+//    const size_t pagesize = sysconf(_SC_PAGESIZE);
+//    using ByteDeviceView = Kokkos::View<uint8_t*>;
+//    using UnmanagedByteHostView = Kokkos::View<uint8_t*, Kokkos::DefaultHostExecutionSpace, 
+//                                           Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
 
     Kokkos::View<uint8_t*> data0_d("Run 0 region", 0), data1_d("Run 1 region", 0);
     Kokkos::View<uint8_t*>::HostMirror data0_h = Kokkos::create_mirror_view(data0_d);
@@ -243,7 +246,7 @@ int main(int argc, char** argv) {
       off_t filesize;
       get_file_size(run0_files[idx], &filesize);
       data_len = static_cast<size_t>(filesize);
-      size_t npages = (data_len % pagesize) == 0 ? data_len/pagesize : (data_len/pagesize) + 1;
+//      size_t npages = (data_len % pagesize) == 0 ? data_len/pagesize : (data_len/pagesize) + 1;
 //      std::ifstream f;
 //      f.exceptions(std::ifstream::failbit | std::ifstream::badbit);
 //      f.open(run0_files[idx], std::ifstream::in | std::ifstream::binary);
@@ -448,8 +451,8 @@ blocksize /= Kokkos::num_threads();
               } else {
                 nchanges = f32_comparer.compare<EquivalenceComp>(offsets.data(), noffsets);
               }
-              io_time0 = f32_comparer.io_timer0;
-              io_time1 = f32_comparer.io_timer1;
+//              io_time0 = f32_comparer.io_timer0;
+//              io_time1 = f32_comparer.io_timer1;
               compare_time = f32_comparer.get_compare_time();
             } else { // Compare data already on device
               if (comp.compare("absolute") ==  0) { 
@@ -481,8 +484,8 @@ blocksize /= Kokkos::num_threads();
               } else {
                 nchanges = f64_comparer.compare<EquivalenceComp>(offsets.data(), noffsets);
               }
-              io_time0 = f64_comparer.io_timer0;
-              io_time1 = f64_comparer.io_timer1;
+//              io_time0 = f64_comparer.io_timer0;
+//              io_time1 = f64_comparer.io_timer1;
               compare_time = f64_comparer.get_compare_time();
             } else {
               if (comp.compare("absolute") ==  0) { 
@@ -514,8 +517,8 @@ blocksize /= Kokkos::num_threads();
               } else {
                 nchanges = u8_comparer.compare<EquivalenceComp>(offsets.data(), noffsets);
               }
-              io_time0 = u8_comparer.io_timer0;
-              io_time1 = u8_comparer.io_timer1;
+//              io_time0 = u8_comparer.io_timer0;
+//              io_time1 = u8_comparer.io_timer1;
               compare_time = u8_comparer.get_compare_time();
             } else {
               if (comp.compare("absolute") ==  0) { 
@@ -541,12 +544,12 @@ blocksize /= Kokkos::num_threads();
         Timer::time_point end_compare = Timer::now();
         double comparison_time = std::chrono::duration_cast<Duration>(end_compare - beg_compare).count();
         std::cout << "\tRank " << world_rank << ": Compare: " << comparison_time << std::endl;
-        std::cout << "\t\tRank " << world_rank << ": IO Time (File 0): " << io_time0[0] << std::endl;
-        std::cout << "\t\t\tRank " << world_rank << ": Read Time (File 0): " << io_time0[1] << std::endl;
-        std::cout << "\t\t\tRank " << world_rank << ": cudaMemcpy Time (File 0): " << io_time0[2] << std::endl;
-        std::cout << "\t\tRank " << world_rank << ": IO Time (File 1): " << io_time1[0] << std::endl;
-        std::cout << "\t\t\tRank " << world_rank << ": Read Time (File 1): " << io_time1[1] << std::endl;
-        std::cout << "\t\t\tRank " << world_rank << ": cudaMemcpy Time (File 1): " << io_time1[2] << std::endl;
+        //std::cout << "\t\tRank " << world_rank << ": IO Time (File 0): " << io_time0[0] << std::endl;
+        //std::cout << "\t\t\tRank " << world_rank << ": Read Time (File 0): " << io_time0[1] << std::endl;
+        //std::cout << "\t\t\tRank " << world_rank << ": cudaMemcpy Time (File 0): " << io_time0[2] << std::endl;
+        //std::cout << "\t\tRank " << world_rank << ": IO Time (File 1): " << io_time1[0] << std::endl;
+        //std::cout << "\t\t\tRank " << world_rank << ": Read Time (File 1): " << io_time1[1] << std::endl;
+        //std::cout << "\t\t\tRank " << world_rank << ": cudaMemcpy Time (File 1): " << io_time1[2] << std::endl;
         std::cout << "\t\tRank " << world_rank << ": Compare Time: " << compare_time << std::endl;
         timers[4] = comparison_time;
 
@@ -776,7 +779,7 @@ blocksize /= Kokkos::num_threads();
 
           Timer::time_point beg_compare2 = Timer::now();
           Kokkos::Profiling::pushRegion("Compare phase 2");
-          if(comp_deduplicator.diff_hash_vec.size() > 0) {
+          if(comp_deduplicator.get_num_filtered_chunks() > 0) {
             comp_deduplicator.compare_trees_phase2();
           }
           Kokkos::Profiling::popRegion();
@@ -785,12 +788,12 @@ blocksize /= Kokkos::num_threads();
           std::cout << "\tRank " << world_rank << ": Compare Tree Phase 2: " << compare_time2 << std::endl;
           timers[4] = compare_time2;
 
-          std::cout << "\t\tRank " << world_rank << ": IO Time (File 0): " << comp_deduplicator.io_timer0[0] << std::endl;
-          std::cout << "\t\t\tRank " << world_rank << ": Read Time (File 0): " << comp_deduplicator.io_timer0[1] << std::endl;
-          std::cout << "\t\t\tRank " << world_rank << ": cudaMemcpy Time (File 0): " << comp_deduplicator.io_timer0[2] << std::endl;
-          std::cout << "\t\tRank " << world_rank << ": IO Time (File 1): " << comp_deduplicator.io_timer1[0] << std::endl;
-          std::cout << "\t\t\tRank " << world_rank << ": Read Time (File 1): " << comp_deduplicator.io_timer1[1] << std::endl;
-          std::cout << "\t\t\tRank " << world_rank << ": cudaMemcpy Time (File 1): " << comp_deduplicator.io_timer1[2] << std::endl;
+          //std::cout << "\t\tRank " << world_rank << ": IO Time (File 0): " << comp_deduplicator.io_timer0[0] << std::endl;
+          //std::cout << "\t\t\tRank " << world_rank << ": Read Time (File 0): " << comp_deduplicator.io_timer0[1] << std::endl;
+          //std::cout << "\t\t\tRank " << world_rank << ": cudaMemcpy Time (File 0): " << comp_deduplicator.io_timer0[2] << std::endl;
+          //std::cout << "\t\tRank " << world_rank << ": IO Time (File 1): " << comp_deduplicator.io_timer1[0] << std::endl;
+          //std::cout << "\t\t\tRank " << world_rank << ": Read Time (File 1): " << comp_deduplicator.io_timer1[1] << std::endl;
+          //std::cout << "\t\t\tRank " << world_rank << ": cudaMemcpy Time (File 1): " << comp_deduplicator.io_timer1[2] << std::endl;
           std::cout << "\t\tRank " << world_rank << ": Compare Time: " << comp_deduplicator.get_compare_time() << std::endl;
         }
 
@@ -851,8 +854,8 @@ blocksize /= Kokkos::num_threads();
         n_comparisons = comp_deduplicator.get_num_comparisons();
         n_hash_comp = comp_deduplicator.get_num_hash_comparisons();
         elem_changed = comp_deduplicator.get_num_changes();
-        filtered_blocks = comp_deduplicator.diff_hash_vec.size();
-        changed_blocks = comp_deduplicator.changed_chunks.count();
+        filtered_blocks = comp_deduplicator.get_num_filtered_chunks();
+        changed_blocks = comp_deduplicator.get_num_changed_chunks();
         printf("Rank %d: Number of different elements %zu\n", world_rank, elem_changed);
         printf("Rank %d: Number of comparisons %lu\n", world_rank, n_comparisons);
         printf("Rank %d: Number of hash comparisons %lu\n", world_rank, n_hash_comp);

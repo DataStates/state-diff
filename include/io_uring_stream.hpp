@@ -3,11 +3,7 @@
 #include <type_traits>
 #include <string>
 #include <future>
-#include <mutex>
 #include <thread>
-#include <atomic>
-#include <chrono>
-#include <condition_variable>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -19,7 +15,6 @@
 #include <sys/stat.h>
 #include <stdlib.h>
 #include <liburing.h>
-#include <Kokkos_Core.hpp>
 #include "utils.hpp"
 #include "debug.hpp"
 
@@ -105,7 +100,7 @@ class IOUringStream {
     int max_ring_size=32768;
     int32_t num_cqe=0;
     struct io_uring ring;
-    DataType *mmapped_file=NULL; // Pointer to host data
+//    DataType *mmapped_file=NULL; // Pointer to host data
     DataType *active_buffer=NULL, *transfer_buffer=NULL; // Convenient pointers
     DataType *host_buffer=NULL;
     std::vector<std::future<int>> futures;
@@ -209,7 +204,7 @@ class IOUringStream {
       max_ring_size = other.max_ring_size;
       num_cqe = other.num_cqe;
       ring = other.ring;
-      mmapped_file = other.mmapped_file;
+//      mmapped_file = other.mmapped_file;
       active_buffer = other.active_buffer;
       transfer_buffer = other.transfer_buffer;
       host_buffer = other.host_buffer;
@@ -346,93 +341,6 @@ class IOUringStream {
       }
       io_uring_cq_advance(&ring, num_cqe);
 
-//      // Fill submission queue with reads
-//      uint32_t num_cqe = 0;
-//      for(size_t i=beg; i<end; i++) {
-//        size_t fileoffset = host_offsets[transferred_chunks+i]*bytes_per_chunk;
-//        size_t len = bytes_per_chunk;
-//        if(fileoffset+len > filesize)
-//          len = filesize - fileoffset;
-//        read_call_data_t data;
-//        data.beg = 0;
-//        data.end = len;
-//        data.fileoffset = fileoffset;
-//        data.offset = i*elem_per_chunk;
-//        read_data.push_back(data);
-//printf("Queueing read of %zu byes from %zu\n", len, fileoffset);
-//fflush(stdout);
-//        ret = queue_read(&ring, len, fileoffset, host_buffer+i*elem_per_chunk, i);
-//        if(ret < 0) {
-//          fprintf(stderr, "queue_read failed\n");
-//  fflush(stderr);
-//          return ret;
-//        }
-//        num_cqe++;
-//      }
-//      // Submit queue
-//      ret = io_uring_submit(&ring);
-//      if(ret < 0) {
-//        fprintf(stderr, "io_uring_submit: %s\n", strerror(-ret));
-//fflush(stderr);
-//        return ret;
-//      }
-//printf("Submitted queue with %u events\n", num_cqe);
-//fflush(stdout);
-//      io_uring_cqe *cqe[32768];
-//      while(num_cqe > 0) {
-//printf("Waiting for %u events\n", num_cqe);
-//        ret = io_uring_wait_cqe_nr(&ring, &cqe[0], num_cqe);
-//        if(ret < 0) {
-//          fprintf(stderr, "io_uring_wait_cqe_nr: %s\n", strerror(-ret));
-//          return ret;
-//        }
-//        ret = io_uring_peek_batch_cqe(&ring, &cqe[0], num_cqe);
-//        if(ret < 0) {
-//          fprintf(stderr, "io_uring_peek_batch_cqe: %s\n", strerror(-ret));
-//          return ret;
-//        }
-//        uint32_t nevents = num_cqe;
-//        num_cqe = 0;
-//        for(uint32_t i=0; i<nevents; i++) {
-//          uint64_t bytes_read = cqe[i]->res;
-//          if(cqe[i]->res < 0) {
-//            fprintf(stderr, "Async read for cqe failed\n");
-//            bytes_read = 0;
-//          }
-//printf("Bytes read: %zu\n", bytes_read);
-//fflush(stdout);
-//          uint64_t index = io_uring_cqe_get_data64(cqe[i]);
-//          uint64_t beg_offset = read_data[index].beg;
-//          uint64_t end_offset = read_data[index].end;
-//          uint64_t fileoffset = read_data[index].fileoffset;
-//          uint64_t hostoffset = read_data[index].offset;
-//          if(bytes_read == 0) {
-//            queue_read(&ring, end_offset - beg_offset, fileoffset, host_buffer+hostoffset, i);
-//            num_cqe += 1;
-//printf("Resending read of %zu bytes\n", end_offset-beg_offset);
-//fflush(stdout);
-//          } else if(bytes_read != end_offset - beg_offset) {
-//            read_data[index].beg = beg_offset + bytes_read;
-//            read_data[index].fileoffset = fileoffset + bytes_read;
-//            read_data[index].offset = hostoffset + bytes_read;
-//printf("Queueing remaining read of %zu byes from %zu to %zu\n", end_offset-beg_offset-bytes_read, fileoffset+bytes_read, hostoffset+bytes_read);
-//fflush(stdout);
-//            queue_read(&ring, end_offset - beg_offset - bytes_read, fileoffset+bytes_read, host_buffer+hostoffset+bytes_read, i);
-//            num_cqe += 1;
-//          }
-//        }
-//        io_uring_cq_advance(&ring, nevents);
-//        if(num_cqe > 0) {
-//          ret = io_uring_submit(&ring);
-//          if(ret < 0) {
-//            fprintf(stderr, "io_uring_submit: %s\n", strerror(-ret));
-//fflush(stderr);
-//            return ret;
-//          }
-//        }
-//      }
-      
-
       // Destroy queue
       io_uring_queue_exit(&ring);
       return 0;
@@ -440,8 +348,6 @@ class IOUringStream {
 
     size_t prepare_slice() {
       Timer::time_point beg_read = Timer::now();
-//      int ret;
-//      uint32_t reads=0;
       transfer_slice_len = elem_per_slice;
       size_t elements_read = elem_per_chunk*transferred_chunks;
       if(elements_read+transfer_slice_len > num_offsets*elem_per_chunk) { 
@@ -454,22 +360,17 @@ class IOUringStream {
       if(transferred_chunks+chunks_left>num_offsets) {
         chunks_left = num_offsets - transferred_chunks;
       }
-//printf("Chunks left: %zu, chunks per slice: %zu, transferred chunks: %zu, num_offsets: %zu\n", chunks_left, chunks_per_slice, transferred_chunks, num_offsets);
 
       size_t chunks_per_thread = chunks_left / num_threads;
       if(chunks_per_thread*num_threads < chunks_left)
         chunks_per_thread += 1;
 
-//printf("Reading %zu chunks with %d threads\n", chunks_left, num_threads);
-
       int active_threads = num_threads > chunks_left ? chunks_left : num_threads;
-//printf("Num therads: %d, active_threads: %d\n", num_threads, active_threads);
       for(int tid=0; tid<active_threads; tid++) {
         size_t beg = tid*chunks_per_thread;
         size_t end = (tid+1)*chunks_per_thread;
         if(end > chunks_left)
           end = chunks_left;
-//printf("Thread %d reading data [%zu,%zu)\n", tid, beg, end);
         //std::thread read_thread(&IOUringStream::read_chunks, this, (int) tid, beg, end);
         futures.push_back(std::async(std::launch::async | std::launch::deferred , &IOUringStream::read_chunks, this, tid, beg, end));
       }

@@ -2,10 +2,7 @@
 #define DIRECT_COMPARER_HPP
 #include <Kokkos_Core.hpp>
 #include <Kokkos_Bitset.hpp>
-#include <Kokkos_ScatterView.hpp>
-#include <climits>
 #include "utils.hpp"
-#include "kokkos_vector.hpp"
 #include "mmap_stream.hpp"
 #ifdef IO_URING_STREAM
 #include "io_uring_stream.hpp"
@@ -130,8 +127,8 @@ void DirectComparer<DataType,ExecutionDevice>::setup(const size_t data_len, cons
   file_stream0 = IOUringStream<DataType>(bufflen, file0, chunk_size, true, true, 16);
   file_stream1 = IOUringStream<DataType>(bufflen, file1, chunk_size, true, true, 16);
 #else
-  file_stream0 = MMapStream<DataType>(bufflen, file0, block_size, true, true); 
-  file_stream1 = MMapStream<DataType>(bufflen, file1, block_size, true, true); 
+  file_stream0 = MMapStream<DataType>(bufflen, file0, chunk_size, true, true); 
+  file_stream1 = MMapStream<DataType>(bufflen, file1, chunk_size, true, true); 
 #endif
 }
 
@@ -150,11 +147,6 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(const DataType* data_
                                                            size_t*   offsets,
                                                            const size_t    noffsets) {
   // Start streaming data
-//#ifdef IO_URING_STREAM
-//  IOUringStream<DataType> file_stream0(d_stream_buf_len, file0);
-//#else
-//  MMapStream<DataType> file_stream0(d_stream_buf_len, file0, block_size); 
-//#endif
   file_stream0.start_stream(offsets, noffsets, block_size);
 
   changed_entries = Kokkos::Bitset<Kokkos::DefaultExecutionSpace>(noffsets);
@@ -200,13 +192,6 @@ template<template<typename> typename CompareFunc>
 uint64_t DirectComparer<DataType,ExecutionDevice>::compare(size_t* offsets, const size_t noffsets) {
 
   Kokkos::Profiling::pushRegion("Direct: Compare: create streams");
-//#ifdef IO_URING_STREAM
-//  IOUringStream<DataType> file_stream0(d_stream_buf_len, file0, false, false);
-//  IOUringStream<DataType> file_stream1(d_stream_buf_len, file1, false, false);
-//#else
-//  MMapStream<DataType> file_stream0(d_stream_buf_len, file0, block_size, true, true); 
-//  MMapStream<DataType> file_stream1(d_stream_buf_len, file1, block_size, true, true); 
-//#endif
   Kokkos::Profiling::popRegion();
   Kokkos::Profiling::pushRegion("Direct: Compare: start streaming");
   file_stream0.start_stream(offsets, noffsets, block_size);
@@ -226,9 +211,7 @@ uint64_t DirectComparer<DataType,ExecutionDevice>::compare(size_t* offsets, cons
   auto& changes = changed_entries;
   auto elem_per_block = block_size;
   // Calculate number of iterations
-  size_t num_iter = file_stream0.num_offsets/file_stream0.chunks_per_slice;
-  if(num_iter * file_stream0.chunks_per_slice < file_stream0.num_offsets)
-    num_iter += 1;
+  size_t num_iter = file_stream0.get_num_slices();
   DEBUG_PRINT("Number of iterations: %zu\n", num_iter);
   Kokkos::Profiling::popRegion();
 
@@ -337,25 +320,6 @@ uint64_t DirectComparer<DataType,ExecDevice>::get_num_comparisons() const {
 template<typename DataType, typename ExecDevice>
 uint64_t DirectComparer<DataType,ExecDevice>::get_num_changed_blocks() const {
   return changed_entries.count();
-  //uint64_t num_diff = 0;
-  //size_t nblocks = changed_entries.size()/block_size;
-  //size_t elem_per_block = block_size;
-  //auto& changes = changed_entries;
-  //Kokkos::parallel_reduce("Count differences", Kokkos::RangePolicy<size_t>(0, nblocks),
-  //KOKKOS_LAMBDA(const size_t i, uint64_t& update) {
-  //  bool changed = false;
-  //  for(size_t j=0; j<elem_per_block; j++) {
-  //    size_t idx = i*elem_per_block + j;
-  //    if(changes.test(idx))
-  //      changed = true;
-  //  }
-  //  if(changed) {
-////printf("Direct: Block %zu changed\n", i);
-  //    update += 1;
-  //  }
-  //}, Kokkos::Sum<uint64_t>(num_diff));
-  //Kokkos::fence();
-  //return num_diff;
 }
 
 template<typename DataType, typename ExecDevice>

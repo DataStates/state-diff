@@ -101,21 +101,21 @@ CompareTreeDeduplicator::setup(const size_t data_size, const size_t bufflen,
   file1 = run1_file;
   setup(data_size);
 
-    //size_t buffer_length = stream_buffer_len < num_diff_hash*blocksize ? stream_buffer_len : num_diff_hash*blocksize;
-    stream_buffer_len = bufflen;
-    size_t buffer_length = stream_buffer_len;
-    size_t blocksize = chunk_size;
-    if(dataType == *"f") {
-      blocksize /= sizeof(float);
-    } else if(dataType == *"d") {
-      blocksize /= sizeof(double);
-    }
+  //size_t buffer_length = stream_buffer_len < num_diff_hash*blocksize ? stream_buffer_len : num_diff_hash*blocksize;
+  stream_buffer_len = bufflen;
+  size_t buffer_length = stream_buffer_len;
+  size_t blocksize = chunk_size;
+  if(dataType == *"f") {
+    blocksize /= sizeof(float);
+  } else if(dataType == *"d") {
+    blocksize /= sizeof(double);
+  }
 #ifdef IO_URING_STREAM
-    file_stream0 = IOUringStream<float>(buffer_length, file0, blocksize, true, false); 
-    file_stream1 = IOUringStream<float>(buffer_length, file1, blocksize, true, false); 
+  file_stream0 = IOUringStream<float>(buffer_length, file0, blocksize, true, false); 
+  file_stream1 = IOUringStream<float>(buffer_length, file1, blocksize, true, false); 
 #else
-    file_stream0 = MMapStream<float>(buffer_length, file0, blocksize, true, false); 
-    file_stream1 = MMapStream<float>(buffer_length, file1, blocksize, true, false); 
+  file_stream0 = MMapStream<float>(buffer_length, file0, blocksize, true, false); 
+  file_stream1 = MMapStream<float>(buffer_length, file1, blocksize, true, false); 
 #endif
 }
 
@@ -290,11 +290,9 @@ CompareTreeDeduplicator::compare_trees_phase1() {
             size_t entry = (n_nodes-left_leaf) + (node - ((n_nodes-1)/2));
             assert(entry < n_chunks);
             diff_hashes.push(entry);
-//printf("Tree: Block %zu (%zu) changed\n", node, (n_nodes-left_leaf) + (node - ((n_nodes-1)/2)));
           } else { // Leaf is on the last level
             assert(node-left_leaf < n_chunks);
             diff_hashes.push(node-left_leaf);
-//printf("Tree: Block %zu (%zu) changed\n", node, node-left_leaf);
           }
         } else {
           uint32_t child_l = 2 * node + 1;
@@ -316,12 +314,6 @@ CompareTreeDeduplicator::compare_trees_phase1() {
   Kokkos::Profiling::pushRegion(diff_label + std::string("Contribute hash comparison count"));
   Kokkos::Experimental::contribute(num_hash_comp, nhash_comp);
   Kokkos::Profiling::popRegion();
-//printf("Diff hash capacity: %u\n", diff_hash_vec.capacity());
-//Kokkos::parallel_for(num_chunks, KOKKOS_CLASS_LAMBDA(const uint32_t i) {
-//  diff_hash_vec.push(static_cast<size_t>(i));
-//});
-//Kokkos::fence();
-//printf("Diff hash vec pointer %p\n", diff_hash_vec.vector_d.data());
   Kokkos::Profiling::popRegion();
   return diff_hash_vec.size();
 }
@@ -354,17 +346,6 @@ CompareTreeDeduplicator::compare_trees_phase2() {
   auto& changed_blocks = changed_chunks;
   if (num_diff_hash > 0) {
     if(dataType == 'f') {
-      Kokkos::Profiling::pushRegion(diff_label + std::string("Compare Tree create file streams"));
-
-      size_t buffer_length = stream_buffer_len < num_diff_hash*blocksize ? stream_buffer_len : num_diff_hash*blocksize;
-//#ifdef IO_URING_STREAM
-//      IOUringStream<float> file_stream0(buffer_length, file0, blocksize, true, false, Kokkos::num_threads()); 
-//      IOUringStream<float> file_stream1(buffer_length, file1, blocksize, true, false, Kokkos::num_threads()); 
-//#else
-//      MMapStream<float> file_stream0(buffer_length, file0, blocksize, false, false); 
-//      MMapStream<float> file_stream1(buffer_length, file1, blocksize, false, false); 
-//#endif
-      Kokkos::Profiling::popRegion();
       Kokkos::Profiling::pushRegion(diff_label + std::string("Compare Tree start file streams"));
       file_stream0.start_stream(diff_hash_vec.vector_d.data(), num_diff_hash, blocksize);
       file_stream1.start_stream(diff_hash_vec.vector_d.data(), num_diff_hash, blocksize);
@@ -378,11 +359,8 @@ CompareTreeDeduplicator::compare_trees_phase2() {
       size_t slice_len=0;
       size_t* offsets = diff_hash_vec.vector_d.data();
       size_t filesize = file_stream0.get_file_size();
-//      Kokkos::deep_copy(num_comparisons, 0);
-//      Kokkos::deep_copy(num_changed, 0);
-      size_t num_iter = num_diff_hash/file_stream0.chunks_per_slice;
-      if(num_iter * file_stream0.chunks_per_slice < num_diff_hash)
-        num_iter += 1;
+
+      size_t num_iter = file_stream0.get_num_slices();
       Kokkos::Experimental::ScatterView<uint64_t[1]> num_comp(num_comparisons);
       Kokkos::Profiling::popRegion();
       for(size_t iter=0; iter<num_iter; iter++) {
@@ -390,8 +368,7 @@ CompareTreeDeduplicator::compare_trees_phase2() {
         sliceA = file_stream0.next_slice();
         sliceB = file_stream1.next_slice();
         slice_len = file_stream0.get_slice_len();
-        size_t slice_len_b = file_stream1.get_slice_len();
-        assert(slice_len == slice_len_b);
+        assert(slice_len == file_stream1.get_slice_len());
         Kokkos::Profiling::popRegion();
         Kokkos::Profiling::pushRegion(diff_label + std::string("Compare Tree direct comparison"));
         Timer::time_point beg = Timer::now();
@@ -763,10 +740,22 @@ int CompareTreeDeduplicator::deserialize(uint8_t* run0_buffer, uint8_t* run1_buf
     return 0;
 }
 
+void CompareTreeDeduplicator::set_comp_op(CompareOp op) {
+  comp_op = op;
+}
+
 uint64_t CompareTreeDeduplicator::get_num_hash_comparisons() const {
   auto num_hash_comp_h = Kokkos::create_mirror_view(num_hash_comp);
   Kokkos::deep_copy(num_hash_comp_h, num_hash_comp);
   return num_hash_comp_h(0); 
+}
+
+uint64_t CompareTreeDeduplicator::get_num_filtered_chunks() const {
+  return diff_hash_vec.size();
+}
+
+uint64_t CompareTreeDeduplicator::get_num_changed_chunks() const {
+  return changed_chunks.count();
 }
 
 uint64_t CompareTreeDeduplicator::get_num_comparisons() const {
