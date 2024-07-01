@@ -490,6 +490,13 @@ class IOUringStream {
     std::vector<double> get_timer() {
       return timer;
     }
+
+    size_t get_num_slices() {
+        size_t num_iter = num_offsets/chunks_per_slice;
+        if(num_iter * chunks_per_slice < num_offsets)
+          num_iter += 1;
+        return num_iter;
+    }
 };
 
 #endif // __IO_URING_STREAM_HPP
