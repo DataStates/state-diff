@@ -105,7 +105,7 @@ set_target_properties(repro_test PROPERTIES
     CXX_EXTENSIONS OFF
 )
 
-#if(ENABLE_TESTS)
-#  enable_testing()
-#  add_subdirectory(test)
-#endif(ENABLE_TESTS)
+if(ENABLE_TESTS)
+  enable_testing()
+  add_subdirectory(test)
+endif(ENABLE_TESTS)

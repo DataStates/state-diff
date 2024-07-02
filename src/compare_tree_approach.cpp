@@ -356,7 +356,7 @@ CompareTreeDeduplicator::compare_trees_phase2() {
     if(dataType == 'f') {
       Kokkos::Profiling::pushRegion(diff_label + std::string("Compare Tree create file streams"));
 
-      size_t buffer_length = stream_buffer_len < num_diff_hash*blocksize ? stream_buffer_len : num_diff_hash*blocksize;
+//      size_t buffer_length = stream_buffer_len < num_diff_hash*blocksize ? stream_buffer_len : num_diff_hash*blocksize;
 //#ifdef IO_URING_STREAM
 //      IOUringStream<float> file_stream0(buffer_length, file0, blocksize, true, false, Kokkos::num_threads()); 
 //      IOUringStream<float> file_stream1(buffer_length, file1, blocksize, true, false, Kokkos::num_threads()); 
