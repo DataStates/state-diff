@@ -114,7 +114,7 @@ void perturb_data(Kokkos::View<DataType*>&          data0,
             auto rand_gen = rand_pool.get_state();
             if(bitset.test(j)) {
                 while( (data0(j) == original(j)) || (Kokkos::abs((double)data0(j) - (double)original(j)) < perturb)) {
-                  data0(j) = original(j) + generate_random(rand_gen, (DataType)(-2*perturb), (DataType)(2*perturb));
+                  data0(j) = original(j) + generate_random(rand_gen, (DataType)(perturb), (DataType)(2*perturb));
                 }
             }
             rand_pool.free_state(rand_gen);

@@ -243,7 +243,7 @@ int main(int argc, char** argv) {
       off_t filesize;
       get_file_size(run0_files[idx], &filesize);
       data_len = static_cast<size_t>(filesize);
-      size_t npages = (data_len % pagesize) == 0 ? data_len/pagesize : (data_len/pagesize) + 1;
+//      size_t npages = (data_len % pagesize) == 0 ? data_len/pagesize : (data_len/pagesize) + 1;
 //      std::ifstream f;
 //      f.exceptions(std::ifstream::failbit | std::ifstream::badbit);
 //      f.open(run0_files[idx], std::ifstream::in | std::ifstream::binary);
