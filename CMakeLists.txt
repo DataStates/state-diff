@@ -7,7 +7,8 @@ set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}")
 #find_package(argparse REQUIRED)
 find_package(Kokkos REQUIRED)
 find_package(OpenSSL REQUIRED)
-find_package(MPI)
+find_package(MPI REQUIRED)
+find_package(ADIOS2 REQUIRED)
 
 include(GNUInstallDirs)
 
