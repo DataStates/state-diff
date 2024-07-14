@@ -37,7 +37,7 @@ int main(int argc, char** argv)
   size_t data_size = 1024*1024*1024; // size in bytes of the synthetic data (1GB)
   size_t stream_buffer_len = 512*1024*1024/sizeof(float); // how much data element to read in during the second phase of the comparison.
   float error_tolerance = 1e-4; // Application error tolerance
-  int chunk_size = 128; // Target chunk size. This example uses 16 bytes
+  int chunk_size = 1024; // Target chunk size. This example uses 16 bytes
   bool fuzzy_hash = true; // Set to true to use our rounding hash algorithm. Otherwise, directly hash blocks of FP values
   std::string dtype = "float"; // float
   int seed = 0x123; // Random number seed to generate the synthetic data

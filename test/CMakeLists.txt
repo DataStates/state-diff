@@ -48,4 +48,4 @@ set_target_properties(test_compare_tree_adios_offline PROPERTIES
 add_test(NAME test_create_tree COMMAND test_create_tree --kokkos-num-threads=2 --kokkos-map-device-id-by=mpi_rank)
 add_test(NAME test_create_tree_adios COMMAND test_create_tree_adios --kokkos-num-threads=2 --kokkos-map-device-id-by=mpi_rank)
 add_test(NAME test_compare_tree_offline COMMAND test_compare_tree_offline --kokkos-num-threads=2 --kokkos-map-device-id-by=mpi_rank)
-# add_test(NAME test_compare_tree_adios_offline COMMAND test_compare_tree_adios_offline --kokkos-num-threads=2 --kokkos-map-device-id-by=mpi_rank)
+add_test(NAME test_compare_tree_adios_offline COMMAND test_compare_tree_adios_offline --kokkos-num-threads=2 --kokkos-map-device-id-by=mpi_rank)

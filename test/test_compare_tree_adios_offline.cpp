@@ -10,6 +10,24 @@
 #include <adios2.h>
 #include <Kokkos_Core.hpp>
 
+bool write_file(std::string filename, uint8_t *buffer, size_t size) {
+  int fd = open(filename.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
+  if (fd == -1) {
+    FATAL("cannot open " << filename << ", error = " << strerror(errno));
+    return false;
+  }
+  size_t transferred = 0, remaining = size;
+  while (remaining > 0) {
+    ssize_t ret = write(fd, buffer + transferred, remaining);
+    if (ret == -1)
+      FATAL("cannot write " << size << " bytes to " << filename << " , error = " << std::strerror(errno));
+    remaining -= ret;
+    transferred += ret;
+  }
+  close(fd);
+  return true;
+}
+
 template<typename T>
 void adios_writer(adios2::IO &io, std::vector<T> &buffer, std::string tag, std::string fn) {
   io.SetEngine("BP5");
@@ -43,7 +61,7 @@ int main(int argc, char** argv)
   size_t data_size = 1024*1024*1024; // size in bytes of the synthetic data (1GB)
   size_t stream_buffer_len = 512*1024*1024/sizeof(float); // how much data element to read in during the second phase of the comparison.
   float error_tolerance = 1e-4; // Application error tolerance
-  int chunk_size = 512; // Target chunk size. This example uses 16 bytes
+  int chunk_size = 1024; // Target chunk size. This example uses 16 bytes
   bool fuzzy_hash = true; // Set to true to use our rounding hash algorithm. Otherwise, directly hash blocks of FP values
   std::string dtype = "float"; // float
   int seed = 0x123; // Random number seed to generate the synthetic data
@@ -71,12 +89,17 @@ int main(int argc, char** argv)
     }
     
     // Save checkpoint data for offline comparison
+    // TO-DO: Liburing implementation not compatible with ADIOS file format.
     adios2::ADIOS adios_client;
     adios2::IO io_writer = adios_client.DeclareIO("writer");
     adios2::IO io_reader = adios_client.DeclareIO("reader");
-    std::string run0_file = "run0_data.bp", run1_file = "run1_data.bp";
-    adios_writer<float>(io_writer, data_run0, "data0", run0_file);
-    adios_writer<float>(io_writer, data_run1, "data1", run1_file);
+    // std::string run0_file = "run0_data.bp", run1_file = "run1_data.bp";
+    // adios_writer<float>(io_writer, data_run0, "data0", run0_file);
+    // adios_writer<float>(io_writer, data_run1, "data1", run1_file);
+
+    std::string run0_file = "run0_data.dat", run1_file = "run1_data.dat";
+    write_file(run0_file, (uint8_t *)data_run0.data(), data_size);
+    write_file(run1_file, (uint8_t *)data_run1.data(), data_size);
 
     // Copy data from host to device
     Kokkos::View<uint8_t*> data_run0_d("Run0", data_size), data_run1_d("Run1", data_size);
