@@ -1,0 +1,14 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+find_dependency(OpenSSL REQUIRED)
+find_dependency(Kokkos REQUIRED)
+
+if (@ADIOS2_FOUND@)
+  find_dependency(ADIOS2 REQUIRED)
+  find_dependency(MPI REQUIRED)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/statediffTargets.cmake")
+check_required_components("@PROJECT_NAME@")

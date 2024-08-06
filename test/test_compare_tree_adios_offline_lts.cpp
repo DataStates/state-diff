@@ -10,15 +10,20 @@
 #include <string>
 #include <vector>
 
-template <typename T>
+template <typename D, typename T>
 void
-adios_writer(adios2::IO &io, std::vector<T> &buffer, std::string tag,
-             std::string fn) {
+adios_writer(adios2::IO &io, std::vector<D> &data_buffer,
+             std::vector<T> &tree_buffer, int run_id, std::string fn) {
     io.SetEngine("BP5");
+    adios2::Variable<D> adios_data =
+        io.DefineVariable<D>("data" + std::to_string(run_id),
+                             {data_buffer.size()}, {0}, {data_buffer.size()});
     adios2::Variable<T> adios_tree =
-        io.DefineVariable<T>(tag, {buffer.size()}, {0}, {buffer.size()});
+        io.DefineVariable<T>("tree" + std::to_string(run_id),
+                             {tree_buffer.size()}, {0}, {tree_buffer.size()});
     adios2::Engine writer = io.Open(fn, adios2::Mode::Write);
-    writer.Put<T>(adios_tree, buffer.data());
+    writer.Put<D>(adios_data, data_buffer.data());
+    writer.Put<T>(adios_tree, tree_buffer.data());
     writer.Close();
 }
 
@@ -82,16 +87,6 @@ main(int argc, char **argv) {
                 data_run1[i] = data_run0[i] + outof_error_dist(prng);
             }
         }
-
-        // Save checkpoint data for offline comparison
-        adios2::ADIOS adios_client;
-        adios2::IO io_writer = adios_client.DeclareIO("writer");
-        adios2::IO io_reader = adios_client.DeclareIO("reader");
-        std::string run0_file = "run0_data.bp", run1_file = "run1_data.bp";
-        adios_writer<float>(io_writer, data_run0, "data0", run0_file);
-        adios_writer<float>(io_writer, data_run1, "data1", run1_file);
-
-        // Copy data from host to device
         Kokkos::View<uint8_t *> data_run0_d("Run0", data_size),
             data_run1_d("Run1", data_size);
         using DataHostView =
@@ -108,22 +103,21 @@ main(int argc, char **argv) {
         CompareTreeDeduplicator tree_object(chunk_size, root_level, fuzzy_hash,
                                             error_tolerance, dtype[0]);
         tree_object.setup(data_size);
-
         tree_object.create_tree((uint8_t *) data_run0_d.data(),
                                 data_run0_d.size());
         std::vector<uint8_t> tree0_data = tree_object.serialize();
-
         tree_object.create_tree((uint8_t *) data_run1_d.data(),
                                 data_run1_d.size());
         std::vector<uint8_t> tree1_data = tree_object.serialize();
-
-        adios_writer<uint8_t>(io_writer, tree0_data, "tree0", "run0_tree.bp");
-        adios_writer<uint8_t>(io_writer, tree1_data, "tree1", "run1_tree.bp");
+        adios2::ADIOS adios_client;
+        adios2::IO io_writer = adios_client.DeclareIO("writer");
+        adios_writer<uint8_t>(io_writer, data_run0, tree0_data, 0, "run0.bp");
+        adios_writer<uint8_t>(io_writer, data_run1, tree1_data, 1, "run1.bp");
         std::cout << "EXEC STATE:: Trees created and saved to ADIOS2's BP file"
                   << std::endl;
 
-        // Read and deserialize trees for comparison. These two checkpoints
-        // should NOT match
+        // Comparison. These two checkpoints should NOT match
+        adios2::IO io_reader = adios_client.DeclareIO("reader");
         std::vector<uint8_t> deserialized_tree0 =
             adios_reader<uint8_t>(io_reader, "tree0", "run0_tree.bp");
         std::vector<uint8_t> deserialized_tree1 =
