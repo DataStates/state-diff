@@ -71,3 +71,16 @@ inline logger_state_t logger_state;
 #define DBG(message)
 #define DBG_COND(cond, message)
 #endif
+
+
+#ifdef __DEBUG
+#define DEBUG_PRINT(...) do{ printf( __VA_ARGS__ ); } while( false )
+#else
+#define DEBUG_PRINT(...) do{ } while ( false )
+#endif
+
+#ifdef STDOUT
+#define STDOUT_PRINT(...) do{ printf( __VA_ARGS__ ); } while( false )
+#else
+#define STDOUT_PRINT(...) do{ } while ( false )
+#endif

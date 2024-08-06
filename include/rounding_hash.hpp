@@ -1,7 +1,7 @@
 #ifndef ROUNDING_HASH_HPP
 #define ROUNDING_HASH_HPP
 #include "kokkos_murmur3.hpp"
-#include "utils.hpp"
+#include "common/compare_utils.hpp"
 
 #if defined(KOKKOS_CORE_HPP)
   #define KOKKOS_INLINE KOKKOS_INLINE_FUNCTION
@@ -66,10 +66,6 @@ bool roundProcessData(const T1* data, T2 bitsDataType, uint64_t len, T1 errorVal
     // Process each element
     for(uint32_t j=0; j<elementsPerBlock; j++) {
       dataLower[j] = round(dataLower[j]*(1.0/errorValue))*(errorValue);
-//      dataUpper[j] = (dataUpper[j]*(1.0/errorValue))*(errorValue);
-//      dataUpper[j] = round(dataUpper[j]*(1.0/errorValue))*(errorValue);
-//      dataLower[j] = floor(dataLower[j]*(1.0/errorValue))*(errorValue);
-//      dataUpper[j] = ceil(dataUpper[j]*(1.0/errorValue))*(errorValue);
     }
     
     // Compute the hashes for the current block of 128-bit data
@@ -82,13 +78,6 @@ bool roundProcessData(const T1* data, T2 bitsDataType, uint64_t len, T1 errorVal
     seedUpper[0] = digestUpper[0];
     seedUpper[1] = digestUpper[1];
   }
-  // ------------------------------------------------------------------------
-  // Handled data at the tail for fuzzy hash
-  // ------------------------------------------------------------------------
-//  if ( (seedUpper[0] != seedLower[0]) || (seedUpper[1] != seedLower[1]) ) {
-//    // The hashes are not identical. We need them both to proceed.
-//    return true;
-//  }
   return false;
 }
 
