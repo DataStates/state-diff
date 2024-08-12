@@ -146,16 +146,13 @@ void
 client_t<DataType, Reader>::create(const std::vector<uint8_t> &data) {
     // setup client. This function also initialized the tree object
     setup();
-printf("Setup done\n");
 
     // Get a uint8_t pointer to the data
     const DataType *data_ptr = (DataType*)data.data();
     const uint8_t *uint8_ptr = reinterpret_cast<const uint8_t *>(data_ptr);
-printf("Got byte pointer\n");
 
     // Grab references to tree object
     tree_t &tree_curr = *tree;
-printf("Got tree reference\n");
 
     // Get number of chunks and nodes
     STDOUT_PRINT("Chunk size: %zu\n", chunk_size);
@@ -172,7 +169,6 @@ printf("Got tree reference\n");
     level_end = (level_end - 2) / 2;
     uint32_t left_leaf = level_beg;
     uint32_t last_lvl_beg = (1 << start_level) - 1;
-printf("Setup leaf levels\n");
 
     // Temporary values to avoid capturing this object in the lambda
     auto nchunks = num_chunks;
@@ -182,7 +178,6 @@ printf("Setup leaf levels\n");
     auto dtype = dataType;
     auto err_tol = errorValue;
     bool use_fuzzy_hash = use_fuzzyhash && (comp_op != Equivalence);
-printf("Got temporary values for lambda\n");
 
     std::string diff_label =
         std::string("Diff ") + std::to_string(client_id) + std::string(": ");
@@ -211,7 +206,6 @@ printf("Got temporary values for lambda\n");
                 tree_curr.calc_leaf_hash(uint8_ptr + offset, num_bytes, leaf);
             }
         });
-printf("Hashed leaves\n");
     // Build up tree level by level until last_lvl_beg
     while (level_beg >= last_lvl_beg) {
         std::string tree_constr_label =
@@ -226,7 +220,6 @@ printf("Hashed leaves\n");
                     tree_curr.calc_hash(node);
                 }
             });
-printf("Build level [%u,%u]\n", level_beg, level_end);
         level_beg = (level_beg - 1) / 2;
         level_end = (level_end - 2) / 2;
     }
@@ -548,7 +541,6 @@ client_t<DataType, Reader>::compare_data(client_t &prev,
     if (num_diff_hash > 0) {
         Kokkos::Profiling::pushRegion(
             diff_label + std::string("Compare Tree start file streams"));
-printf("Number of different hashes: %zu\n", num_diff_hash);
         io_reader.start_stream(diff_hash_vec.vector_d.data(), num_diff_hash,
                                blocksize);
         prev.io_reader.start_stream(diff_hash_vec.vector_d.data(),
@@ -625,6 +617,7 @@ printf("Number of different hashes: %zu\n", num_diff_hash);
         Kokkos::deep_copy(num_changes, num_diff);
         Kokkos::Profiling::popRegion();
     }
+    STDOUT_PRINT("Number of changed elements - Phase Two: %lu\n", num_diff);
     Kokkos::Profiling::popRegion();
     return num_diff;
 }

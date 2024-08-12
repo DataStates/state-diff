@@ -136,9 +136,9 @@ posix_reader_t<DataType>::map_file(const std::string &fn) {
         FATAL("cannot open " << fn << ", error = " << std::strerror(errno));
     size_t size = lseek(fd, 0, SEEK_END);
     uint8_t *buff = (uint8_t *) mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
+    close(fd);
     if (buff == MAP_FAILED)
         FATAL("cannot mmap " << fn << ", error (" << errno << ") = " << std::strerror(errno));
-    close(fd);
     return buff_state_t{buff, size};
 }
 

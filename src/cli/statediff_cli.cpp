@@ -96,9 +96,7 @@ main(int argc, char **argv) {
         .implicit_value(true);
 
     try {
-        std::cout << "Parsing args\n";
         program.parse_args(argc, argv);
-        std::cout << "Parsed args\n";
     } catch (const std::runtime_error &err) {
         std::cerr << err.what() << std::endl;
         std::cout << program;
