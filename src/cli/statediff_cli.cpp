@@ -1,5 +1,4 @@
-#include "argparse/argparse.hpp"
-#include "statediff.hpp"
+#include <Kokkos_Core.hpp>
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
@@ -7,8 +6,12 @@
 #include <string>
 #include <unistd.h>
 #include <vector>
+#define DEBUG
+#define STDOUT
+#include "argparse/argparse.hpp"
+#include "statediff.hpp"
 
-using namespace statediff;
+using namespace state_diff;
 
 int
 get_file_size(const std::string &filename, off_t *size) {
@@ -33,7 +36,7 @@ read_file(const std::string &filename, std::vector<uint8_t> &data,
         exit(1);
     }
 
-    size_t transferred = 0, remaining = data_len * sizeof(int);
+    size_t transferred = 0, remaining = data_len;
     while (remaining > 0) {
         ssize_t ret = read(fd, data.data() + transferred, remaining);
         if (ret < 0) {
@@ -51,11 +54,15 @@ read_file(const std::string &filename, std::vector<uint8_t> &data,
 
 int
 main(int argc, char **argv) {
+    Kokkos::initialize(argc, argv);
+    {
     argparse::ArgumentParser program("statediff");
 
-    program.add_argument("run0").help("Run0 Checkpoint data file").required();
+    program.add_argument("run0")
+        .help("Run0 Checkpoint data file").required();
 
-    program.add_argument("run1").help("Run1 Checkpoint data file").required();
+    program.add_argument("run1")
+        .help("Run1 Checkpoint data file").required();
 
     program.add_argument("-e", "--error")
         .help("Error tolerance")
@@ -73,52 +80,70 @@ main(int argc, char **argv) {
         .default_value(size_t(4096))
         .scan<'u', size_t>();
 
-    program.add_argument("-b", "--buffer_len")
+    program.add_argument("-b", "--buffer-len")
         .help("Buffer length")
         .default_value(size_t(1024 * 1024))
         .scan<'u', size_t>();
 
-    program.add_argument("-s", "--start_level")
+    program.add_argument("-s", "--start-level")
         .help("Start level")
         .default_value(size_t(13))
         .scan<'u', size_t>();
 
-    program.add_argument("-a", "--approx_hash")
+    program.add_argument("-a", "--approx-hash")
         .help("Approximate hashing")
-        .default_value(true)
-        .action(argparse::Action::StoreTrue);
+        .default_value(false)
+        .implicit_value(true);
 
     try {
+        std::cout << "Parsing args\n";
         program.parse_args(argc, argv);
+        std::cout << "Parsed args\n";
     } catch (const std::runtime_error &err) {
         std::cerr << err.what() << std::endl;
-        std::cerr << program;
+        std::cout << program;
         return 1;
     }
 
     std::string file0 = program.get<std::string>("run0");
     std::string file1 = program.get<std::string>("run1");
     double error = program.get<double>("error");
-    char dtype = program.get<char>("type");
+    std::string dtype = program.get<std::string>("type");
     size_t chunk_size = program.get<size_t>("chunk_size");
-    size_t buffer_len = program.get<size_t>("buffer_len");
-    size_t start_level = program.get<size_t>("start_level");
-    bool approx_hash = program.get<bool>("approx_hash");
+    size_t buffer_len = program.get<size_t>("buffer-len");
+    size_t start_level = program.get<size_t>("start-level");
+    bool approx_hash = program.get<bool>("approx-hash");
+
+    std::cout << "File 0: " << file0 << std::endl;
+    std::cout << "File 1: " << file1 << std::endl;
+    std::cout << "Error: " << error << std::endl;
+    std::cout << "Data type: " << dtype << std::endl;
+    std::cout << "Chunk size: " << chunk_size << std::endl;
+    std::cout << "Buffer length: " << buffer_len << std::endl;
+    std::cout << "Start level: " << start_level << std::endl;
+    std::cout << "Approx hash: " << approx_hash << std::endl;
 
     off_t filesize;
     get_file_size(file0, &filesize);
     size_t data_len = static_cast<size_t>(filesize);
 
     std::vector<uint8_t> data0(data_len), data1(data_len);
+    std::vector<int> metadata0;
     read_file(file0, data0, data_len);
     read_file(file1, data1, data_len);
 
-    client_t<int> client0(1, file0, data_len, error, dtype, chunk_size,
-                          buffer_len, start_level, approx_hash);
-    client0.create(data);
+    posix_reader_t<float> reader0(file0, buffer_len/sizeof(float), chunk_size/sizeof(float), true, false, 8);
+    posix_reader_t<float> reader1(file1, buffer_len/sizeof(float), chunk_size/sizeof(float), true, false, 8);
 
-    client_t<int> client1(2, file1, data_len, error, dtype, chunk_size,
-                          buffer_len, start_level, approx_hash);
+    client_t<float, posix_reader_t> client0(1, reader0, data_len, error, dtype[0], chunk_size,
+                          start_level, approx_hash);
+
+    client0.create(data0);
+
+    client_t<float, posix_reader_t> client1(2, reader1, data_len, error, dtype[0], chunk_size,
+                          start_level, approx_hash);
+
+    client1.create(data1);
 
     client0.compare_with(client1);
 
@@ -130,5 +155,7 @@ main(int argc, char **argv) {
                   << " are NOT within error tolerance." << std::endl;
     }
 
+    }
+    Kokkos::finalize();
     return 0;
 }

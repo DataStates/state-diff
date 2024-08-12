@@ -93,8 +93,8 @@ liburing_reader_t<DataType>::liburing_reader_t(size_t buff_len,
     active_buffer = device_alloc<DataType>(bytes_per_slice);
     transfer_buffer = device_alloc<DataType>(bytes_per_slice);
     host_buffer = host_alloc<DataType>(bytes_per_slice);
-    size_t max_offsets = file_buffer.size / bytes_per_chunk;
-    if (bytes_per_chunk * max_offsets < file_buffer.size)
+    size_t max_offsets = filesize / bytes_per_chunk;
+    if (bytes_per_chunk * max_offsets < filesize)
         max_offsets += 1;
     host_offsets = host_alloc<size_t>(sizeof(size_t) * max_offsets);
     gpuErrchk(cudaStreamCreate(&transfer_stream));

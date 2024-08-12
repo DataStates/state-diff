@@ -1,55 +1,7 @@
-#ifndef __KOKKOS_MERKLE_TREE_HPP
-#define __KOKKOS_MERKLE_TREE_HPP
-#include "common/compare_utils.hpp"
-#include "common/statediff_bitset.hpp"
-#include "rounding_hash.hpp"
-#include <Kokkos_Core.hpp>
-
-/** \class Merkle Tree class
- *  Merkle tree class. Merkle trees are trees where the leaves contain the
- * hashes of data chunks and the non leaves contain the hash of the children
- * nodes hashes concatenated
- */
-class tree_t {
-  private:
-    void digest_to_hex_(const uint8_t *digest, char *output);
-
-  public:
-    using tree_type = Kokkos::View<HashDigest **>;
-    Kokkos::View<HashDigest **> tree_d;
-    Kokkos::View<HashDigest **>::HostMirror tree_h;
-    Dedupe::Bitset<Kokkos::DefaultExecutionSpace> dual_hash_d;
-    Dedupe::Bitset<Kokkos::DefaultHostExecutionSpace> dual_hash_h;
-
-    tree_t();
-    tree_t(const uint32_t num_leaves);
-    tree_t(const uint32_t num_leaves, const uint32_t hpn);
-
-    KOKKOS_INLINE_FUNCTION HashDigest &operator()(uint32_t i) const;
-    KOKKOS_INLINE_FUNCTION HashDigest &operator()(uint32_t i, uint32_t j) const;
-
-    KOKKOS_INLINE_FUNCTION bool calc_hash(uint32_t u) const;
-    KOKKOS_INLINE_FUNCTION bool calc_leaf_hash(const void *data, uint64_t len,
-                                               HashDigest &digest) const;
-    KOKKOS_INLINE_FUNCTION bool calc_leaf_hash(const void *data, uint64_t len,
-                                               uint32_t u) const;
-    KOKKOS_INLINE_FUNCTION bool
-    calc_leaf_fuzzy_hash(const void *data, uint64_t len, float errorValue,
-                         const char dataType, uint32_t u) const;
-
-    KOKKOS_INLINE_FUNCTION uint32_t num_leaf_descendents(uint32_t node,
-                                                         uint32_t num_nodes);
-    KOKKOS_INLINE_FUNCTION uint32_t leftmost_leaf(uint32_t node,
-                                                  uint32_t num_nodes);
-    KOKKOS_INLINE_FUNCTION uint32_t rightmost_leaf(uint32_t node,
-                                                   uint32_t num_nodes);
-
-    void print_leaves();
-    void print();
-};
+#include "merkle_tree.hpp"
 
 void
-tree_t::digest_to_hex_(const uint8_t *digest, char *output) {
+tree_t::digest_to_hex(const uint8_t *digest, char *output) {
     int i, j;
     char *c = output;
     for (i = 0; i < static_cast<int>(sizeof(HashDigest) / 4); i++) {
@@ -108,19 +60,19 @@ tree_t::tree_t(const uint32_t num_leaves, const uint32_t hpn) {
  *
  * \return Reference to hash digest at node i
  */
-KOKKOS_INLINE_FUNCTION
+KOKKOS_FUNCTION
 HashDigest &
 tree_t::operator()(uint32_t i) const {
     return tree_d(i, 0);
 }
 
-KOKKOS_INLINE_FUNCTION
+KOKKOS_FUNCTION
 HashDigest &
 tree_t::operator()(uint32_t i, uint32_t j) const {
     return tree_d(i, j);
 }
 
-KOKKOS_INLINE_FUNCTION
+KOKKOS_FUNCTION
 bool
 tree_t::calc_hash(uint32_t u) const {
     uint32_t child_l = 2 * u + 1, child_r = 2 * u + 2;
@@ -190,7 +142,7 @@ tree_t::calc_hash(uint32_t u) const {
     return dual_hash;
 }
 
-KOKKOS_INLINE_FUNCTION
+KOKKOS_FUNCTION
 bool
 tree_t::calc_leaf_hash(const void *data, uint64_t len,
                        HashDigest &digest) const {
@@ -198,7 +150,7 @@ tree_t::calc_leaf_hash(const void *data, uint64_t len,
     return false;
 }
 
-KOKKOS_INLINE_FUNCTION
+KOKKOS_FUNCTION
 bool
 tree_t::calc_leaf_hash(const void *data, uint64_t len, uint32_t u) const {
     kokkos_murmur3::hash(data, len, (uint8_t *) (&tree_d(u, 0)));
@@ -206,7 +158,7 @@ tree_t::calc_leaf_hash(const void *data, uint64_t len, uint32_t u) const {
     return false;
 }
 
-KOKKOS_INLINE_FUNCTION
+KOKKOS_FUNCTION
 bool
 tree_t::calc_leaf_fuzzy_hash(const void *data, uint64_t len, float errorValue,
                              const char dataType, uint32_t u) const {
@@ -233,7 +185,7 @@ tree_t::print_leaves() {
     char buffer[64];
     unsigned int counter = 2;
     for (unsigned int i = num_leaves - 1; i < tree_h.extent(0); i++) {
-        digest_to_hex_((uint8_t *) (tree_h(i, 0).digest), buffer);
+        digest_to_hex((uint8_t *) (tree_h(i, 0).digest), buffer);
         printf("Node: %u: %s \n", i, buffer);
         if (i == counter) {
             printf("\n");
@@ -250,7 +202,7 @@ tree_t::print() {
     char buffer[64];
     unsigned int counter = 2;
     for (unsigned int i = 16777215; i < 16777315; i++) {
-        digest_to_hex_((uint8_t *) (tree_h(i, 0).digest), buffer);
+        digest_to_hex((uint8_t *) (tree_h(i, 0).digest), buffer);
         printf("Node: %u: %s \n", i, buffer);
         if (i == counter) {
             printf("\n");
@@ -261,7 +213,7 @@ tree_t::print() {
 }
 
 // Calculate the number of leaves for the tree rooted at node
-KOKKOS_INLINE_FUNCTION
+KOKKOS_FUNCTION
 uint32_t
 tree_t::num_leaf_descendents(uint32_t node, uint32_t num_nodes) {
     uint32_t leftmost = (2 * node) + 1;
@@ -289,7 +241,7 @@ tree_t::num_leaf_descendents(uint32_t node, uint32_t num_nodes) {
 }
 
 // Get the leftmost leaf of the tree rooted at node
-KOKKOS_INLINE_FUNCTION
+KOKKOS_FUNCTION
 uint32_t
 tree_t::leftmost_leaf(uint32_t node, uint32_t num_nodes) {
     uint32_t leftmost = (2 * node) + 1;
@@ -301,7 +253,7 @@ tree_t::leftmost_leaf(uint32_t node, uint32_t num_nodes) {
 }
 
 // Get the rightmost leaf of the tree rooted at node
-KOKKOS_INLINE_FUNCTION
+KOKKOS_FUNCTION
 uint32_t
 tree_t::rightmost_leaf(uint32_t node, uint32_t num_nodes) {
     uint32_t leftmost = (2 * node) + 1;
@@ -317,4 +269,3 @@ tree_t::rightmost_leaf(uint32_t node, uint32_t num_nodes) {
     return static_cast<uint32_t>(rightmost);
 }
 
-#endif   // KOKKOS_MERKLE_TREE_HPP
