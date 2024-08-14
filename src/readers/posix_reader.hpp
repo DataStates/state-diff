@@ -1,8 +1,29 @@
 #ifndef __POSIX_READER_HPP
 #define __POSIX_READER_HPP
 
-#define __DEBUG
+//#define __DEBUG
 #include "io_reader.hpp"
+#include <unordered_set>
+#include <chrono>
+
+class posix_io_reader_t : public base_io_reader_t {
+  size_t fsize;
+  int fd, num_threads = 1;
+  std::string fname;
+  std::vector<segment_t> reads;
+  std::unordered_set<size_t> in_progress;
+  std::vector<std::future<int>> futures;
+
+  int read_data(size_t beg, size_t end);
+
+  public:
+    posix_io_reader_t(); // default
+    ~posix_io_reader_t(); 
+    posix_io_reader_t(std::string& name); // open file
+    int enqueue_reads(const std::vector<segment_t>& segments) override; // Add segments to read queue
+    int wait(size_t id) override; // Wait for id to finish
+    int wait_all() override; // wait for all pending reads to finish
+};
 
 struct buff_state_t {
     uint8_t *buff;
@@ -12,6 +33,7 @@ struct buff_state_t {
 template<typename DataType>
 class posix_reader_t : public io_reader_t<DataType> {
     
+public:
     size_t *host_offsets = NULL;
     size_t *file_offsets = NULL;
     size_t num_offsets = 0;

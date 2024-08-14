@@ -18,6 +18,21 @@
 #include <unistd.h>
 #include <vector>
 
+struct segment_t {
+    size_t id;
+    uint8_t* buffer;
+    size_t offset, size;
+};
+
+class base_io_reader_t {
+  public:
+    base_io_reader_t() = default; // default
+    base_io_reader_t(std::string& name); // open file
+    virtual int enqueue_reads(const std::vector<segment_t>& segments) = 0; // Add segments to read queue
+    virtual int wait(size_t id) = 0; // Wait for id to finish
+    virtual int wait_all() = 0; // wait for all pending reads to finish
+};
+
 struct read_offsets_t {
     size_t *host_offsets;
     size_t *file_offsets;
@@ -37,6 +52,7 @@ struct chunk_t {
 };
 
 template <typename DataType> class io_reader_t {
+  public:
 
     size_t *host_offsets = NULL;
     size_t *file_offsets = NULL;

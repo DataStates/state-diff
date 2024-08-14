@@ -6,8 +6,8 @@
 #include <string>
 #include <unistd.h>
 #include <vector>
-#define DEBUG
-#define STDOUT
+//#define DEBUG
+//#define STDOUT
 #include "argparse/argparse.hpp"
 #include "statediff.hpp"
 
@@ -94,6 +94,11 @@ main(int argc, char **argv) {
         .help("Approximate hashing")
         .default_value(false)
         .implicit_value(true);
+    
+    program.add_argument("--verbose")
+        .help("Verbose output")
+        .default_value(false)
+        .implicit_value(true);
 
     try {
         program.parse_args(argc, argv);
@@ -112,14 +117,16 @@ main(int argc, char **argv) {
     size_t start_level = program.get<size_t>("start-level");
     bool approx_hash = program.get<bool>("approx-hash");
 
-    std::cout << "File 0: " << file0 << std::endl;
-    std::cout << "File 1: " << file1 << std::endl;
-    std::cout << "Error: " << error << std::endl;
-    std::cout << "Data type: " << dtype << std::endl;
-    std::cout << "Chunk size: " << chunk_size << std::endl;
-    std::cout << "Buffer length: " << buffer_len << std::endl;
-    std::cout << "Start level: " << start_level << std::endl;
-    std::cout << "Approx hash: " << approx_hash << std::endl;
+    if(program.get<bool>("verbose")) {
+        std::cout << "File 0: " << file0 << std::endl;
+        std::cout << "File 1: " << file1 << std::endl;
+        std::cout << "Error: " << error << std::endl;
+        std::cout << "Data type: " << dtype << std::endl;
+        std::cout << "Chunk size: " << chunk_size << std::endl;
+        std::cout << "Buffer length: " << buffer_len << std::endl;
+        std::cout << "Start level: " << start_level << std::endl;
+        std::cout << "Approx hash: " << approx_hash << std::endl;
+    }
 
     off_t filesize;
     get_file_size(file0, &filesize);
