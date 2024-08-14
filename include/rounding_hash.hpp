@@ -10,30 +10,28 @@
 #endif
 
 // Hashing approach tolerant to variations of floating point numbers
-template <typename T1, typename T2>
+template <typename T1>
 KOKKOS_INLINE
-bool roundProcessData(const T1* data, T2 combinedBytes, uint64_t len,  T1 errorValue, HashDigest* digests);
+bool roundProcessData(const T1* data, uint64_t len,  T1 errorValue, HashDigest* digests);
 
 KOKKOS_INLINE
 bool roundinghash(const void* data, uint64_t len, const char dataType,
                 double errorValue, HashDigest* digests)  {
   if (dataType == *("d")) {
     const double* doubleData = static_cast<const double*>(data);
-    uint64_t bitsDataType = 0;
-    return roundProcessData(doubleData, bitsDataType, len, errorValue, digests);
+    return roundProcessData(doubleData, len, errorValue, digests);
   } else if(dataType == *("f")) {
     const float* floatData = static_cast<const float*>(data);
-    uint32_t bitsDataType = 0;
-    return roundProcessData(floatData, bitsDataType, len, static_cast<float>(errorValue), digests);
+    return roundProcessData(floatData, len, static_cast<float>(errorValue), digests);
   } else {
     kokkos_murmur3::MurmurHash3_x64_128(data, len, 0, &(digests[0]));
     return false;
   }
 }
 
-template <typename T1, typename T2>
+template <typename T1>
 KOKKOS_INLINE
-bool roundProcessData(const T1* data, T2 bitsDataType, uint64_t len, T1 errorValue, HashDigest* digests) {
+bool roundProcessData(const T1* data, uint64_t len, T1 errorValue, HashDigest* digests) {
   // Given that every data point has two hashes, compute the modified
   // binary representations per data point and compute the hashes
   // for the entire chunk in a streaming fashion.
