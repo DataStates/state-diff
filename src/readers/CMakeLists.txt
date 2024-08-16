@@ -1,6 +1,7 @@
 add_library (statediff-io SHARED
     liburing_reader.cpp
     posix_reader.cpp
+    mmap_reader.cpp
 )
 
 ##### Find dependencies
