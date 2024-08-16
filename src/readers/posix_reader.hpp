@@ -8,10 +8,10 @@
 
 class posix_io_reader_t : public base_io_reader_t {
   size_t fsize;
-  int fd, num_threads = 1;
+  int fd, num_threads = 4;
   std::string fname;
   std::vector<segment_t> reads;
-  std::unordered_set<size_t> in_progress;
+  std::vector<bool> segment_status;
   std::vector<std::future<int>> futures;
 
   int read_data(size_t beg, size_t end);
