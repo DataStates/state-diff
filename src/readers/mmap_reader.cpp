@@ -5,7 +5,6 @@ mmap_io_reader_t::mmap_io_reader_t() {
 
 mmap_io_reader_t::~mmap_io_reader_t() {
     wait_all();   
-    close(fd);
 }
 
 mmap_io_reader_t::mmap_io_reader_t(std::string& name) {
@@ -15,7 +14,6 @@ mmap_io_reader_t::mmap_io_reader_t(std::string& name) {
         FATAL("cannot open " << fname << ", error = " << std::strerror(errno));
     }
     fsize = lseek(fd, 0, SEEK_END);
-    lseek(fd, 0, SEEK_SET);
     buffer = (uint8_t *) mmap(NULL, fsize, PROT_READ, MAP_PRIVATE, fd, 0);
     close(fd);
     if (buffer == MAP_FAILED)

@@ -4,6 +4,27 @@
 #include <liburing.h>
 #include "io_reader.hpp"
 
+class liburing_io_reader_t : public base_io_reader_t {
+  size_t fsize;
+  int fd, num_threads = 4;
+  size_t max_ring_size = 32768;
+  std::string fname;
+  std::vector<segment_t> reads;
+  std::vector<bool> segment_status;
+  std::vector<std::future<int>> futures;
+
+  int read_data(size_t beg, size_t end);
+
+  public:
+    liburing_io_reader_t(); // default
+    ~liburing_io_reader_t(); 
+    liburing_io_reader_t(std::string& name); // open file
+    int setup_context(uint32_t entries, struct io_uring* ring);
+    int enqueue_reads(const std::vector<segment_t>& segments) override; // Add segments to read queue
+    int wait(size_t id) override; // Wait for id to finish
+    int wait_all() override; // wait for all pending reads to finish
+};
+
 // struct ring_state_t {
 //     int id;
 //     struct io_uring ring;

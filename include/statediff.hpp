@@ -10,6 +10,7 @@
 #include "common/statediff_bitset.hpp"
 #include "common/merkle_tree.hpp"
 #include "io_reader.hpp"
+#include "mmap_reader.hpp"
 #include "reader_factory.hpp"
 #include <climits>
 #include <cstddef>
@@ -550,8 +551,8 @@ client_t<DataType, Reader>::compare_data(client_t &prev,
             segments1.push_back(seg1);
         }
 
-        posix_io_reader_t* reader0 = new posix_io_reader_t(prev.io_reader.filename);
-        posix_io_reader_t* reader1 = new posix_io_reader_t(io_reader.filename);
+        mmap_io_reader_t* reader0 = new mmap_io_reader_t(prev.io_reader.filename);
+        mmap_io_reader_t* reader1 = new mmap_io_reader_t(io_reader.filename);
         reader0->enqueue_reads(segments0);
         reader1->enqueue_reads(segments1);
         reader0->wait_all();

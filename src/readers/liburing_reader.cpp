@@ -1,5 +1,126 @@
 #include "liburing_reader.hpp"
 
+liburing_io_reader_t::liburing_io_reader_t() {
+}
+
+liburing_io_reader_t::~liburing_io_reader_t() {
+    wait_all();   
+    close(fd);
+}
+
+liburing_io_reader_t::liburing_io_reader_t(std::string& name) {
+    fname = name;
+    fd = open(name.c_str(), O_RDONLY | O_DIRECT);
+    if (fd == -1) {
+        FATAL("cannot open " << fname << ", error = " << std::strerror(errno));
+    }
+    fsize = lseek(fd, 0, SEEK_END);
+    lseek(fd, 0, SEEK_SET);
+}
+
+int liburing_io_reader_t::read_data(size_t beg, size_t end) {
+    // Create submission queue
+    io_uring ring;
+    int ret = setup_context(max_ring_size, &ring);
+    if (ret < 0)
+        FATAL("Failed to setup ring of size max_ring_size");
+
+    // Fill submission queue with reads
+    size_t submit_reads = 0;
+    size_t num_reads = end-beg;
+    size_t idx = beg;
+    while(submit_reads < num_reads) {
+        // Queue reads
+        size_t stop = idx + max_ring_size;
+        if(stop > end)
+            stop = end;
+        for(idx; idx<stop; idx++) {
+            segment_t& seg = reads[idx];
+            ssize_t len = 0;
+            if(seg.size + seg.offset > fsize)
+              seg.size = fsize - seg.offset;
+
+            struct io_uring_sqe *sqe;
+            sqe = io_uring_get_sqe(&ring);
+            if (!sqe) {
+                fprintf(stderr, "Could not get sqe\n");
+                return -1;
+            }
+            io_uring_sqe_set_data64(sqe, idx);
+            io_uring_prep_read(sqe, fd, seg.buffer, seg.size, seg.offset);
+            submit_reads += 1;
+        }
+
+        // Submit queue
+        ret = io_uring_submit(&ring);
+        if(ret < 0) {
+            fprintf(stderr, "io_uring_submit: %s\n", strerror(-ret));
+        }
+
+        // Wait for some completion events 
+        io_uring_cqe *cqe;
+        size_t num_cqe = max_ring_size;
+        if(num_reads - idx < num_cqe)
+            num_cqe = num_reads - idx;
+        for(size_t i=0; i<num_cqe; i++) {
+            ret = io_uring_wait_cqe(&ring, &cqe);
+            if(ret < 0) {
+                fprintf(stderr, "io_uring_wait_cqe: %s\n", strerror(-ret));
+                return ret;
+            }
+            segment_status[io_uring_cqe_get_data64(cqe)] = true;
+        }
+        io_uring_cq_advance(&ring, num_cqe);
+    }
+
+    // Destory queue
+    io_uring_queue_exit(&ring);
+
+    return 0;
+}
+
+int liburing_io_reader_t::enqueue_reads(const std::vector<segment_t>& segments) {
+    size_t start = reads.size();
+    segment_status.insert(segment_status.end(), segments.size(), false);
+    reads.insert(reads.end(), segments.begin(), segments.end());
+    size_t per_thread = segments.size() / num_threads;
+    if(per_thread*num_threads < segments.size())
+        per_thread += 1;
+    for(size_t i=0; i<num_threads; i++) {
+        size_t beg = i*per_thread;
+        size_t end = (i+1)*per_thread;
+        if(end > segments.size())
+            end = segments.size();
+        futures.push_back(std::async(std::launch::async | std::launch::deferred,
+                                     &liburing_io_reader_t::read_data, this, beg, end));
+    }
+    return 0;
+}
+
+int liburing_io_reader_t::wait(size_t id) {
+    size_t pos = 0;
+    for(pos; pos < reads.size(); pos++) {
+        if(reads[pos].id == id)
+            break;
+    }
+    while(segment_status[pos] == false) {
+      std::this_thread::sleep_for(std::chrono::duration<double, std::milli>(10));
+    }
+    return 0;
+}
+
+int liburing_io_reader_t::wait_all() {
+    for (uint32_t i = 0; i < futures.size(); i++) {
+        int res = futures[i].get();
+        if (res < 0)
+            fprintf(stderr, "read_chunks: %s\n", strerror(-res));
+    }
+    futures.clear();
+    reads.clear();
+    segment_status.clear();
+    return 0;
+}
+
 template <typename DataType>
 int
 liburing_reader_t<DataType>::setup_context(uint32_t entries,
