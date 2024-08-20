@@ -5,7 +5,7 @@ project(statediff VERSION 0.0.1 LANGUAGES CXX)
 include(GNUInstallDirs)
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 add_definitions(-O2 -g -Wall -D__BENCHMARK -D__ASSERT -D__INFO)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 23)
 
 ##### Find dependencies
 find_package(Kokkos REQUIRED)

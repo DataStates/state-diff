@@ -10,7 +10,7 @@ posix_io_reader_t::~posix_io_reader_t() {
 
 posix_io_reader_t::posix_io_reader_t(std::string& name) {
     fname = name;
-    fd = open(name.c_str(), O_RDONLY | O_DIRECT);
+    fd = open(name.c_str(), O_RDONLY);
     if (fd == -1) {
         FATAL("cannot open " << fname << ", error = " << std::strerror(errno));
     }
@@ -21,26 +21,27 @@ posix_io_reader_t::posix_io_reader_t(std::string& name) {
 int posix_io_reader_t::read_data(size_t beg, size_t end) {
     for (size_t i = beg; i < end; i++) {
         segment_t& seg = reads[i];
-        ssize_t len = 0;
+        size_t len = 0;
         if(seg.size + seg.offset > fsize)
           seg.size = fsize - seg.offset;
+
         while(len < seg.size) {
-            ssize_t data_read = pread(fd, seg.buffer+len, seg.size-len, seg.offset+len); 
+            ssize_t data_read = pread(fd, (void*)(seg.buffer+len), seg.size-len, (off_t)(seg.offset+len)); 
             if(data_read < 0) {
-                FATAL("pread(fd, " << seg.buffer+len << ", " << seg.size-len << ", " 
-                      << seg.offset+len << ") failed" << fname << ", error = " 
-                      << std::strerror(errno));
+                FATAL("pread(fd, " << static_cast<void*>(seg.buffer) << "+" << len << ", " << seg.size-len << ", " 
+                      << seg.offset+len << ") failed " << fname << ", error = " 
+                      << std::strerror(errno) << "( " << errno << ")");
             } else {
                 len += data_read;
             }
         }
+
         segment_status[i] = true;
     }
     return 0;
 }
 
 int posix_io_reader_t::enqueue_reads(const std::vector<segment_t>& segments) {
-    size_t start = reads.size();
     segment_status.insert(segment_status.end(), segments.size(), false);
     reads.insert(reads.end(), segments.begin(), segments.end());
     size_t per_thread = segments.size() / num_threads;
@@ -59,7 +60,7 @@ int posix_io_reader_t::enqueue_reads(const std::vector<segment_t>& segments) {
 
 int posix_io_reader_t::wait(size_t id) {
     size_t pos = 0;
-    for(pos; pos < reads.size(); pos++) {
+    for(pos=0; pos < reads.size(); pos++) {
         if(reads[pos].id == id)
             break;
     }
