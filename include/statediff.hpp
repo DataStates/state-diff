@@ -19,13 +19,8 @@
 namespace state_diff {
 
 template <typename DataType, template<typename> typename Reader> class client_t {
-    static const size_t DEFAULT_CHUNK_SIZE = 4096;
-    static const size_t DEFAULT_START_LEVEL = 13;
-    static const bool DEFAULT_FUZZY_HASH = true;
-    static const char DEFAULT_DTYPE = 'f';
-
     int client_id;   // current_id
-    tree_t *tree = nullptr;
+    tree_t *tree;
     size_t data_len;
     size_t chunk_size;
     size_t num_chunks;    // tree
@@ -47,6 +42,12 @@ template <typename DataType, template<typename> typename Reader> class client_t 
     // timers
     std::vector<double> io_timer;
     double compare_timer;
+
+    // Defaults
+    static const size_t DEFAULT_CHUNK_SIZE = 4096;
+    static const size_t DEFAULT_START_LEVEL = 13;
+    static const bool DEFAULT_FUZZY_HASH = true;
+    static const char DEFAULT_DTYPE = 'f';
 
     // Stats
     Kokkos::View<uint64_t[1]> num_comparisons =
@@ -537,7 +538,7 @@ client_t<DataType, Reader>::compare_data(client_t &prev,
         Kokkos::deep_copy(diff_hash_vec.vector_h, diff_hash_vec.vector_d);
         std::vector<segment_t> segments0, segments1;
         std::vector<DataType> buffer0(num_diff_hash*elemPerChunk), buffer1(num_diff_hash*elemPerChunk);
-        for(int i=0; i<num_diff_hash; i++) {
+        for(size_t i=0; i<num_diff_hash; i++) {
             segment_t seg0, seg1;
             seg0.id = i;
             seg0.buffer = (uint8_t*)(buffer0.data())+i*chunk_size;
@@ -551,8 +552,12 @@ client_t<DataType, Reader>::compare_data(client_t &prev,
             segments1.push_back(seg1);
         }
 
-        mmap_io_reader_t* reader0 = new mmap_io_reader_t(prev.io_reader.filename);
-        mmap_io_reader_t* reader1 = new mmap_io_reader_t(io_reader.filename);
+        liburing_io_reader_t* reader0 = new liburing_io_reader_t(prev.io_reader.filename);
+        liburing_io_reader_t* reader1 = new liburing_io_reader_t(io_reader.filename);
+        //mmap_io_reader_t* reader0 = new mmap_io_reader_t(prev.io_reader.filename);
+        //mmap_io_reader_t* reader1 = new mmap_io_reader_t(io_reader.filename);
+        //posix_io_reader_t* reader0 = new posix_io_reader_t(prev.io_reader.filename);
+        //posix_io_reader_t* reader1 = new posix_io_reader_t(io_reader.filename);
         reader0->enqueue_reads(segments0);
         reader1->enqueue_reads(segments1);
         reader0->wait_all();
@@ -586,7 +591,8 @@ client_t<DataType, Reader>::compare_data(client_t &prev,
         Timer::time_point end = Timer::now();
         compare_timer +=
             std::chrono::duration_cast<Duration>(end - beg).count();
-        delete reader0, reader1;
+        delete reader0;
+        delete reader1;
     }
 
     STDOUT_PRINT("Number of changed elements - Phase Two: %lu\n", num_diff);

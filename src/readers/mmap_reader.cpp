@@ -33,13 +33,12 @@ int mmap_io_reader_t::read_data(size_t beg, size_t end) {
 }
 
 int mmap_io_reader_t::enqueue_reads(const std::vector<segment_t>& segments) {
-    size_t start = reads.size();
     segment_status.insert(segment_status.end(), segments.size(), false);
     reads.insert(reads.end(), segments.begin(), segments.end());
     size_t per_thread = segments.size() / num_threads;
     if(per_thread*num_threads < segments.size())
         per_thread += 1;
-    for(size_t i=0; i<num_threads; i++) {
+    for(size_t i=0; i<(size_t)num_threads; i++) {
         size_t beg = i*per_thread;
         size_t end = (i+1)*per_thread;
         if(end > segments.size())

@@ -28,6 +28,7 @@ class base_io_reader_t {
   public:
     base_io_reader_t() = default; // default
     base_io_reader_t(std::string& name); // open file
+    virtual ~base_io_reader_t() = default; // default
     virtual int enqueue_reads(const std::vector<segment_t>& segments) = 0; // Add segments to read queue
     virtual int wait(size_t id) = 0; // Wait for id to finish
     virtual int wait_all() = 0; // wait for all pending reads to finish

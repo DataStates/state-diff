@@ -3,6 +3,7 @@
 
 #include <liburing.h>
 #include "io_reader.hpp"
+#include <thread>
 
 class liburing_io_reader_t : public base_io_reader_t {
   size_t fsize;
@@ -17,20 +18,13 @@ class liburing_io_reader_t : public base_io_reader_t {
 
   public:
     liburing_io_reader_t(); // default
-    ~liburing_io_reader_t(); 
     liburing_io_reader_t(std::string& name); // open file
+    ~liburing_io_reader_t() override; 
     int setup_context(uint32_t entries, struct io_uring* ring);
     int enqueue_reads(const std::vector<segment_t>& segments) override; // Add segments to read queue
     int wait(size_t id) override; // Wait for id to finish
     int wait_all() override; // wait for all pending reads to finish
 };
-
-// struct ring_state_t {
-//     int id;
-//     struct io_uring ring;
-//     uint32_t ring_size=32768;
-//     uint32_t num_cqe=0;
-// };
 
 struct read_call_data_t {
     uint64_t beg;
