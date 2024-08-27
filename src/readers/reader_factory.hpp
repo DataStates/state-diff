@@ -19,8 +19,10 @@ public:
                                      bool transfer_all = true, int nthreads = 2)
     {
 #ifdef WITH_LIBURING
-        return new liburing_reader_t<DataType>(buff_len, file_name, chunk_size,
-                                     async_memcpy, transfer_all, nthreads);
+        return new posix_reader_t<DataType>(buff_len, file_name, chunk_size,
+                                  async_memcpy, transfer_all, nthreads);
+//        return new liburing_reader_t<DataType>(buff_len, file_name, chunk_size,
+//                                     async_memcpy, transfer_all, nthreads);
 #elif defined(WITH_MMAP)
         return new posix_reader_t<DataType>(buff_len, file_name, chunk_size,
                                   async_memcpy, transfer_all, nthreads);

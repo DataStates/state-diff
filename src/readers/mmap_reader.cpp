@@ -73,3 +73,12 @@ int mmap_io_reader_t::wait_all() {
     return 0;
 }
 
+size_t mmap_io_reader_t::wait_any() {
+    size_t id = -1;
+    for(size_t pos=0; pos<reads.size(); pos++) {
+        if(segment_status[pos]) {
+            id = reads[pos].id;
+        }
+    }
+    return id;
+}
