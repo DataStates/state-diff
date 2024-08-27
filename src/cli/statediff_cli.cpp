@@ -157,7 +157,7 @@ main(int argc, char **argv) {
                   << " are within error tolerance." << std::endl;
     } else {
         std::cout << "FAILURE::Files " << file0 << " and " << file1
-                  << " are NOT within error tolerance." << std::endl;
+                  << " are NOT within error tolerance. Found " << client0.get_num_changes() << " changes." << std::endl;
     }
 
     }

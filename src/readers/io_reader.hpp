@@ -32,6 +32,7 @@ class base_io_reader_t {
     virtual int enqueue_reads(const std::vector<segment_t>& segments) = 0; // Add segments to read queue
     virtual int wait(size_t id) = 0; // Wait for id to finish
     virtual int wait_all() = 0; // wait for all pending reads to finish
+    virtual size_t wait_any() = 0; // wait for any available read to finish
 };
 
 struct read_offsets_t {
