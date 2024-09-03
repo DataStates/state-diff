@@ -14,7 +14,7 @@ class liburing_io_reader_t : public base_io_reader_t {
   size_t req_submitted = 0, req_completed = 0;
   std::string fname;
   std::queue<segment_t> submissions;
-  std::vector<size_t> completions;
+  std::unordered_set<size_t> completions;
   io_uring ring;
   struct io_uring_cqe *cqe[32768];
   std::mutex m;
