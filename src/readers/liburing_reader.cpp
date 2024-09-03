@@ -56,7 +56,7 @@ uint32_t liburing_io_reader_t::request_completion() {
         // Get IDs of completed segments and push to completion vector
         for(uint32_t i=0; i<nready; i++) {
             size_t id = io_uring_cqe_get_data64(cqe[i]);
-            completions.push_back(id);
+            completions.insert(id);
         }
         // Update ring and count of total requests completed
         io_uring_cq_advance(&ring, nready);
@@ -152,30 +152,9 @@ int liburing_io_reader_t::wait(size_t id) {
     // Acquire lock
     std::unique_lock<std::mutex> lock(m);
     // Search for ID in already completed requests
-    size_t pos = 0;
-    for(; pos < completions.size(); pos++) {
-        if(completions[pos] == id) {
-            // Erase found segment from completed vector
-            completions.erase(completions.begin()+pos);
-            lock.unlock();
-            cv.notify_one();
-            return 0;
-        }
-    }
-    // Wait until the ID is in the completion vector
-    cv.wait(lock, [this, id, &pos] { 
-        bool found = false;
-        // Search for ID 
-        for(; pos<completions.size(); pos++) {
-            if(completions[pos] == id) {
-                found = true;
-                break;
-            }
-        }
-        return found;
-    });
+    cv.wait(lock, [this, id] { return completions.find(id) != completions.end(); });
     // Remove ID from vector of completed request IDs
-    completions.erase(completions.begin()+pos);
+    completions.erase(id);
     lock.unlock();
     cv.notify_one();
     return 0;
@@ -195,8 +174,8 @@ size_t liburing_io_reader_t::wait_any() {
     // Wait for any request to finish
     std::unique_lock<std::mutex> lock(m);
     cv.wait(lock, [this] { return completions.size() > 0; });
-    size_t id = completions.back();
-    completions.pop_back();
+    size_t id = *(completions.begin());
+    completions.erase(completions.begin());
     lock.unlock();
     cv.notify_one();
     return id;
