@@ -17,7 +17,7 @@ target_link_libraries(statediff-cli PUBLIC statediff-io)
 target_link_libraries(statediff-cli PRIVATE argparse)
 target_link_libraries(statediff-cli PRIVATE Kokkos::kokkos)
 set_target_properties(statediff-cli PROPERTIES
-    CXX_STANDARD 17
+    CXX_STANDARD 23
     CXX_STANDARD_REQUIRED YES
 )
 
