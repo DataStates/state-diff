@@ -35,12 +35,11 @@ if(NOT LIBURING_LIBRARY)
 
     # Ensure liburing is built before proceeding
     add_dependencies(statediff-io liburing)
-    target_link_libraries(statediff-io uring)
+    target_link_libraries(statediff-io ${LIBURING_LIBRARY})
 else()
     # If found, set the include directories and libraries
     find_path(LIBURING_INCLUDE_DIR NAMES liburing.h)
-    set(LIBURING_LIBRARY uring)
-    target_link_libraries(statediff-io uring)
+    target_link_libraries(statediff-io ${LIBURING_LIBRARY})
 endif()
 
 # find_package(liburing REQUIRED)
