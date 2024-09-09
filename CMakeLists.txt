@@ -11,6 +11,9 @@ set(CMAKE_CXX_STANDARD 23)
 find_package(Kokkos REQUIRED)
 find_package(OpenSSL REQUIRED)
 
+##### Enable testing
+enable_testing()
+
 ##### Subdirectories
 add_subdirectory(src)
 
@@ -38,3 +41,4 @@ write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/statediffConfigVers
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/statediffConfig.cmake
               ${CMAKE_CURRENT_BINARY_DIR}/statediffConfigVersion.cmake
         DESTINATION share/statediff/cmake)
+

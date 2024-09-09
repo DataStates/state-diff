@@ -87,6 +87,7 @@ size_t posix_io_reader_t::wait_any() {
     for(size_t pos=0; pos<reads.size(); pos++) {
         if(segment_status[pos]) {
             id = reads[pos].id;
+            segment_status[pos] = false;
         }
     }
     return id;
