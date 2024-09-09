@@ -66,3 +66,6 @@ install (TARGETS statediff-io EXPORT statediffTargets
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
+
+###### Unit tests
+add_subdirectory(test)
