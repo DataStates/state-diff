@@ -137,15 +137,21 @@ main(int argc, char **argv) {
     read_file(file0, data0, data_len);
     read_file(file1, data1, data_len);
 
-    posix_reader_t<float> reader0(file0, buffer_len/sizeof(float), chunk_size/sizeof(float), true, false, 8);
-    posix_reader_t<float> reader1(file1, buffer_len/sizeof(float), chunk_size/sizeof(float), true, false, 8);
+    //posix_reader_t<float> reader0(file0, buffer_len/sizeof(float), chunk_size/sizeof(float), true, false, 8);
+    //posix_reader_t<float> reader1(file1, buffer_len/sizeof(float), chunk_size/sizeof(float), true, false, 8);
+    liburing_reader_t<float> reader0(file0, buffer_len/sizeof(float), chunk_size/sizeof(float), true, false, 8);
+    liburing_reader_t<float> reader1(file1, buffer_len/sizeof(float), chunk_size/sizeof(float), true, false, 8);
 
-    client_t<float, posix_reader_t> client0(1, reader0, data_len, error, dtype[0], chunk_size,
+    //client_t<float, posix_reader_t> client0(1, reader0, data_len, error, dtype[0], chunk_size,
+    //                      start_level, approx_hash);
+    client_t<float, liburing_reader_t> client0(1, reader0, data_len, error, dtype[0], chunk_size,
                           start_level, approx_hash);
 
     client0.create(data0);
 
-    client_t<float, posix_reader_t> client1(2, reader1, data_len, error, dtype[0], chunk_size,
+    //client_t<float, posix_reader_t> client1(2, reader1, data_len, error, dtype[0], chunk_size,
+    //                      start_level, approx_hash);
+    client_t<float, liburing_reader_t> client1(2, reader1, data_len, error, dtype[0], chunk_size,
                           start_level, approx_hash);
 
     client1.create(data1);

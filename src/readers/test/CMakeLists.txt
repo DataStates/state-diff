@@ -8,4 +8,4 @@ set_target_properties(reader_test PROPERTIES
     CXX_EXTENSIONS OFF
 )
 
-add_test(NAME ReaderTest COMMAND reader_test --kokkos-num-threads=1)
+add_test(NAME ReaderTest COMMAND reader_test)
