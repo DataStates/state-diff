@@ -1,8 +1,18 @@
-add_library (statediff-io SHARED
+# Define the sources
+set(SOURCES
     liburing_reader.cpp
     posix_reader.cpp
     mmap_reader.cpp
 )
+
+# Conditionally add adios_reader.cpp if ADIOS is found
+find_package(ADIOS2 QUIET)
+if(ADIOS2_FOUND)
+    list(APPEND SOURCES adios_reader.cpp)
+endif()
+
+# Add the library
+add_library(statediff-io SHARED ${SOURCES})
 
 ##### Find dependencies
 # Liburing
@@ -42,14 +52,9 @@ else()
     target_link_libraries(statediff-io ${LIBURING_LIBRARY})
 endif()
 
-# find_package(liburing REQUIRED)
-add_definitions(-DWITH_LIBURING)
-
-# ADIOS2
-find_package(ADIOS2)
 if(ADIOS2_FOUND)
-    find_package(MPI REQUIRED)
-    add_definitions(-DWITH_ADIOS2)
+    target_link_libraries(statediff-io adios2::cxx11)
+    target_include_directories(statediff-io PUBLIC ${ADIOS2_INCLUDE_DIR})
 endif()
 
 ##### Add include directories

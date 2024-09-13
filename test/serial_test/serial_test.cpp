@@ -1,13 +1,13 @@
+#include <Kokkos_Core.hpp>
 #include <boost/archive/binary_iarchive.hpp>
 #include <boost/archive/binary_oarchive.hpp>
+#include <boost/serialization/array.hpp>
 #include <boost/serialization/serialization.hpp>
 #include <boost/serialization/vector.hpp>
-#include <boost/serialization/array.hpp>
-#include <Kokkos_Core.hpp>
 #include <fstream>
-#include <vector>
-#include <random>
 #include <iostream>
+#include <random>
+#include <vector>
 
 // Custom data structure
 struct alignas(16) HashDigest {
@@ -23,14 +23,13 @@ struct alignas(16) HashDigest {
 };
 
 // Example class with Kokkos::View
-class MyGpuArray {
+class test_serial_t {
   public:
     Kokkos::View<HashDigest *> gpu_array;   // GPU memory for HashDigest
 
     // Constructor for MyGpuArray
-    MyGpuArray(uint32_t size)
-        : gpu_array("gpu_array", size) {
-            
+    test_serial_t(uint32_t size) : gpu_array("gpu_array", size) {
+
         std::vector<HashDigest> data(size);
 
         // Fill the data with random bytes
@@ -43,8 +42,10 @@ class MyGpuArray {
         }
 
         // Create an unmanaged host view for the data and copy to GPU
-        HashDigest* data_ptr = data.data();
-        Kokkos::View<HashDigest*, Kokkos::HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> data_h(data_ptr, data.size());
+        HashDigest *data_ptr = data.data();
+        Kokkos::View<HashDigest *, Kokkos::HostSpace,
+                     Kokkos::MemoryTraits<Kokkos::Unmanaged>>
+            data_h(data_ptr, data.size());
         Kokkos::deep_copy(gpu_array, data_h);
     }
 
@@ -56,14 +57,18 @@ class MyGpuArray {
         std::vector<HashDigest> temp_data(size);
 
         // Create a host view with the same size as the GPU array
-        Kokkos::View<HashDigest*, Kokkos::HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> temp_view(temp_data.data(), size);
-        
+        Kokkos::View<HashDigest *, Kokkos::HostSpace,
+                     Kokkos::MemoryTraits<Kokkos::Unmanaged>>
+            temp_view(temp_data.data(), size);
+
         // Copy data from GPU to the host buffer
         Kokkos::deep_copy(temp_view, gpu_array);
 
         // Serialize the size and the array data
-        ar & size;
-        ar & boost::serialization::make_array(reinterpret_cast<uint8_t*>(temp_data.data()), size * sizeof(HashDigest));
+        ar &size;
+        ar &boost::serialization::make_array(
+            reinterpret_cast<uint8_t *>(temp_data.data()),
+            size * sizeof(HashDigest));
     }
 
     // Deserialize function
@@ -71,42 +76,47 @@ class MyGpuArray {
     void deserialize(Archive &ar, const unsigned int version) {
         // Deserialize the size and the array data
         uint32_t size;
-        ar & size;
+        ar &size;
 
         // Allocate GPU arrays if needed
         gpu_array = Kokkos::View<HashDigest *>("gpu_array", size);
 
         // Temporary buffer for deserialization
         std::vector<HashDigest> temp_data(size);
-        ar & boost::serialization::make_array(reinterpret_cast<uint8_t*>(temp_data.data()), size * sizeof(HashDigest));
+        ar &boost::serialization::make_array(
+            reinterpret_cast<uint8_t *>(temp_data.data()),
+            size * sizeof(HashDigest));
 
         // Create a host view with the deserialized data and copy to GPU
-        Kokkos::View<HashDigest *, Kokkos::HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> temp_view(temp_data.data(), size);
+        Kokkos::View<HashDigest *, Kokkos::HostSpace,
+                     Kokkos::MemoryTraits<Kokkos::Unmanaged>>
+            temp_view(temp_data.data(), size);
         Kokkos::deep_copy(gpu_array, temp_view);
     }
 };
 
-int main() {
+int
+main() {
     Kokkos::initialize();
 
     {
         // Create and serialize object
-        MyGpuArray gpu_data(10);
+        test_serial_t gpu_data(10);
         printf("Before\n");
         for (int i = 0; i < 10; i++) {
             std::cout << gpu_data.gpu_array(i) << std::endl;
         }
 
         // Serialize to file
-        std::ofstream ofs("gpu_data.bin");
+        std::ofstream ofs("serialized_data.dat");
         boost::archive::binary_oarchive oa(ofs);
         oa << gpu_data;
     }
 
     {
         // Deserialize object
-        MyGpuArray gpu_data_loaded(10);
-        std::ifstream ifs("gpu_data.bin");
+        test_serial_t gpu_data_loaded(10);
+        std::ifstream ifs("serialized_data.dat");
         boost::archive::binary_iarchive ia(ifs);
         ia >> gpu_data_loaded;
 

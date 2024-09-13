@@ -17,9 +17,8 @@ enable_testing()
 ##### Subdirectories
 add_subdirectory(src)
 
-##### Testing
-# enable_testing()
-# add_subdirectory(test)
+##### State-diff Testing
+add_subdirectory(test)
 
 ###### Export sets and Configs
 install(EXPORT statediffTargets

@@ -1,5 +1,13 @@
 #include "merkle_tree.hpp"
 
+template void
+tree_t::save<boost::archive::binary_oarchive>(boost::archive::binary_oarchive &,
+                                              const unsigned int) const;
+
+template void
+tree_t::load<boost::archive::binary_iarchive>(boost::archive::binary_iarchive &,
+                                              const unsigned int);
+
 void
 tree_t::digest_to_hex(const uint8_t *digest, char *output) {
     int i, j;
@@ -20,19 +28,19 @@ bool
 tree_t::calc_hash(uint32_t u) const {
     uint32_t child_l = 2 * u + 1, child_r = 2 * u + 2;
     HashDigest temp[2];
-    memcpy((uint8_t *) (&temp[0]), (uint8_t *) (&tree_d(child_l)),
+    memcpy((uint8_t *)(&temp[0]), (uint8_t *)(&tree_d(child_l)),
            sizeof(HashDigest));
-    memcpy((uint8_t *) (&temp[1]), (uint8_t *) (&tree_d(child_r)),
+    memcpy((uint8_t *)(&temp[1]), (uint8_t *)(&tree_d(child_r)),
            sizeof(HashDigest));
     kokkos_murmur3::hash(&temp, 2 * sizeof(HashDigest),
-                         (uint8_t *) (&tree_d(u)));
+                         (uint8_t *)(&tree_d(u)));
     return false;
 }
 
 KOKKOS_FUNCTION
 bool
 tree_t::calc_leaf_hash(const void *data, uint64_t len, uint32_t u) const {
-    kokkos_murmur3::hash(data, len, (uint8_t *) (&tree_d(u)));
+    kokkos_murmur3::hash(data, len, (uint8_t *)(&tree_d(u)));
     return false;
 }
 
@@ -42,7 +50,6 @@ tree_t::calc_leaf_fuzzy_hash(const void *data, uint64_t len, float errorValue,
                              const char dataType, uint32_t u) const {
 
     HashDigest digests[2] = {0};
-    // bool dualValid = roundinghash(data, len, dataType, errorValue, digests);
     roundinghash(data, len, dataType, errorValue, digests);
     // Set the bit in the hashnum_bitset if both hashes are valid
     tree_d(u) = digests[0];
@@ -67,14 +74,9 @@ tree_t::tree_t(const size_t data_len, const size_t c_size, bool fuzzyhash)
 tree_t::tree_t() {}
 
 void
-tree_t::create(const std::vector<uint8_t> &data, double errorValue,
-               char dataType, size_t start_level) {
-
-    // Get a uint8_t pointer to the data
-    const uint8_t *uint8_ptr = (uint8_t *) data.data();
+tree_t::create(const uint8_t *data_ptr, client_info_t client_info) {
 
     // Get number of chunks and nodes
-    STDOUT_PRINT("Chunk size: %zu\n", chunk_size);
     STDOUT_PRINT("Num chunks: %zu\n", num_leaves);
     STDOUT_PRINT("Num nodes: %zu\n", num_nodes);
 
@@ -87,15 +89,15 @@ tree_t::create(const std::vector<uint8_t> &data, double errorValue,
     level_beg = (level_beg - 1) / 2;
     level_end = (level_end - 2) / 2;
     uint32_t left_leaf = level_beg;
-    uint32_t last_lvl_beg = (1 << start_level) - 1;
+    uint32_t last_lvl_beg = (1 << client_info.start_level) - 1;
 
     // Temporary values to avoid capturing this object in the lambda
     auto nchunks = num_leaves;
     auto nnodes = num_nodes;
     auto chunksize = chunk_size;
-    auto data_size = data.size();
-    auto dtype = dataType;
-    auto err_tol = errorValue;
+    auto data_size = client_info.data_len;   // data.size();
+    auto dtype = client_info.data_type;
+    auto err_tol = client_info.error_tolerance;
     bool use_fuzzy_hash = use_fuzzyhash;
 
     std::string diff_label = std::string("Diff: ");
@@ -118,10 +120,10 @@ tree_t::create(const std::vector<uint8_t> &data, double errorValue,
                 num_bytes = data_size - offset;
             // Hash chunk
             if (use_fuzzy_hash) {
-                calc_leaf_fuzzy_hash(uint8_ptr + offset, num_bytes, err_tol,
+                calc_leaf_fuzzy_hash(data_ptr + offset, num_bytes, err_tol,
                                      dtype, leaf);
             } else {
-                calc_leaf_hash(uint8_ptr + offset, num_bytes, leaf);
+                calc_leaf_hash(data_ptr + offset, num_bytes, leaf);
             }
         });
     // Build up tree level by level until last_lvl_beg
@@ -162,17 +164,17 @@ tree_t::operator[](uint32_t i) const {
  */
 template <class Archive>
 void
-tree_t::serialize(Archive &ar, const unsigned int version) {
+tree_t::save(Archive &ar, const unsigned int version) const {
     std::vector<HashDigest> tree_h(num_nodes);
     Kokkos::View<HashDigest *, Kokkos::HostSpace,
                  Kokkos::MemoryTraits<Kokkos::Unmanaged>>
         temp_view(tree_h.data(), num_nodes);
     Kokkos::deep_copy(temp_view, tree_d);
 
-    ar >> num_nodes;
-    ar >> boost::serialization::make_array(
-              reinterpret_cast<uint8_t *>(tree_h.data()),
-              num_nodes * sizeof(HashDigest));
+    ar << num_leaves;
+    ar << boost::serialization::make_array(
+        reinterpret_cast<uint8_t *>(tree_h.data()),
+        num_nodes * sizeof(HashDigest));
 }
 
 /**
@@ -180,15 +182,16 @@ tree_t::serialize(Archive &ar, const unsigned int version) {
  */
 template <class Archive>
 void
-tree_t::deserialize(Archive &ar, const unsigned int version) {
-    ar << num_nodes;
+tree_t::load(Archive &ar, const unsigned int version) {
+    ar >> num_leaves;
+    num_nodes = 2 * num_leaves - 1;
     tree_d = Kokkos::View<HashDigest *>("Merkle tree", num_nodes);
 
     // temporary buffer for deserialization
     std::vector<HashDigest> tree_h(num_nodes);
-    ar << boost::serialization::make_array(
-        reinterpret_cast<uint8_t *>(tree_h.data()),
-        num_nodes * sizeof(HashDigest));
+    ar >> boost::serialization::make_array(
+              reinterpret_cast<uint8_t *>(tree_h.data()),
+              num_nodes * sizeof(HashDigest));
 
     // Create a host view with the deserialized data and copy to GPU
     Kokkos::View<HashDigest *, Kokkos::HostSpace,
@@ -267,7 +270,7 @@ tree_t::print_leaves() {
     char buffer[64];
     unsigned int counter = 2;
     for (unsigned int i = num_leaves - 1; i < tree_h.extent(0); i++) {
-        digest_to_hex((uint8_t *) (tree_h(i).digest), buffer);
+        digest_to_hex((uint8_t *)(tree_h(i).digest), buffer);
         printf("Node: %u: %s \n", i, buffer);
         if (i == counter) {
             printf("\n");
