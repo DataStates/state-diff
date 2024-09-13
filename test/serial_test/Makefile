@@ -7,4 +7,4 @@ LIBS:=-L${HOME}/research/anl/install/kokkos/install/lib -L${HOME}/research/anl/i
 all:
 	$(COMPILER) $(OPTS) -o $(MAIN) $(MAIN).cpp $(INCLUDES) $(LIBS)       
 clean:
-	rm -rf $(MAIN) *~
+	rm -rf $(MAIN) *.dat *~

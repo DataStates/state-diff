@@ -43,6 +43,19 @@ liburing_io_reader_t::liburing_io_reader_t(std::string& name) {
     return;
 }
 
+liburing_io_reader_t::liburing_io_reader_t(const liburing_io_reader_t& other) {
+    fname = other.fname;
+}
+
+liburing_io_reader_t &
+liburing_io_reader_t::operator=(const liburing_io_reader_t &other) {
+   if (this == &other) {
+       return *this;
+   }
+   fname = other.fname;
+   return *this;
+}
+
 // Process any available completions
 uint32_t liburing_io_reader_t::request_completion() {
     // Get # of ready completions
