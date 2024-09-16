@@ -55,8 +55,13 @@ int mmap_io_reader_t::wait(size_t id) {
         if(reads[pos].id == id)
             break;
     }
-    while(segment_status[pos] == false) {
-      std::this_thread::sleep_for(std::chrono::duration<double, std::milli>(10));
+    // while(segment_status[pos] == false) {
+    //   std::this_thread::sleep_for(std::chrono::duration<double, std::milli>(10));
+    // }
+    auto start = std::chrono::high_resolution_clock::now();
+    auto end = start + std::chrono::milliseconds(10);
+    while (std::chrono::high_resolution_clock::now() < end && segment_status[pos] == false) {
+        // Busy-wait, doing nothing.
     }
     return 0;
 }

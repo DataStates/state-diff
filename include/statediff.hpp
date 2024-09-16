@@ -51,13 +51,6 @@ template <typename DataType, typename Reader> class client_t {
     double compare_timer;
 
     void initialize(size_t n_chunks);
-    size_t compare_trees(const client_t &prev, Queue &working_queue,
-                         Vector<size_t> &diff_hash_vec,
-                         Kokkos::View<uint64_t[1]> &num_hash_comp);
-    size_t compare_data(client_t &prev, Vector<size_t> &diff_hash_vec,
-                        Kokkos::Bitset<> &changed_chunks,
-                        Kokkos::View<uint64_t[1]> &num_changed,
-                        Kokkos::View<uint64_t[1]> &num_comparisons);
 
   public:
     client_t(int id, Reader &reader);
@@ -74,6 +67,20 @@ template <typename DataType, typename Reader> class client_t {
     template <class Archive> void load(Archive &ar, const unsigned int version);
 
     bool compare_with(client_t &prev);
+
+    // Due to compilation restrictions, compare_tree and compare_data have to be made public.
+    // The restriction exists because __host__ __device__ lambdas need to be callable from
+    // both the host and the device. As we are  if you are using __host__ __device__ in a
+    // lambda inside a class, the same restriction from CUDA applies: the member function
+    // that contains the lambda must be public, as the lambda may need to be invoked
+    // from either the host or device.
+    size_t compare_trees(const client_t &prev, Queue &working_queue,
+                         Vector<size_t> &diff_hash_vec,
+                         Kokkos::View<uint64_t[1]> &num_hash_comp);
+    size_t compare_data(client_t &prev, Vector<size_t> &diff_hash_vec,
+                        Kokkos::Bitset<> &changed_chunks,
+                        Kokkos::View<uint64_t[1]> &num_changed,
+                        Kokkos::View<uint64_t[1]> &num_comparisons);
 
     // Stats getters
     size_t get_num_hash_comparisons() const;
@@ -356,6 +363,7 @@ client_t<DataType, Reader>::compare_data(
         const segment_t *segments = segments0.data();
         const DataType *prev_buffer = buffer0.data();
         const DataType *curr_buffer = buffer1.data();
+        auto& cur_client = *this;
         Kokkos::parallel_reduce(
             "Count differences", range_policy,
             KOKKOS_LAMBDA(const size_t idx, uint64_t &update) {
@@ -363,7 +371,7 @@ client_t<DataType, Reader>::compare_data(
                 size_t j = idx % elemPerChunk;   // Element in block
                 size_t data_idx = segments[i].offset + j * sizeof(DataType);
                 if (data_idx <
-                    client_info.data_len) {   // check if data_len (elements) or
+                    cur_client.client_info.data_len) {   // check if data_len (elements) or
                                               // data_size (bytes)
                     if (!abs_comp(prev_buffer[idx], curr_buffer[idx],
                                   err_tol)) {
