@@ -99,6 +99,7 @@ tree_t::create(const uint8_t *data_ptr, client_info_t client_info) {
     auto dtype = client_info.data_type;
     auto err_tol = client_info.error_tolerance;
     bool use_fuzzy_hash = use_fuzzyhash;
+    auto &curr_tree = *this;
 
     std::string diff_label = std::string("Diff: ");
     Kokkos::Profiling::pushRegion(diff_label + std::string("Construct Tree"));
@@ -120,10 +121,10 @@ tree_t::create(const uint8_t *data_ptr, client_info_t client_info) {
                 num_bytes = data_size - offset;
             // Hash chunk
             if (use_fuzzy_hash) {
-                calc_leaf_fuzzy_hash(data_ptr + offset, num_bytes, err_tol,
+                curr_tree.calc_leaf_fuzzy_hash(data_ptr + offset, num_bytes, err_tol,
                                      dtype, leaf);
             } else {
-                calc_leaf_hash(data_ptr + offset, num_bytes, leaf);
+                curr_tree.calc_leaf_hash(data_ptr + offset, num_bytes, leaf);
             }
         });
     // Build up tree level by level until last_lvl_beg
@@ -137,7 +138,7 @@ tree_t::create(const uint8_t *data_ptr, client_info_t client_info) {
             KOKKOS_LAMBDA(const uint32_t node) {
                 // Check if node is non leaf
                 if (node < nchunks - 1) {
-                    calc_hash(node);
+                    curr_tree.calc_hash(node);
                 }
             });
         level_beg = (level_beg - 1) / 2;
