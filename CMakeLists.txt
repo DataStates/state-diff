@@ -10,7 +10,6 @@ set(CMAKE_CXX_STANDARD 17)
 ##### Find dependencies
 find_package(Kokkos REQUIRED)
 find_package(OpenSSL REQUIRED)
-find_package(CUDA REQUIRED)
 
 ##### Enable testing
 enable_testing()

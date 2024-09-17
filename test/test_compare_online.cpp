@@ -1,4 +1,5 @@
-#include "liburing_reader.hpp"
+#include "io_uring_stream.hpp"
+// #include "liburing_reader.hpp"
 #include "statediff.hpp"
 #include <boost/archive/binary_iarchive.hpp>
 #include <boost/archive/binary_oarchive.hpp>
@@ -87,15 +88,18 @@ main(int argc, char **argv) {
         std::cout << "EXEC STATE:: Files saved" << std::endl;
 
         // read data, build tree and save
-        liburing_io_reader_t reader_0(fn_0), reader_1(void_fn),
-            reader_2(void_fn);
-        state_diff::client_t<float, liburing_io_reader_t> client_0(
+        io_uring_stream_t<float> reader_0(fn_0, chunk_size / sizeof(float));
+        io_uring_stream_t<float> reader_1(void_fn, chunk_size / sizeof(float));
+        io_uring_stream_t<float> reader_2(void_fn, chunk_size / sizeof(float));
+        // liburing_io_reader_t reader_0(fn_0), reader_1(void_fn),
+        //     reader_2(void_fn);
+        state_diff::client_t<float, io_uring_stream_t> client_0(
             0, reader_0, data_size, error_tolerance, dtype, chunk_size,
             root_level, fuzzy_hash);
-        state_diff::client_t<float, liburing_io_reader_t> client_1(
+        state_diff::client_t<float, io_uring_stream_t> client_1(
             1, reader_1, data_size, error_tolerance, dtype, chunk_size,
             root_level, fuzzy_hash);
-        state_diff::client_t<float, liburing_io_reader_t> client_2(
+        state_diff::client_t<float, io_uring_stream_t> client_2(
             2, reader_2, data_size, error_tolerance, dtype, chunk_size,
             root_level, fuzzy_hash);
         client_0.create(run_0_data);

@@ -3,6 +3,7 @@ set(SOURCES
     liburing_reader.cpp
     posix_reader.cpp
     mmap_reader.cpp
+    io_uring_stream.cpp
 )
 
 # Conditionally add adios_reader.cpp if ADIOS is found
