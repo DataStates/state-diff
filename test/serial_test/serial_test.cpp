@@ -22,6 +22,27 @@ struct alignas(16) HashDigest {
     }
 };
 
+void
+create_array(uint32_t size, Kokkos::View<HashDigest *> &array_d) {
+    std::vector<HashDigest> data(size);
+
+    // Fill the data with random bytes
+    std::mt19937 prng(1234);
+    std::uniform_int_distribution<uint8_t> prng_dist(0, 255);
+    for (int i = 0; i < size; ++i) {
+        for (int j = 0; j < 16; ++j) {
+            data[i].digest[j] = prng_dist(prng);
+        }
+    }
+
+    // Create an unmanaged host view for the data and copy to GPU
+    HashDigest *data_ptr = data.data();
+    Kokkos::View<HashDigest *, Kokkos::HostSpace,
+                 Kokkos::MemoryTraits<Kokkos::Unmanaged>>
+        data_h(data_ptr, data.size());
+    Kokkos::deep_copy(array_d, data_h);
+}
+
 // Example class with Kokkos::View
 class test_serial_t {
   public:
