@@ -1,11 +1,11 @@
 #include "merkle_tree.hpp"
 
 template void
-tree_t::save<boost::archive::binary_oarchive>(boost::archive::binary_oarchive &,
+tree_t::save<cereal::BinaryOutputArchive>(cereal::BinaryOutputArchive &,
                                               const unsigned int) const;
 
 template void
-tree_t::load<boost::archive::binary_iarchive>(boost::archive::binary_iarchive &,
+tree_t::load<cereal::BinaryInputArchive>(cereal::BinaryInputArchive &,
                                               const unsigned int);
 
 void
@@ -121,8 +121,8 @@ tree_t::create(const uint8_t *data_ptr, client_info_t client_info) {
                 num_bytes = data_size - offset;
             // Hash chunk
             if (use_fuzzy_hash) {
-                curr_tree.calc_leaf_fuzzy_hash(data_ptr + offset, num_bytes, err_tol,
-                                     dtype, leaf);
+                curr_tree.calc_leaf_fuzzy_hash(data_ptr + offset, num_bytes,
+                                               err_tol, dtype, leaf);
             } else {
                 curr_tree.calc_leaf_hash(data_ptr + offset, num_bytes, leaf);
             }
@@ -161,7 +161,7 @@ tree_t::operator[](uint32_t i) const {
 }
 
 /**
- * Implementation of Boost.Serialization's main Serialize function
+ * Implementation of Cereal's main Serialize function
  */
 template <class Archive>
 void
@@ -172,27 +172,23 @@ tree_t::save(Archive &ar, const unsigned int version) const {
         temp_view(tree_h.data(), num_nodes);
     Kokkos::deep_copy(temp_view, tree_d);
 
-    ar << num_leaves;
-    ar << boost::serialization::make_array(
-        reinterpret_cast<uint8_t *>(tree_h.data()),
-        num_nodes * sizeof(HashDigest));
+    ar(num_leaves);
+    ar(cereal::binary_data(tree_h.data(), num_nodes * sizeof(HashDigest)));
 }
 
 /**
- * Implementation of Boost.Serialization's main Deserialize function
+ * Implementation of Cereal's main Deserialize function
  */
 template <class Archive>
 void
 tree_t::load(Archive &ar, const unsigned int version) {
-    ar >> num_leaves;
+    ar(num_leaves);
     num_nodes = 2 * num_leaves - 1;
     tree_d = Kokkos::View<HashDigest *>("Merkle tree", num_nodes);
 
     // temporary buffer for deserialization
     std::vector<HashDigest> tree_h(num_nodes);
-    ar >> boost::serialization::make_array(
-              reinterpret_cast<uint8_t *>(tree_h.data()),
-              num_nodes * sizeof(HashDigest));
+    ar(cereal::binary_data(tree_h.data(), num_nodes * sizeof(HashDigest)));
 
     // Create a host view with the deserialized data and copy to GPU
     Kokkos::View<HashDigest *, Kokkos::HostSpace,

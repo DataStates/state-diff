@@ -1,8 +1,7 @@
 #include "adios_reader.hpp"
 #include "statediff.hpp"
 #include <adios2.h>
-#include <boost/archive/binary_iarchive.hpp>
-#include <boost/archive/binary_oarchive.hpp>
+#include <cereal/archives/binary.hpp>
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -96,8 +95,8 @@ main(int argc, char **argv) {
         std::vector<uint8_t> ser_buf;
         {
             std::stringstream out_string_stream;
-            boost::archive::binary_oarchive out_archive(out_string_stream);
-            out_archive << client;
+            cereal::BinaryOutputArchive out_archive(out_string_stream);
+            out_archive(client);
             std::string str = out_string_stream.str();
             ser_buf = std::vector<uint8_t>(str.begin(), str.end());
         }
@@ -113,8 +112,8 @@ main(int argc, char **argv) {
         {
             std::istringstream in_string_stream(
                 std::string(tree_buf.begin(), tree_buf.end()));
-            boost::archive::binary_iarchive in_archive(in_string_stream);
-            in_archive >> new_client;
+            cereal::BinaryInputArchive in_archive(in_string_stream);
+            in_archive(new_client);
         }
         std::cout << "EXEC STATE:: Tree deserialized from ADIOS2's BP file"
                   << std::endl;

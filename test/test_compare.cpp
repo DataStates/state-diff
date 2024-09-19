@@ -1,8 +1,5 @@
 #include "io_uring_stream.hpp"
-// #include "liburing_reader.hpp"
 #include "statediff.hpp"
-#include <boost/archive/binary_iarchive.hpp>
-#include <boost/archive/binary_oarchive.hpp>
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -43,7 +40,7 @@ main(int argc, char **argv) {
     float min_float = 0.0;
     // size in bytes of the synthetic data (1GB)
     // size_t data_size = 1024 * 1024 * 1024;
-    size_t data_size = 16 * 1024 * 1024;   // 16MB
+    size_t data_size = 1024 * 1024;   // 1MB
     // Application error tolerance
     float error_tolerance = 1e-4;
     // Target chunk size. This example uses 16 bytes
