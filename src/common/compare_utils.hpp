@@ -86,7 +86,7 @@ typedef struct header_t {
 struct client_info_t {
     int id;
     char data_type;
-    size_t data_len;
+    size_t data_size;
     size_t chunk_size;
     size_t start_level;
     double error_tolerance;
@@ -94,13 +94,13 @@ struct client_info_t {
     // Ensuring client_info_t is serializable
     template <class Archive>
     void serialize(Archive &archive, const unsigned int version) {
-        archive(id, data_type, data_len, chunk_size, start_level,
+        archive(id, data_type, data_size, chunk_size, start_level,
                 error_tolerance);
     }
 
     // operator to assess two clients to make sure metadata match
     bool operator==(const client_info_t &other) const {
-        return (data_type == other.data_type) && (data_len == other.data_len) &&
+        return (data_type == other.data_type) && (data_size == other.data_size) &&
                (chunk_size == other.chunk_size) &&
                (start_level == other.start_level) &&
                (error_tolerance == other.error_tolerance);

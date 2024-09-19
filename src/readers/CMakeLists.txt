@@ -64,7 +64,7 @@ else()
 endif()
 
 if(ADIOS2_FOUND)
-    target_link_libraries(statediff-io adios2::cxx11)
+	target_link_libraries(statediff-io PUBLIC adios2::cxx11)
     target_include_directories(statediff-io PUBLIC ${ADIOS2_INCLUDE_DIR})
 endif()
 

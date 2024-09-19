@@ -18,9 +18,9 @@ class tree_t {
   private:
     void digest_to_hex(const uint8_t *digest, char *output);
     KOKKOS_FUNCTION bool calc_hash(uint32_t u) const;
-    KOKKOS_FUNCTION bool calc_leaf_hash(const void *data, uint64_t len,
+    KOKKOS_FUNCTION bool calc_leaf_hash(const void *data, uint64_t size,
                                         uint32_t u) const;
-    KOKKOS_FUNCTION bool calc_leaf_fuzzy_hash(const void *data, uint64_t len,
+    KOKKOS_FUNCTION bool calc_leaf_fuzzy_hash(const void *data, uint64_t size,
                                               float errorValue,
                                               const char dataType,
                                               uint32_t u) const;
@@ -32,7 +32,7 @@ class tree_t {
     bool use_fuzzyhash;
     Kokkos::View<HashDigest *> tree_d;
 
-    tree_t(const size_t data_len, const size_t chunk_size, bool fuzzyhash);
+    tree_t(const size_t data_size, const size_t chunk_size, bool fuzzyhash);
     tree_t();
 
     void create(const uint8_t *data_ptr, client_info_t client_info);
