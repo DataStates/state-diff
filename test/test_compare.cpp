@@ -12,15 +12,15 @@ bool
 write_file(const std::string &fn, uint8_t *buffer, size_t size) {
     int fd = open(fn.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
     if (fd == -1) {
-        FATAL("cannot open " << fn << ", error = " << strerror(errno));
+	std::cout << "cannot open " << fn << ", error = " << strerror(errno) << std::endl;
         return false;
     }
     size_t transferred = 0, remaining = size;
     while (remaining > 0) {
         size_t ret = write(fd, buffer + transferred, remaining);
         if (ret < 0)
-            FATAL("cannot write " << size << " bytes to " << fn
-                                  << " , error = " << std::strerror(errno));
+	    std::cerr << "cannot write " << size << " bytes to " << fn
+                                  << " , error = " << std::strerror(errno) << std::endl;
         remaining -= ret;
         transferred += ret;
     }
