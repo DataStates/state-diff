@@ -56,15 +56,15 @@ class client_t {
 
   public:
     client_t(int id, Reader<DataType> &reader);
-    client_t(int client_id, Reader<DataType> &reader, size_t data_len,
+    client_t(int client_id, Reader<DataType> &reader, size_t data_size,
              double error, char dtype = DEFAULT_DTYPE,
              size_t chunk_size = DEFAULT_CHUNK_SIZE,
              size_t start_level = DEFAULT_START_LEVEL,
              bool fuzzyhash = DEFAULT_FUZZY_HASH);
     ~client_t();
 
-    void create(const std::vector<DataType> &data);
-    void create(const uint8_t *data_ptr);
+    void create(std::vector<DataType> &data);
+    void create(uint8_t *data_ptr);
     template <class Archive>
     void save(Archive &ar, const unsigned int version) const;
     template <class Archive> void load(Archive &ar, const unsigned int version);
@@ -101,20 +101,19 @@ client_t<DataType, Reader>::client_t(int id, Reader<DataType> &reader)
 
 template <typename DataType, template <typename> typename Reader>
 client_t<DataType, Reader>::client_t(int id, Reader<DataType> &reader,
-                                     size_t data_length, double error,
-                                     char dtype, size_t chunksize, size_t start,
+                                     size_t data_size, double error, char dtype,
+                                     size_t chunk_size, size_t start,
                                      bool fuzzyhash)
     : io_reader(reader) {
     DEBUG_PRINT("Begin setup\n");
     std::string setup_region_name = std::string("StateDiff:: Checkpoint ") +
                                     std::to_string(id) + std::string(": Setup");
     Kokkos::Profiling::pushRegion(setup_region_name.c_str());
-    client_info =
-        client_info_t{id, dtype, data_length, chunksize, start, error};
-    tree = tree_t(data_length, chunksize, fuzzyhash);
+    client_info = client_info_t{id, dtype, data_size, chunk_size, start, error};
+    tree = tree_t(data_size, chunk_size, fuzzyhash);
 
-    size_t n_chunks = data_length / chunksize;
-    if (n_chunks * chunksize < data_length)
+    size_t n_chunks = data_size / chunk_size;
+    if (n_chunks * chunk_size < data_size)
         n_chunks += 1;
 
     initialize(n_chunks);
@@ -147,16 +146,51 @@ client_t<DataType, Reader>::~client_t() {}
  */
 template <typename DataType, template <typename> typename Reader>
 void
-client_t<DataType, Reader>::create(const std::vector<DataType> &data) {
+client_t<DataType, Reader>::create(std::vector<DataType> &data) {
+    Kokkos::Timer timer;
+
     // Get a uint8_t pointer to the data
-    const uint8_t *data_ptr = (uint8_t *)data.data();
-    tree.create(data_ptr, client_info);
+    uint8_t *data_ptr = reinterpret_cast<uint8_t *>(data.data());
+    size_t data_size = client_info.data_size;   // Size of the data in bytes
+
+    // Start timing data transfer
+    Kokkos::View<uint8_t *> data_ptr_d("Device pointer", data_size);
+    Kokkos::View<uint8_t *, Kokkos::HostSpace,
+                 Kokkos::MemoryTraits<Kokkos::Unmanaged>>
+        data_ptr_h(data_ptr, data_size);
+
+    Kokkos::deep_copy(data_ptr_d, data_ptr_h);
+    // Calculate and print runtime and throughput for data transfer
+    double transfer_time = timer.seconds();
+    std::cout << "Data transfer time: " << transfer_time << " seconds"
+              << std::endl;
+    double transfer_throughput = data_size / transfer_time;
+    std::cout << "Data transfer throughput: "
+              << transfer_throughput / (1024 * 1024 * 1024) << " GB/s"
+              << std::endl;
+
+    // Start timing tree creation
+    timer.reset();   // Reset timer
+    tree.create(data_ptr_d.data(), client_info);
+    // tree.create(data_ptr, client_info);
+    double tree_creation_time = timer.seconds();
+    std::cout << "Tree creation time: " << tree_creation_time << " seconds"
+              << std::endl;
+    double tree_creation_throughput = data_size / tree_creation_time;
+    std::cout << "Tree creation throughput: "
+              << tree_creation_throughput / (1024 * 1024 * 1024) << " GB/s"
+              << std::endl;
 }
 
 template <typename DataType, template <typename> typename Reader>
 void
-client_t<DataType, Reader>::create(const uint8_t *data_ptr) {
-    tree.create(data_ptr, client_info);
+client_t<DataType, Reader>::create(uint8_t *data_ptr) {
+    Kokkos::View<uint8_t *> data_ptr_d("Device pointer", client_info.data_size);
+    Kokkos::View<uint8_t *, Kokkos::HostSpace,
+                 Kokkos::MemoryTraits<Kokkos::Unmanaged>>
+        data_ptr_h(data_ptr, client_info.data_size);
+    Kokkos::deep_copy(data_ptr_d, data_ptr_h);
+    tree.create(data_ptr_d.data(), client_info);
 }
 
 /**

@@ -39,18 +39,18 @@ tree_t::calc_hash(uint32_t u) const {
 
 KOKKOS_FUNCTION
 bool
-tree_t::calc_leaf_hash(const void *data, uint64_t len, uint32_t u) const {
-    kokkos_murmur3::hash(data, len, (uint8_t *)(&tree_d(u)));
+tree_t::calc_leaf_hash(const void *data, uint64_t size, uint32_t u) const {
+    kokkos_murmur3::hash(data, size, (uint8_t *)(&tree_d(u)));
     return false;
 }
 
 KOKKOS_FUNCTION
 bool
-tree_t::calc_leaf_fuzzy_hash(const void *data, uint64_t len, float errorValue,
+tree_t::calc_leaf_fuzzy_hash(const void *data, uint64_t size, float errorValue,
                              const char dataType, uint32_t u) const {
 
     HashDigest digests[2] = {0};
-    roundinghash(data, len, dataType, errorValue, digests);
+    roundinghash(data, size, dataType, errorValue, digests);
     // Set the bit in the hashnum_bitset if both hashes are valid
     tree_d(u) = digests[0];
     return false;
@@ -62,10 +62,10 @@ tree_t::calc_leaf_fuzzy_hash(const void *data, uint64_t len, float errorValue,
  *
  * \param num_leaves Number of leaves in the tree
  */
-tree_t::tree_t(const size_t data_len, const size_t c_size, bool fuzzyhash)
+tree_t::tree_t(const size_t data_size, const size_t c_size, bool fuzzyhash)
     : chunk_size(c_size), use_fuzzyhash(fuzzyhash) {
-    num_leaves = data_len / c_size;
-    if (num_leaves * c_size < data_len)
+    num_leaves = data_size / c_size;
+    if (num_leaves * c_size < data_size)
         num_leaves += 1;
     num_nodes = 2 * num_leaves - 1;
     tree_d = Kokkos::View<HashDigest *>("Merkle tree", num_nodes);
@@ -95,7 +95,7 @@ tree_t::create(const uint8_t *data_ptr, client_info_t client_info) {
     auto nchunks = num_leaves;
     auto nnodes = num_nodes;
     auto chunksize = chunk_size;
-    auto data_size = client_info.data_len;   // data.size();
+    auto data_size = client_info.data_size;   // data.size();
     auto dtype = client_info.data_type;
     auto err_tol = client_info.error_tolerance;
     bool use_fuzzy_hash = use_fuzzyhash;
