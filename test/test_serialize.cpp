@@ -1,7 +1,6 @@
 #include "io_uring_stream.hpp"
 #include "statediff.hpp"
-#include <boost/archive/binary_iarchive.hpp>
-#include <boost/archive/binary_oarchive.hpp>
+#include <cereal/archives/binary.hpp>
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -86,22 +85,31 @@ main(int argc, char **argv) {
             1, reader, data_size, error_tolerance, dtype, chunk_size,
             root_level, fuzzy_hash);
         client.create(run_data);
+        auto start_serialize = std::chrono::high_resolution_clock::now();
         {
             std::ofstream ofs(metadata_fn, std::ios::binary);
-            boost::archive::binary_oarchive oa(ofs);
-            oa << client;
+            cereal::BinaryOutputArchive oa(ofs);
+            oa(client);
             ofs.close();
         }
+        auto end_serialize = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> serialize_duration =
+            end_serialize - start_serialize;
+
         std::cout << "EXEC STATE:: Tree created and saved" << std::endl;
 
         // load metadata file, deserialize tree
         state_diff::client_t<float, io_uring_stream_t> new_client(1, reader);
+        auto start_deserialize = std::chrono::high_resolution_clock::now();
         {
             std::ifstream ifs(metadata_fn, std::ios::binary);
-            boost::archive::binary_iarchive ia(ifs);
-            ia >> new_client;
+            cereal::BinaryInputArchive ia(ifs);
+            ia(new_client);
             ifs.close();
         }
+        auto end_deserialize = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> deserialize_duration =
+            end_deserialize - start_deserialize;
         std::cout << "EXEC STATE:: Tree deserialized" << std::endl;
 
         auto client_info = client.get_client_info();
@@ -109,6 +117,10 @@ main(int argc, char **argv) {
         if (!(client_info == new_client_info)) {
             test_status = -1;
         }
+        std::cout << "Serialization took " << serialize_duration.count()
+                  << " seconds" << std::endl;
+        std::cout << "Deserialization took " << deserialize_duration.count()
+                  << " seconds" << std::endl;
     }
     Kokkos::finalize();
     return test_status;

@@ -2,6 +2,8 @@
 #define __COMP_FUNC_HPP
 
 #include <Kokkos_Core.hpp>
+#include <cereal/archives/binary.hpp>
+#include <cereal/types/vector.hpp>
 #include <common/statediff_queue.hpp>
 #include <common/statediff_vector.hpp>
 
@@ -37,6 +39,11 @@ using Duration = std::chrono::duration<double>;
 
 struct alignas(16) HashDigest {
     uint8_t digest[16] = {0};
+
+    template <class Archive>
+    void serialize(Archive &ar, const unsigned int version) {
+        ar(cereal::binary_data(digest, sizeof(digest)));
+    }
 };
 
 // Helper function for checking if two hash digests are identical
@@ -86,13 +93,9 @@ struct client_info_t {
 
     // Ensuring client_info_t is serializable
     template <class Archive>
-    void serialize(Archive &ar, const unsigned int version) {
-        ar &id;
-        ar &data_type;
-        ar &data_len;
-        ar &chunk_size;
-        ar &start_level;
-        ar &error_tolerance;
+    void serialize(Archive &archive, const unsigned int version) {
+        archive(id, data_type, data_len, chunk_size, start_level,
+                error_tolerance);
     }
 
     // operator to assess two clients to make sure metadata match

@@ -11,7 +11,6 @@
 #include "common/statediff_bitset.hpp"
 #include "io_reader.hpp"
 #include "io_uring_stream.hpp"
-#include <boost/serialization/serialization.hpp>
 #include <climits>
 #include <cstddef>
 #include <functional>
@@ -94,9 +93,6 @@ class client_t {
     double get_io_time() const;
     double get_compare_time() const;
     client_info_t get_client_info() const;
-
-    // Macro for boost to split serialization into save/load
-    BOOST_SERIALIZATION_SPLIT_MEMBER()
 };
 
 template <typename DataType, template <typename> typename Reader>
@@ -171,8 +167,8 @@ template <class Archive>
 void
 client_t<DataType, Reader>::save(Archive &ar,
                                  const unsigned int version) const {
-    ar << client_info;
-    ar << tree;
+    ar(client_info);
+    ar(tree);
 }
 
 /**
@@ -182,8 +178,8 @@ template <typename DataType, template <typename> typename Reader>
 template <class Archive>
 void
 client_t<DataType, Reader>::load(Archive &ar, const unsigned int version) {
-    ar >> client_info;
-    ar >> tree;
+    ar(client_info);
+    ar(tree);
     initialize(tree.num_leaves);
 }
 

@@ -5,10 +5,8 @@
 #include "common/statediff_bitset.hpp"
 #include "rounding_hash.hpp"
 #include <Kokkos_Core.hpp>
-#include <boost/archive/binary_iarchive.hpp>
-#include <boost/archive/binary_oarchive.hpp>
-#include <boost/serialization/array.hpp>
-#include <boost/serialization/serialization.hpp>
+#include <cereal/archives/binary.hpp>
+#include <cereal/types/vector.hpp>
 #include <fstream>
 
 /** \class Merkle Tree class
@@ -49,8 +47,5 @@ class tree_t {
     KOKKOS_FUNCTION uint32_t rightmost_leaf(uint32_t node, uint32_t num_nodes);
 
     void print_leaves();
-
-    // Macro for boost to split serialization into save/load
-    BOOST_SERIALIZATION_SPLIT_MEMBER()
 };
 #endif   //  __KOKKOS_MERKLE_TREE_HPP
