@@ -23,6 +23,7 @@ class liburing_io_reader_t : public base_io_reader_t {
   bool active, wait_all_mode;
 
   uint32_t request_completion();
+  uint32_t request_submission();
   int io_thread();
 
   public:

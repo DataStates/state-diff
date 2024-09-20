@@ -1,10 +1,14 @@
+#include <stdio.h>
 #include "liburing_reader.hpp"
+
+//#define BACKGROUND_THREAD
 
 liburing_io_reader_t::liburing_io_reader_t() {}
 
 liburing_io_reader_t::~liburing_io_reader_t() {
     // Wait for any remaining operations
     wait_all();   
+#ifdef BACKGROUND_THREAD
     // Flag background thread that everything is done
     std::unique_lock<std::mutex> lk(m);
     cv.wait(lk, [this] { return (submissions.size() == 0) && (req_completed == req_submitted); });
@@ -14,6 +18,7 @@ liburing_io_reader_t::~liburing_io_reader_t() {
     cv.notify_one();
     // Join background thread
     th.join();
+#endif
     // Destory queue
     io_uring_queue_exit(&ring);
     // Close file
@@ -38,10 +43,12 @@ liburing_io_reader_t::liburing_io_reader_t(std::string& name) {
         FATAL("queue_init: " << std::strerror(-ret));
     }
 
+#ifdef BACKGROUND_THREAD
     // Launch background thread for submitting/completing reads
     active = true;
     wait_all_mode = false;
     th = std::thread(&liburing_io_reader_t::io_thread, this);
+#endif
     return;
 }
 
@@ -65,6 +72,45 @@ uint32_t liburing_io_reader_t::request_completion() {
         req_completed += nready;
     }
     return nready;
+}
+
+uint32_t liburing_io_reader_t::request_submission() {
+    // Get # of ready completions
+    uint32_t nsubmit = io_uring_sq_space_left(&ring); 
+    if(nsubmit > submissions.size())
+        nsubmit = submissions.size();
+    if(nsubmit > 0) {
+        // Prep reads
+        for(size_t i=0; i<nsubmit; i++) {
+            // Get segment from queue
+            segment_t seg = submissions.front();
+            if(seg.size + seg.offset > fsize)
+                seg.size = fsize - seg.offset;
+    
+            // Prepare submission queue entry
+            auto sqe = io_uring_get_sqe(&ring);
+            if (!sqe) {
+                fprintf(stderr, "Could not get sqe\n");
+                return -1;
+            }
+            // Save ID
+            io_uring_sqe_set_data64(sqe, seg.id);
+            io_uring_prep_read(sqe, fd, seg.buffer, seg.size, seg.offset);
+    
+            // Remove segment from queue
+            submissions.pop();
+        }
+
+        // Submit queued reads
+        int ret = io_uring_submit(&ring);
+        if(ret < 0) {
+            fprintf(stderr, "io_uring_submit: %s\n", strerror(-ret));
+        }
+    
+        // Update count of submitted requests
+        req_submitted += nsubmit;
+    }
+    return nsubmit;
 }
 
 int liburing_io_reader_t::io_thread() {
@@ -145,6 +191,7 @@ int liburing_io_reader_t::io_thread() {
 }
 
 int liburing_io_reader_t::enqueue_reads(const std::vector<segment_t>& segments) {
+#ifdef BACKGROUND_THREAD
     // Acquire lock
     std::unique_lock<std::mutex> lock(m);
 
@@ -156,10 +203,21 @@ int liburing_io_reader_t::enqueue_reads(const std::vector<segment_t>& segments) 
     // Notify background thread that there is work
     lock.unlock();
     cv.notify_one();
+#else
+
+    // Push segments onto queue and add ID to the in progress set
+    for(size_t i=0; i<segments.size(); i++) {
+        submissions.push(segments[i]);
+    }
+
+    request_submission();
+#endif
+    
     return 0;
 }
 
 int liburing_io_reader_t::wait(size_t id) {
+#ifdef BACKGROUND_THREAD
     // Acquire lock
     std::unique_lock<std::mutex> lock(m);
     // Search for ID in already completed requests
@@ -168,10 +226,18 @@ int liburing_io_reader_t::wait(size_t id) {
     completions.erase(id);
     lock.unlock();
     cv.notify_one();
+#else
+    while(completions.find(id) == completions.end()) {
+        uint32_t ncomp = request_completion();
+        uint32_t nsubm = request_submission();
+    }
+    completions.erase(id);
+#endif
     return 0;
 }
 
 int liburing_io_reader_t::wait_all() {
+#ifdef BACKGROUND_THREAD
     // Wait till there are no queued submissions and all requests are done
     std::unique_lock<std::mutex> lock(m);
     cv.wait(lock, [this] { return (submissions.size() == 0) && (req_submitted == req_completed); });
@@ -180,10 +246,18 @@ int liburing_io_reader_t::wait_all() {
     wait_all_mode = true;
     lock.unlock();
     cv.notify_one();
+#else
+    while( !( (submissions.size() == 0) && (req_submitted == req_completed) ) ) {
+        uint32_t ncomp = request_completion();
+        uint32_t nsubm = request_submission();
+    }
+    completions.clear();
+#endif
     return 0;
 }
 
 size_t liburing_io_reader_t::wait_any() {
+#ifdef BACKGROUND_THREAD
     // Wait for any request to finish
     std::unique_lock<std::mutex> lock(m);
     cv.wait(lock, [this] { return completions.size() > 0; });
@@ -192,6 +266,14 @@ size_t liburing_io_reader_t::wait_any() {
     completions.erase(completions.begin());
     lock.unlock();
     cv.notify_one();
+#else
+    while(completions.size() == 0) {
+        uint32_t ncomp = request_completion();
+        uint32_t nsubm = request_submission();
+    }
+    size_t id = *(completions.begin());
+    completions.erase(completions.begin());
+#endif
     return id;
 }
 
