@@ -35,7 +35,7 @@ class tree_t {
     tree_t(const size_t data_size, const size_t chunk_size, bool fuzzyhash);
     tree_t();
 
-    void create(const uint8_t *data_ptr, client_info_t client_info);
+    void create(uint8_t *data_ptr, client_info_t client_info);
     template <class Archive>
     void save(Archive &ar, const unsigned int version) const;
     template <class Archive> void load(Archive &ar, const unsigned int version);

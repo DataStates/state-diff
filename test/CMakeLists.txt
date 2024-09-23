@@ -20,5 +20,17 @@ set_target_properties(test_compare PROPERTIES
    CXX_EXTENSIONS OFF
 )
 
+add_executable(test_create_stream test_create_stream.cpp)
+target_include_directories(test_create_stream PUBLIC ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(test_create_stream PUBLIC Kokkos::kokkos)
+target_link_libraries(test_create_stream PRIVATE OpenSSL::SSL)
+target_link_libraries(test_create_stream PRIVATE statediff)
+set_target_properties(test_create_stream PROPERTIES
+   CXX_STANDARD 17
+   CXX_STANDARD_REQUIRED YES
+   CXX_EXTENSIONS OFF
+)
+
 add_test(NAME test_serialize COMMAND test_serialize --kokkos-num-threads=2 --kokkos-map-device-id-by=mpi_rank)
 add_test(NAME test_compare COMMAND test_compare --kokkos-num-threads=2 --kokkos-map-device-id-by=mpi_rank)
+add_test(NAME test_create_stream COMMAND test_create_stream --kokkos-map-device-id-by=mpi_rank)

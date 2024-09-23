@@ -88,6 +88,7 @@ struct client_info_t {
     char data_type;
     size_t data_size;
     size_t chunk_size;
+    size_t device_buff_size;
     size_t start_level;
     double error_tolerance;
 
@@ -101,10 +102,21 @@ struct client_info_t {
     // operator to assess two clients to make sure metadata match
     KOKKOS_FUNCTION
     bool operator==(const client_info_t &other) const {
-        return (data_type == other.data_type) && (data_size == other.data_size) &&
+        return (data_type == other.data_type) &&
+               (data_size == other.data_size) &&
                (chunk_size == other.chunk_size) &&
                (start_level == other.start_level) &&
                (error_tolerance == other.error_tolerance);
+    }
+
+    // Friend function to allow access to private members (if needed)
+    friend std::ostream &operator<<(std::ostream &os,
+                                    const client_info_t &info) {
+        os << "ID: " << info.id << ", Type: " << info.data_type
+           << ", Chunk (B): " << info.chunk_size
+           << ", D_Buff (B): " << info.device_buff_size
+           << ", Error: " << info.error_tolerance;
+        return os;
     }
 };
 

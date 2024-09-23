@@ -7,10 +7,10 @@
 #include "Kokkos_Sort.hpp"
 #include "common/compare_utils.hpp"
 // #include "common/debug.hpp"
-#include "merkle_tree.hpp"
 #include "common/statediff_bitset.hpp"
 #include "io_reader.hpp"
 #include "io_uring_stream.hpp"
+#include "merkle_tree.hpp"
 #include <climits>
 #include <cstddef>
 #include <functional>
@@ -24,6 +24,7 @@ class client_t {
 
     // Defaults
     static const size_t DEFAULT_CHUNK_SIZE = 4096;
+    static const size_t DEFAULT_DEV_BUFF_SIZE = 0;
     static const size_t DEFAULT_START_LEVEL = 13;
     static const bool DEFAULT_FUZZY_HASH = true;
     static const char DEFAULT_DTYPE = 'f';
@@ -35,17 +36,17 @@ class client_t {
     Reader<DataType> &io_reader;
 
     // comparison state
-    Queue working_queue;
+    Queue working_queue; // device
     // Bitset for tracking which chunks have been changed
-    Kokkos::Bitset<> changed_chunks;
+    Kokkos::Bitset<> changed_chunks; // host
     // Vec of idx of chunks that are marked different during the 1st phase
-    Vector<size_t> diff_hash_vec;
+    Vector<size_t> diff_hash_vec; // device
     Kokkos::View<uint64_t[1]> num_comparisons =
-        Kokkos::View<uint64_t[1]>("Num comparisons");
+        Kokkos::View<uint64_t[1]>("Num comparisons"); // host
     Kokkos::View<uint64_t[1]> num_changed =
-        Kokkos::View<uint64_t[1]>("Num changed");
+        Kokkos::View<uint64_t[1]>("Num changed"); // host
     Kokkos::View<uint64_t[1]> num_hash_comp =
-        Kokkos::View<uint64_t[1]>("Num hash comparisons");
+        Kokkos::View<uint64_t[1]>("Num hash comparisons"); // device
     size_t nchange = 0;
 
     // timers
@@ -53,6 +54,7 @@ class client_t {
     double compare_timer;
 
     void initialize(size_t n_chunks);
+    void create_(std::vector<DataType> &data);
 
   public:
     client_t(int id, Reader<DataType> &reader);
@@ -60,7 +62,8 @@ class client_t {
              double error, char dtype = DEFAULT_DTYPE,
              size_t chunk_size = DEFAULT_CHUNK_SIZE,
              size_t start_level = DEFAULT_START_LEVEL,
-             bool fuzzyhash = DEFAULT_FUZZY_HASH);
+             bool fuzzyhash = DEFAULT_FUZZY_HASH,
+             size_t dev_buff_size = DEFAULT_DEV_BUFF_SIZE);
     ~client_t();
 
     void create(std::vector<DataType> &data);
@@ -103,14 +106,16 @@ template <typename DataType, template <typename> typename Reader>
 client_t<DataType, Reader>::client_t(int id, Reader<DataType> &reader,
                                      size_t data_size, double error, char dtype,
                                      size_t chunk_size, size_t start,
-                                     bool fuzzyhash)
+                                     bool fuzzyhash, size_t dev_buff_size)
     : io_reader(reader) {
     // DEBUG_PRINT("Begin setup\n");
     std::string setup_region_name = std::string("StateDiff:: Checkpoint ") +
                                     std::to_string(id) + std::string(": Setup");
     Kokkos::Profiling::pushRegion(setup_region_name.c_str());
-    client_info = client_info_t{id, dtype, data_size, chunk_size, start, error};
-    tree = tree_t(data_size, chunk_size, fuzzyhash);
+    size_t buff_size = dev_buff_size ? dev_buff_size : data_size;
+    client_info = client_info_t{id, dtype, data_size, chunk_size,
+                                buff_size, start, error};
+    tree = tree_t(data_size, chunk_size, fuzzyhash); // device execspace
 
     size_t n_chunks = data_size / chunk_size;
     if (n_chunks * chunk_size < data_size)
@@ -146,7 +151,7 @@ client_t<DataType, Reader>::~client_t() {}
  */
 template <typename DataType, template <typename> typename Reader>
 void
-client_t<DataType, Reader>::create(std::vector<DataType> &data) {
+client_t<DataType, Reader>::create_(std::vector<DataType> &data) {
     Kokkos::Timer timer;
 
     // Get a uint8_t pointer to the data
@@ -184,13 +189,16 @@ client_t<DataType, Reader>::create(std::vector<DataType> &data) {
 
 template <typename DataType, template <typename> typename Reader>
 void
+client_t<DataType, Reader>::create(std::vector<DataType> &data) {
+    // Get a uint8_t pointer to the data
+    uint8_t *data_ptr = reinterpret_cast<uint8_t *>(data.data());
+    tree.create(data_ptr, client_info);
+}
+
+template <typename DataType, template <typename> typename Reader>
+void
 client_t<DataType, Reader>::create(uint8_t *data_ptr) {
-    Kokkos::View<uint8_t *> data_ptr_d("Device pointer", client_info.data_size);
-    Kokkos::View<uint8_t *, Kokkos::HostSpace,
-                 Kokkos::MemoryTraits<Kokkos::Unmanaged>>
-        data_ptr_h(data_ptr, client_info.data_size);
-    Kokkos::deep_copy(data_ptr_d, data_ptr_h);
-    tree.create(data_ptr_d.data(), client_info);
+    tree.create(data_ptr, client_info);
 }
 
 /**
@@ -222,12 +230,12 @@ bool
 client_t<DataType, Reader>::compare_with(client_t &prev) {
     ASSERT(client_info == prev.client_info);
 
-    compare_trees(prev, working_queue, diff_hash_vec, num_hash_comp);
+    compare_trees(prev, working_queue, diff_hash_vec, num_hash_comp); // device
 
     // Validate first occurences with direct comparison
     if (diff_hash_vec.size() > 0)
         compare_data(prev, diff_hash_vec, changed_chunks, num_changed,
-                     num_comparisons);
+                     num_comparisons); // host or device to be determined by reader
     return get_num_changes() == 0;
 }
 

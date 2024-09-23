@@ -5,11 +5,11 @@ using ExecSpace = Kokkos::DefaultExecutionSpace;
 
 template void
 tree_t::save<cereal::BinaryOutputArchive>(cereal::BinaryOutputArchive &,
-                                              const unsigned int) const;
+                                          const unsigned int) const;
 
 template void
 tree_t::load<cereal::BinaryInputArchive>(cereal::BinaryInputArchive &,
-                                              const unsigned int);
+                                         const unsigned int);
 
 void
 tree_t::digest_to_hex(const uint8_t *digest, char *output) {
@@ -77,7 +77,7 @@ tree_t::tree_t(const size_t data_size, const size_t c_size, bool fuzzyhash)
 tree_t::tree_t() {}
 
 void
-tree_t::create(const uint8_t *data_ptr, client_info_t client_info) {
+tree_t::create(uint8_t *data_ptr, client_info_t client_info) {
 
     // Get number of chunks and nodes
     STDOUT_PRINT("Num chunks: %zu\n", num_leaves);
@@ -102,6 +102,7 @@ tree_t::create(const uint8_t *data_ptr, client_info_t client_info) {
     auto dtype = client_info.data_type;
     auto err_tol = client_info.error_tolerance;
     bool use_fuzzy_hash = use_fuzzyhash;
+    size_t device_buff_size = client_info.device_buff_size;
     auto &curr_tree = *this;
 
     // Create a custom stream for tree creation
@@ -109,30 +110,57 @@ tree_t::create(const uint8_t *data_ptr, client_info_t client_info) {
 
     std::string diff_label = std::string("Diff: ");
     Kokkos::Profiling::pushRegion(diff_label + std::string("Construct Tree"));
-    Kokkos::parallel_for(
-        diff_label + std::string("Hash leaves"),
-        Kokkos::RangePolicy<ExecSpace>(create_stream, 0, num_leaves), KOKKOS_LAMBDA(uint32_t idx) {
-            // Calculate leaf node
-            uint32_t leaf = left_leaf + idx;
-            // Adjust leaf if not on the lowest level
-            if (leaf >= nnodes) {
-                const uint32_t diff = leaf - nnodes;
-                leaf = ((nnodes - 1) / 2) + diff;
-            }
-            // Determine which chunk of data to hash
-            uint32_t num_bytes = chunksize;
-            uint64_t offset =
-                static_cast<uint64_t>(idx) * static_cast<uint64_t>(chunksize);
-            if (idx == nchunks - 1)   // Calculate how much data to hash
-                num_bytes = data_size - offset;
-            // Hash chunk
-            if (use_fuzzy_hash) {
-                curr_tree.calc_leaf_fuzzy_hash(data_ptr + offset, num_bytes,
-                                               err_tol, dtype, leaf);
-            } else {
-                curr_tree.calc_leaf_hash(data_ptr + offset, num_bytes, leaf);
-            }
-        });
+    
+    // Create a temporary device buffer to stream data for tree creation
+    Kokkos::View<uint8_t *> device_buffer("device_buffer", device_buff_size);
+
+    size_t i = 0;
+    size_t nchunks_processed = 0;
+    while (i < data_size) {
+        size_t bytes_to_copy = std::min(device_buff_size, data_size - i);
+        uint32_t nchunks = bytes_to_copy / chunksize;
+
+        // Copy bytes_to_copy from host to device
+        // To-do: Explore ways to remove the cost of initilization and memory allocation 
+        Kokkos::View<uint8_t *, Kokkos::HostSpace,
+                     Kokkos::MemoryTraits<Kokkos::Unmanaged>>
+            tmp_view(data_ptr + i, bytes_to_copy);
+        Kokkos::deep_copy(device_buffer, tmp_view);
+
+        Kokkos::parallel_for(
+            diff_label + std::string("Hash leaves"),
+            Kokkos::RangePolicy<ExecSpace>(create_stream, 0, nchunks),
+            KOKKOS_LAMBDA(uint32_t idx) {
+                // Calculate leaf node
+                uint32_t leaf = left_leaf + idx + nchunks_processed;
+                // Adjust leaf if not on the lowest level
+                if (leaf >= nnodes) {
+                    const uint32_t diff = leaf - nnodes;
+                    leaf = ((nnodes - 1) / 2) + diff;
+                }
+                // Determine which chunk of data to hash
+                uint32_t num_bytes = chunksize;
+                uint64_t offset = static_cast<uint64_t>(idx) *
+                                  static_cast<uint64_t>(chunksize);
+                if (offset + chunksize >
+                    bytes_to_copy) {   // Calculate how much data to hash
+                    num_bytes = bytes_to_copy - offset;
+                }
+
+                // Hash chunk from the device buffer
+                if (use_fuzzy_hash) {
+                    curr_tree.calc_leaf_fuzzy_hash(
+                        device_buffer.data() + offset, num_bytes, err_tol,
+                        dtype, leaf);
+                } else {
+                    curr_tree.calc_leaf_hash(device_buffer.data() + offset,
+                                             num_bytes, leaf);
+                }
+            });
+        create_stream.fence();
+        i += device_buff_size;
+        nchunks_processed += nchunks;
+    }
     // Build up tree level by level until last_lvl_beg
     while (level_beg >= last_lvl_beg) {
         std::string tree_constr_label =
@@ -140,13 +168,14 @@ tree_t::create(const uint8_t *data_ptr, client_info_t client_info) {
             std::to_string(level_beg) + std::string(",") +
             std::to_string(level_end) + std::string("]");
         Kokkos::parallel_for(
-            tree_constr_label, Kokkos::RangePolicy<ExecSpace>(create_stream,level_beg, level_end + 1),
+            tree_constr_label, Kokkos::RangePolicy<ExecSpace>(create_stream, level_beg, level_end + 1),
             KOKKOS_LAMBDA(const uint32_t node) {
                 // Check if node is non leaf
                 if (node < nchunks - 1) {
                     curr_tree.calc_hash(node);
                 }
             });
+        create_stream.fence();
         level_beg = (level_beg - 1) / 2;
         level_end = (level_end - 2) / 2;
     }
