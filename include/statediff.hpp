@@ -6,8 +6,8 @@
 #include "Kokkos_ScatterView.hpp"
 #include "Kokkos_Sort.hpp"
 #include "common/compare_utils.hpp"
-#include "common/debug.hpp"
-#include "common/merkle_tree.hpp"
+// #include "common/debug.hpp"
+#include "merkle_tree.hpp"
 #include "common/statediff_bitset.hpp"
 #include "io_reader.hpp"
 #include "io_uring_stream.hpp"
@@ -105,7 +105,7 @@ client_t<DataType, Reader>::client_t(int id, Reader<DataType> &reader,
                                      size_t chunk_size, size_t start,
                                      bool fuzzyhash)
     : io_reader(reader) {
-    DEBUG_PRINT("Begin setup\n");
+    // DEBUG_PRINT("Begin setup\n");
     std::string setup_region_name = std::string("StateDiff:: Checkpoint ") +
                                     std::to_string(id) + std::string(": Setup");
     Kokkos::Profiling::pushRegion(setup_region_name.c_str());
@@ -119,7 +119,7 @@ client_t<DataType, Reader>::client_t(int id, Reader<DataType> &reader,
     initialize(n_chunks);
 
     Kokkos::Profiling::popRegion();
-    DEBUG_PRINT("Finished setup\n");
+    // DEBUG_PRINT("Finished setup\n");
 }
 
 template <typename DataType, template <typename> typename Reader>
@@ -262,8 +262,8 @@ client_t<DataType, Reader>::compare_trees(
         last_lvl_beg = left_leaf;
     if (last_lvl_end > right_leaf)
         last_lvl_end = right_leaf;
-    DEBUG_PRINT("Leaf range [%u,%u]\n", left_leaf, right_leaf);
-    DEBUG_PRINT("Start level [%u,%u]\n", last_lvl_beg, last_lvl_end);
+    // DEBUG_PRINT("Leaf range [%u,%u]\n", left_leaf, right_leaf);
+    // DEBUG_PRINT("Start level [%u,%u]\n", last_lvl_beg, last_lvl_end);
     Kokkos::Experimental::ScatterView<uint64_t[1]> nhash_comp(num_hash_comp);
     Kokkos::Profiling::popRegion();
 
@@ -287,7 +287,8 @@ client_t<DataType, Reader>::compare_trees(
             KOKKOS_LAMBDA(uint32_t i) {
                 auto nhash_comp_access = nhash_comp.access();
                 uint32_t node = work_queue.pop();
-                bool identical = digests_same(tree_curr[node], tree_prev[node]);
+                bool identical = digests_same(tree_curr.tree_d(node),
+                                              tree_prev.tree_d(node));
                 nhash_comp_access(0) += 1;
                 if (!identical) {
                     if ((n_chunks - 1 <= node) && (node < n_nodes)) {
@@ -329,8 +330,8 @@ client_t<DataType, Reader>::compare_data(
     client_t &prev, Vector<size_t> &diff_hash_vec,
     Kokkos::Bitset<> &changed_chunks, Kokkos::View<uint64_t[1]> &num_changed,
     Kokkos::View<uint64_t[1]> &num_comparisons) {
-    STDOUT_PRINT("Number of first occurrences (Leaves) - Phase One: %u\n",
-                 diff_hash_vec.size());
+    // STDOUT_PRINT("Number of first occurrences (Leaves) - Phase One: %u\n",
+    //              diff_hash_vec.size());
     std::string diff_label = std::string("Chkpt ") +
                              std::to_string(client_info.id) + std::string(": ");
     Kokkos::Profiling::pushRegion(
@@ -401,11 +402,11 @@ client_t<DataType, Reader>::compare_data(
                     auto ncomp_access = num_comp.access();
                     size_t i = idx / elemPerChunk;   // Block
                     size_t j = idx % elemPerChunk;   // Element in block
-                    ASSERT(offset_idx + i < num_diff_hash);
+                    KOKKOS_ASSERT(offset_idx + i < num_diff_hash);
                     size_t data_idx = elemPerChunk * sizeof(DataType) *
                                           offsets[offset_idx + i] +
                                       j * sizeof(DataType);
-                    ASSERT(data_idx < filesize);
+                    KOKKOS_ASSERT(data_idx < filesize);
                     if ((offset_idx + i < num_diff_hash) &&
                         (data_idx < filesize)) {
                         if (!abs_comp(sliceA[idx], sliceB[idx], err_tol)) {
@@ -435,7 +436,7 @@ client_t<DataType, Reader>::compare_data(
         Kokkos::Profiling::popRegion();
     }
     Kokkos::Profiling::popRegion();
-    STDOUT_PRINT("Number of changed elements - Phase Two: %lu\n", num_diff);
+    // STDOUT_PRINT("Number of changed elements - Phase Two: %lu\n", num_diff);
     return num_diff;
 }
 

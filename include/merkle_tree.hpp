@@ -1,7 +1,7 @@
 #ifndef __KOKKOS_MERKLE_TREE_HPP
 #define __KOKKOS_MERKLE_TREE_HPP
 #include "common/compare_utils.hpp"
-#include "common/debug.hpp"
+// #include "common/debug.hpp"
 #include "common/statediff_bitset.hpp"
 #include "rounding_hash.hpp"
 #include <Kokkos_Core.hpp>
@@ -17,10 +17,10 @@
 class tree_t {
   private:
     void digest_to_hex(const uint8_t *digest, char *output);
-    KOKKOS_FUNCTION bool calc_hash(uint32_t u) const;
-    KOKKOS_FUNCTION bool calc_leaf_hash(const void *data, uint64_t size,
+    KOKKOS_INLINE_FUNCTION bool calc_hash(uint32_t u) const;
+    KOKKOS_INLINE_FUNCTION bool calc_leaf_hash(const void *data, uint64_t size,
                                         uint32_t u) const;
-    KOKKOS_FUNCTION bool calc_leaf_fuzzy_hash(const void *data, uint64_t size,
+    KOKKOS_INLINE_FUNCTION bool calc_leaf_fuzzy_hash(const void *data, uint64_t size,
                                               float errorValue,
                                               const char dataType,
                                               uint32_t u) const;
@@ -40,11 +40,11 @@ class tree_t {
     void save(Archive &ar, const unsigned int version) const;
     template <class Archive> void load(Archive &ar, const unsigned int version);
 
-    KOKKOS_FUNCTION HashDigest &operator[](uint32_t i) const;
-    KOKKOS_FUNCTION uint32_t num_leaf_descendents(uint32_t node,
+    KOKKOS_INLINE_FUNCTION HashDigest &operator[](uint32_t i) const;
+    KOKKOS_INLINE_FUNCTION uint32_t num_leaf_descendents(uint32_t node,
                                                   uint32_t num_nodes);
-    KOKKOS_FUNCTION uint32_t leftmost_leaf(uint32_t node, uint32_t num_nodes);
-    KOKKOS_FUNCTION uint32_t rightmost_leaf(uint32_t node, uint32_t num_nodes);
+    KOKKOS_INLINE_FUNCTION uint32_t leftmost_leaf(uint32_t node, uint32_t num_nodes);
+    KOKKOS_INLINE_FUNCTION uint32_t rightmost_leaf(uint32_t node, uint32_t num_nodes);
 
     void print_leaves();
 };

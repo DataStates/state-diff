@@ -99,6 +99,7 @@ struct client_info_t {
     }
 
     // operator to assess two clients to make sure metadata match
+    KOKKOS_FUNCTION
     bool operator==(const client_info_t &other) const {
         return (data_type == other.data_type) && (data_size == other.data_size) &&
                (chunk_size == other.chunk_size) &&

@@ -24,20 +24,30 @@ add_subdirectory(test)
 install(EXPORT statediffTargets
         FILE statediffTargets.cmake
         NAMESPACE statediff::
-        DESTINATION share/statediff/cmake)
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/statediff)
+
+###### Install header files
+install(DIRECTORY 
+        ${PROJECT_SOURCE_DIR}/include/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/statediff
+)
 
 # Add the export set to the build directory
 export(EXPORT statediffTargets NAMESPACE statediff:: FILE statediffTargets.cmake)
 
 # Setup the configs
 include(CMakePackageConfigHelpers)
-configure_package_config_file(cmake/statediffConfig.cmake.in
+configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/statediffConfig.cmake.in
                               ${CMAKE_CURRENT_BINARY_DIR}/statediffConfig.cmake
-                              INSTALL_DESTINATION share/statediff/cmake)
-write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/statediffConfigVersion.cmake
-                                 COMPATIBILITY SameMajorVersion)
+                              INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/statediff)
+write_basic_package_version_file(
+        ${CMAKE_CURRENT_BINARY_DIR}/statediffConfigVersion.cmake
+        VERSION ${PROJECT_VERSION}
+        COMPATIBILITY AnyNewerVersion
+)
 
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/statediffConfig.cmake
-              ${CMAKE_CURRENT_BINARY_DIR}/statediffConfigVersion.cmake
-        DESTINATION share/statediff/cmake)
+install(FILES 
+        ${CMAKE_CURRENT_BINARY_DIR}/statediffConfig.cmake
+        ${CMAKE_CURRENT_BINARY_DIR}/statediffConfigVersion.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/statediff)
 

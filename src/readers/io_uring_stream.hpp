@@ -1,7 +1,9 @@
 #ifndef __IO_URING_STREAM_HPP
 #define __IO_URING_STREAM_HPP
-// #include "debug.hpp"
-#include "io_reader.hpp"
+
+// #include "io_reader.hpp"
+#include "common/debug.hpp"
+#include "common/io_utils.hpp"
 #include <cassert>
 #include <cerrno>
 #include <fcntl.h>
@@ -207,14 +209,14 @@ io_uring_stream_t<DataType>::io_uring_stream_t(std::string &file_name,
     host_buffer = transfer_buffer;
 #endif
 
-    DEBUG_PRINT("Constructor: Filename: %s\n", fname.c_str());
-    DEBUG_PRINT("File size: %zu\n", filesize);
-    DEBUG_PRINT("Constructor: Full transfer? %d\n", full_transfer);
-    DEBUG_PRINT("Constructor: Async transfer? %d\n", async);
-    DEBUG_PRINT("Constructor: Elem per slice: %zu\n", elem_per_slice);
-    DEBUG_PRINT("Constructor: Bytes per slice: %zu\n", bytes_per_slice);
-    DEBUG_PRINT("Constructor: Active slice len: %zu\n", active_slice_len);
-    DEBUG_PRINT("Constructor: Transfer slice len: %zu\n", transfer_slice_len);
+    // DEBUG_PRINT("Constructor: Filename: %s\n", fname.c_str());
+    // DEBUG_PRINT("File size: %zu\n", filesize);
+    // DEBUG_PRINT("Constructor: Full transfer? %d\n", full_transfer);
+    // DEBUG_PRINT("Constructor: Async transfer? %d\n", async);
+    // DEBUG_PRINT("Constructor: Elem per slice: %zu\n", elem_per_slice);
+    // DEBUG_PRINT("Constructor: Bytes per slice: %zu\n", bytes_per_slice);
+    // DEBUG_PRINT("Constructor: Active slice len: %zu\n", active_slice_len);
+    // DEBUG_PRINT("Constructor: Transfer slice len: %zu\n", transfer_slice_len);
 }
 
 template <typename DataType>
@@ -451,12 +453,12 @@ io_uring_stream_t<DataType>::start_stream(size_t *offset_ptr, size_t n_offsets,
             elem_per_slice = max_ring_size * num_threads * elem_per_chunk;
         chunks_per_slice = elem_per_slice / elem_per_chunk;
     }
-    DEBUG_PRINT("Elem per chunk: %zu\n", elem_per_chunk);
-    DEBUG_PRINT("Bytes per chunk: %zu\n", bytes_per_chunk);
-    DEBUG_PRINT("Elem per slice: %zu\n", elem_per_slice);
-    DEBUG_PRINT("Bytes per slice: %zu\n", bytes_per_slice);
-    DEBUG_PRINT("Chunks per slice: %zu\n", chunks_per_slice);
-    DEBUG_PRINT("Num offsets: %zu\n", num_offsets);
+    // DEBUG_PRINT("Elem per chunk: %zu\n", elem_per_chunk);
+    // DEBUG_PRINT("Bytes per chunk: %zu\n", bytes_per_chunk);
+    // DEBUG_PRINT("Elem per slice: %zu\n", elem_per_slice);
+    // DEBUG_PRINT("Bytes per slice: %zu\n", bytes_per_slice);
+    // DEBUG_PRINT("Chunks per slice: %zu\n", chunks_per_slice);
+    // DEBUG_PRINT("Num offsets: %zu\n", num_offsets);
 
     if (get_file_size(file, &filesize) != 0) {
         fprintf(stderr, "Failed to get file size\n");

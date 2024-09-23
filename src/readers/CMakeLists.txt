@@ -6,12 +6,6 @@ set(SOURCES
     io_uring_stream.cpp
 )
 
-# Conditionally add adios_reader.cpp if ADIOS is found
-find_package(ADIOS2 QUIET)
-if(ADIOS2_FOUND)
-    list(APPEND SOURCES adios_reader.cpp)
-endif()
-
 # Add the library
 add_library(statediff-io SHARED ${SOURCES})
 
@@ -55,17 +49,12 @@ if(NOT LIBURING_LIBRARY)
     endif()
 
     # Link liburing to your target
-    target_include_directories(statediff-io PRIVATE ${LIBURING_INCLUDE_DIR})
-    target_link_libraries(statediff-io PRIVATE ${LIBURING_LIBRARY})
+    target_include_directories(statediff-io PUBLIC ${LIBURING_INCLUDE_DIR})
+    target_link_libraries(statediff-io PUBLIC ${LIBURING_LIBRARY})
 else()
     # If liburing is found, use it
     find_path(LIBURING_INCLUDE_DIR NAMES liburing.h)
-    target_link_libraries(statediff-io PRIVATE ${LIBURING_LIBRARY})
-endif()
-
-if(ADIOS2_FOUND)
-	target_link_libraries(statediff-io PUBLIC adios2::cxx11)
-    target_include_directories(statediff-io PUBLIC ${ADIOS2_INCLUDE_DIR})
+    target_link_libraries(statediff-io PUBLIC ${LIBURING_LIBRARY})
 endif()
 
 ##### Add include directories
@@ -74,6 +63,7 @@ target_include_directories (statediff-io PUBLIC
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
   $<BUILD_INTERFACE:${LIBURING_INCLUDE_DIR}>
+  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 ###### Install libraries
@@ -81,7 +71,13 @@ install (TARGETS statediff-io EXPORT statediffTargets
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
+
+install(DIRECTORY ${PROJECT_SOURCE_DIR}/src/readers/ 
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/statediff/readers
+)
+
 
 ###### Unit tests
 add_subdirectory(test)

@@ -1,4 +1,7 @@
 #include "merkle_tree.hpp"
+#include "common/debug.hpp"
+
+using ExecSpace = Kokkos::DefaultExecutionSpace;
 
 template void
 tree_t::save<cereal::BinaryOutputArchive>(cereal::BinaryOutputArchive &,
@@ -23,7 +26,7 @@ tree_t::digest_to_hex(const uint8_t *digest, char *output) {
     *(c - 1) = '\0';
 }
 
-KOKKOS_FUNCTION
+KOKKOS_INLINE_FUNCTION
 bool
 tree_t::calc_hash(uint32_t u) const {
     uint32_t child_l = 2 * u + 1, child_r = 2 * u + 2;
@@ -37,14 +40,14 @@ tree_t::calc_hash(uint32_t u) const {
     return false;
 }
 
-KOKKOS_FUNCTION
+KOKKOS_INLINE_FUNCTION
 bool
 tree_t::calc_leaf_hash(const void *data, uint64_t size, uint32_t u) const {
     kokkos_murmur3::hash(data, size, (uint8_t *)(&tree_d(u)));
     return false;
 }
 
-KOKKOS_FUNCTION
+KOKKOS_INLINE_FUNCTION
 bool
 tree_t::calc_leaf_fuzzy_hash(const void *data, uint64_t size, float errorValue,
                              const char dataType, uint32_t u) const {
@@ -101,11 +104,14 @@ tree_t::create(const uint8_t *data_ptr, client_info_t client_info) {
     bool use_fuzzy_hash = use_fuzzyhash;
     auto &curr_tree = *this;
 
+    // Create a custom stream for tree creation
+    ExecSpace create_stream = ExecSpace();
+
     std::string diff_label = std::string("Diff: ");
     Kokkos::Profiling::pushRegion(diff_label + std::string("Construct Tree"));
     Kokkos::parallel_for(
         diff_label + std::string("Hash leaves"),
-        Kokkos::RangePolicy<>(0, num_leaves), KOKKOS_LAMBDA(uint32_t idx) {
+        Kokkos::RangePolicy<ExecSpace>(create_stream, 0, num_leaves), KOKKOS_LAMBDA(uint32_t idx) {
             // Calculate leaf node
             uint32_t leaf = left_leaf + idx;
             // Adjust leaf if not on the lowest level
@@ -134,7 +140,7 @@ tree_t::create(const uint8_t *data_ptr, client_info_t client_info) {
             std::to_string(level_beg) + std::string(",") +
             std::to_string(level_end) + std::string("]");
         Kokkos::parallel_for(
-            tree_constr_label, Kokkos::RangePolicy<>(level_beg, level_end + 1),
+            tree_constr_label, Kokkos::RangePolicy<ExecSpace>(create_stream,level_beg, level_end + 1),
             KOKKOS_LAMBDA(const uint32_t node) {
                 // Check if node is non leaf
                 if (node < nchunks - 1) {
@@ -154,7 +160,7 @@ tree_t::create(const uint8_t *data_ptr, client_info_t client_info) {
  *
  * \return Reference to hash digest at node i
  */
-KOKKOS_FUNCTION
+KOKKOS_INLINE_FUNCTION
 HashDigest &
 tree_t::operator[](uint32_t i) const {
     return tree_d(i);
@@ -198,7 +204,7 @@ tree_t::load(Archive &ar, const unsigned int version) {
 }
 
 // Calculate the number of leaves for the tree rooted at node
-KOKKOS_FUNCTION
+KOKKOS_INLINE_FUNCTION
 uint32_t
 tree_t::num_leaf_descendents(uint32_t node, uint32_t num_nodes) {
     uint32_t leftmost = (2 * node) + 1;
@@ -226,7 +232,7 @@ tree_t::num_leaf_descendents(uint32_t node, uint32_t num_nodes) {
 }
 
 // Get the leftmost leaf of the tree rooted at node
-KOKKOS_FUNCTION
+KOKKOS_INLINE_FUNCTION
 uint32_t
 tree_t::leftmost_leaf(uint32_t node, uint32_t num_nodes) {
     uint32_t leftmost = (2 * node) + 1;
@@ -238,7 +244,7 @@ tree_t::leftmost_leaf(uint32_t node, uint32_t num_nodes) {
 }
 
 // Get the rightmost leaf of the tree rooted at node
-KOKKOS_FUNCTION
+KOKKOS_INLINE_FUNCTION
 uint32_t
 tree_t::rightmost_leaf(uint32_t node, uint32_t num_nodes) {
     uint32_t leftmost = (2 * node) + 1;

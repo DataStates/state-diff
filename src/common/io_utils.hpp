@@ -1,3 +1,6 @@
+#ifndef COMMON_IO_UTILS_HPP
+#define COMMON_IO_UTILS_HPP
+
 #include <chrono>
 
 using Timer = std::chrono::high_resolution_clock;
@@ -75,3 +78,5 @@ void host_free(T* host_ptr) {
   free(host_ptr);
 }
 #endif
+
+#endif // COMMON_IO_UTILS_HPP

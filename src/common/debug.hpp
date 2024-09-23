@@ -1,3 +1,6 @@
+#ifndef COMMON_DEBUG_HPP
+#define COMMON_DEBUG_HPP
+
 #ifndef __DEBUG_CONFIG
 #define __DEBUG_CONFIG
 
@@ -84,3 +87,5 @@ inline logger_state_t logger_state;
 #else
 #define STDOUT_PRINT(...) do{ } while ( false )
 #endif
+
+#endif // COMMON_DEBUG_HPP
