@@ -6,11 +6,12 @@
 #include <string>
 #include <unistd.h>
 #include <vector>
+#include "argparse/argparse.hpp"
+#include "io_uring_stream.hpp"
+#include "statediff.hpp"
+
 //#define DEBUG
 //#define STDOUT
-#include "argparse/argparse.hpp"
-#include "liburing_reader.hpp"
-#include "statediff.hpp"
 
 using namespace state_diff;
 
@@ -144,16 +145,18 @@ main(int argc, char **argv) {
         // chunk_size/sizeof(float), true, false, 8); posix_reader_t<float>
         // reader1(file1, buffer_len/sizeof(float), chunk_size/sizeof(float),
         // true, false, 8);
-
-        liburing_io_reader_t reader0(file0);
-        liburing_io_reader_t reader1(file1);
-        client_t<float, liburing_io_reader_t> client0(
+        // liburing_io_reader_t reader0(file0);
+        // liburing_io_reader_t reader1(file1);
+        io_uring_stream_t<float> reader0(file0, chunk_size / sizeof(float));
+        io_uring_stream_t<float> reader1(file1, chunk_size / sizeof(float));
+        
+        state_diff::client_t<float, io_uring_stream_t> client0(
             1, reader0, data_len, error, dtype[0], chunk_size, start_level,
             approx_hash);
 
         client0.create((uint8_t *) data0.data());
 
-        client_t<float, liburing_io_reader_t> client1(
+        state_diff::client_t<float, io_uring_stream_t> client1(
             2, reader1, data_len, error, dtype[0], chunk_size, start_level,
             approx_hash);
 
