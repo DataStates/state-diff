@@ -4,7 +4,7 @@ project(statediff VERSION 0.0.1 LANGUAGES CXX)
 ##### Global settings
 include(GNUInstallDirs)
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
-add_definitions(-O2 -g -Wall -D__BENCHMARK -D__ASSERT -D__INFO)
+add_definitions(-D__BENCHMARK -D__ASSERT -D__INFO)
 set(CMAKE_CXX_STANDARD 17)
 
 ##### Find dependencies
@@ -26,12 +26,6 @@ install(EXPORT statediffTargets
         NAMESPACE statediff::
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/statediff)
 
-###### Install header files
-install(DIRECTORY 
-        ${PROJECT_SOURCE_DIR}/include/
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/statediff
-)
-
 # Add the export set to the build directory
 export(EXPORT statediffTargets NAMESPACE statediff:: FILE statediffTargets.cmake)
 
@@ -44,6 +38,12 @@ write_basic_package_version_file(
         ${CMAKE_CURRENT_BINARY_DIR}/statediffConfigVersion.cmake
         VERSION ${PROJECT_VERSION}
         COMPATIBILITY AnyNewerVersion
+)
+
+###### Install header files
+install(DIRECTORY 
+        ${PROJECT_SOURCE_DIR}/include/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
 install(FILES 

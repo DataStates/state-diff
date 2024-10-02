@@ -46,6 +46,17 @@ target_include_directories(statediff PUBLIC
 )
 
 # Install libraries
+
+install(DIRECTORY 
+        ${PROJECT_SOURCE_DIR}/src/common/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/common
+)
+
+install(DIRECTORY 
+        ${CEREAL_INCLUDE_DIR}/cereal
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
 install (TARGETS statediff EXPORT statediffTargets
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}

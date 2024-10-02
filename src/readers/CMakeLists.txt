@@ -74,8 +74,9 @@ install (TARGETS statediff-io EXPORT statediffTargets
   INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
-install(DIRECTORY ${PROJECT_SOURCE_DIR}/src/readers/ 
-  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/statediff/readers
+install(FILES
+  ${PROJECT_SOURCE_DIR}/src/readers/io_uring_stream.hpp
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
 
