@@ -1,11 +1,13 @@
-#add_executable(statediff-cli statediff_cli.cpp)
 add_executable(statediff-cli statediff_cli.cpp
-  ${CMAKE_SOURCE_DIR}/src/common/merkle_tree.cpp)
+  ${CMAKE_SOURCE_DIR}/src/common/merkle_tree.cpp
+  ${CMAKE_SOURCE_DIR}/src/readers/io_uring_stream.cpp)
 
-target_include_directories(statediff-cli PUBLIC ${CMAKE_SOURCE_DIR}/include)
-#target_include_directories(statediff-cli PUBLIC ${MPI_INCLUDE_PATH})
-target_link_libraries(statediff-cli PUBLIC statediff)
-target_link_libraries(statediff-cli PUBLIC statediff-io)
+add_dependencies(statediff-cli statediff-io)
+
+target_include_directories(statediff-cli PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
+target_link_libraries(statediff-cli PRIVATE statediff)
+target_link_libraries(statediff-cli PRIVATE statediff-io)
 target_link_libraries(statediff-cli PRIVATE argparse)
 target_link_libraries(statediff-cli PRIVATE Kokkos::kokkos)
 set_target_properties(statediff-cli PROPERTIES

@@ -6,8 +6,6 @@
 #include "argparse/argparse.hpp"
 #include "data_generation.hpp"
 
-//  logger_state_t logger_state;
-
 int main(int argc, char** argv) {
   Kokkos::initialize(argc, argv);
   {
@@ -46,7 +44,7 @@ int main(int argc, char** argv) {
       .default_value(static_cast<uint64_t>(262144))
       .nargs(1)
       .scan<'u', uint64_t>();
-    program.add_argument("--data-type")
+    program.add_argument("-t", "--type")
       .help("Data type to generate")
       .choices("bytes", "uint32_t", "uint64_t", "float", "double")
       .default_value(std::string("bytes"))
@@ -64,7 +62,7 @@ int main(int argc, char** argv) {
       std::exit(1);
     }
     uint64_t    data_len       = program.get<uint64_t>("--data-len");
-    printf("Data length in elements: %lu\n", data_len);
+    printf("Number of elements: %lu\n", data_len);
     uint32_t    num_files      = program.get<uint32_t>("-n");
     printf("Number of files:         %u\n",  num_files);
     uint32_t    seed           = program.get<uint32_t>("-s");
@@ -80,7 +78,7 @@ int main(int argc, char** argv) {
     double      error          = program.get<double>("--error");
     printf("Error:                   %f\n",  error);
     DataGenerationMode mode = Perturb;
-    printf("Data length in elements: %lu\n", data_len);
+    printf("Number of elements: %lu\n", data_len);
     printf("Number of files:         %d\n",  num_files);
     printf("Perturb mode:            %s\n",  generator_mode.c_str());
     printf("Num changes:             %lu\n", num_changes);

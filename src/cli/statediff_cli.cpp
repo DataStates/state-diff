@@ -1,3 +1,6 @@
+#include "argparse/argparse.hpp"
+#include "io_uring_stream.hpp"
+#include "statediff.hpp"
 #include <Kokkos_Core.hpp>
 #include <cerrno>
 #include <cstring>
@@ -6,12 +9,6 @@
 #include <string>
 #include <unistd.h>
 #include <vector>
-#include "argparse/argparse.hpp"
-#include "io_uring_stream.hpp"
-#include "statediff.hpp"
-
-//#define DEBUG
-//#define STDOUT
 
 using namespace state_diff;
 
@@ -52,6 +49,48 @@ read_file(const std::string &filename, std::vector<uint8_t> &data,
     }
     fsync(fd);
     close(fd);
+}
+
+void
+print_analysis_summary(std::string file0, std::string file1, std::string dtype,
+                       size_t data_len, double error, size_t chunk_size,
+                       size_t hash_cmp_count, size_t f2f_cmp_count,
+                       size_t change_count) {
+    int desc_space = 20, val_space = 10;
+
+    std::cout << "=============================================" << std::endl;
+    std::cout << "         State-diff Summary Report" << std::endl;
+    std::cout << "=============================================" << std::endl;
+
+    // Print the results in a table format with proper spacing
+    std::cout << std::setw(desc_space) << std::left << "Description"
+              << std::setw(val_space) << std::right << "Value" << std::endl;
+    std::cout << "---------------------------------------------" << std::endl;
+
+    std::cout << std::setw(desc_space) << std::left << "Reference file"
+              << std::setw(val_space) << std::right << file0 << std::endl;
+    std::cout << std::setw(desc_space) << std::left << "Current file"
+              << std::setw(val_space) << std::right << file1 << std::endl;
+    std::cout << std::setw(desc_space) << std::left << "Data type"
+              << std::setw(val_space) << std::right << dtype << std::endl;
+    std::cout << std::setw(desc_space) << std::left << "File size"
+              << std::setw(val_space) << std::right << data_len << std::endl;
+    std::cout << std::setw(desc_space) << std::left << "Tolerance"
+              << std::setw(val_space) << std::right << std::setprecision(10)
+              << error << std::endl;
+    std::cout << std::setw(desc_space) << std::left << "Chunk size"
+              << std::setw(val_space) << std::right << chunk_size << std::endl;
+    std::cout << std::setw(desc_space) << std::left << "Hash Comparison"
+              << std::setw(val_space) << std::right << hash_cmp_count
+              << std::endl;
+    std::cout << std::setw(desc_space) << std::left << "Element Comparison"
+              << std::setw(val_space) << std::right << f2f_cmp_count
+              << std::endl;
+    std::cout << std::setw(desc_space) << std::left << "Divergence Count"
+              << std::setw(val_space) << std::right << change_count
+              << std::endl;
+
+    std::cout << "=============================================" << std::endl;
 }
 
 int
@@ -96,7 +135,7 @@ main(int argc, char **argv) {
 
         program.add_argument("-a", "--approx-hash")
             .help("Approximate hashing")
-            .default_value(false)
+            .default_value(true)
             .implicit_value(true);
 
         program.add_argument("--verbose")
@@ -120,58 +159,58 @@ main(int argc, char **argv) {
         size_t buffer_len = program.get<size_t>("buffer-len");
         size_t start_level = program.get<size_t>("start-level");
         bool approx_hash = program.get<bool>("approx-hash");
+        off_t filesize;
+        get_file_size(file0, &filesize);
+        size_t data_len = static_cast<size_t>(filesize);
 
         if (program.get<bool>("verbose")) {
             std::cout << "File 0: " << file0 << std::endl;
             std::cout << "File 1: " << file1 << std::endl;
             std::cout << "Error: " << error << std::endl;
             std::cout << "Data type: " << dtype << std::endl;
+            std::cout << "File size: " << data_len << std::endl;
             std::cout << "Chunk size: " << chunk_size << std::endl;
             std::cout << "Buffer length: " << buffer_len << std::endl;
             std::cout << "Start level: " << start_level << std::endl;
             std::cout << "Approx hash: " << approx_hash << std::endl;
         }
 
-        off_t filesize;
-        get_file_size(file0, &filesize);
-        size_t data_len = static_cast<size_t>(filesize);
-
         std::vector<uint8_t> data0(data_len), data1(data_len);
-        std::vector<int> metadata0;
         read_file(file0, data0, data_len);
         read_file(file1, data1, data_len);
-
-        // posix_reader_t<float> reader0(file0, buffer_len/sizeof(float),
-        // chunk_size/sizeof(float), true, false, 8); posix_reader_t<float>
-        // reader1(file1, buffer_len/sizeof(float), chunk_size/sizeof(float),
-        // true, false, 8);
-        // liburing_io_reader_t reader0(file0);
-        // liburing_io_reader_t reader1(file1);
         io_uring_stream_t<float> reader0(file0, chunk_size / sizeof(float));
         io_uring_stream_t<float> reader1(file1, chunk_size / sizeof(float));
-        
-        state_diff::client_t<float, io_uring_stream_t> client0(
-            1, reader0, data_len, error, dtype[0], chunk_size, start_level,
-            approx_hash);
+        std::cout << "State-diff:: Clients data loaded" << std::endl;
 
-        client0.create((uint8_t *) data0.data());
+        client_t<float, io_uring_stream_t> client0(0, reader0, data_len, error,
+                                                   dtype[0], chunk_size,
+                                                   start_level, approx_hash);
+        client_t<float, io_uring_stream_t> client1(1, reader1, data_len, error,
+                                                   dtype[0], chunk_size,
+                                                   start_level, approx_hash);
+        std::cout << "State-diff:: Clients initialized" << std::endl;
 
-        state_diff::client_t<float, io_uring_stream_t> client1(
-            2, reader1, data_len, error, dtype[0], chunk_size, start_level,
-            approx_hash);
+        client0.create((uint8_t *)data0.data());
+        client1.create((uint8_t *)data1.data());
+        std::cout << "State-diff:: Clients metadata created" << std::endl;
 
-        client1.create((uint8_t *) data1.data());
+        client1.compare_with(client0);
+        size_t hash_cmp_count = client1.get_num_hash_comparisons();
+        size_t f2f_cmp_count = client1.get_num_comparisons();
+        size_t change_count = client1.get_num_changes();
+        std::cout << "State-diff:: Clients comparison complete" << std::endl;
 
-        client0.compare_with(client1);
-
-        if (client0.get_num_changes() == 0) {
-            std::cout << "SUCCESS::Files " << file0 << " and " << file1
-                      << " are within error tolerance." << std::endl;
+        if (change_count == 0) {
+            std::cout << "State-diff::SUCCESS:: Files " << file0 << " and "
+                      << file1 << " are within error tolerance." << std::endl;
         } else {
-            std::cout << "FAILURE::Files " << file0 << " and " << file1
-                      << " are NOT within error tolerance. Found "
-                      << client0.get_num_changes() << " changes." << std::endl;
+            std::cout << "State-diff::FAILURE:: Files " << file0 << " and "
+                      << file1 << " are NOT within error tolerance. Found "
+                      << change_count << " changes." << std::endl;
         }
+
+        print_analysis_summary(file0, file1, dtype, data_len, error, chunk_size,
+                               hash_cmp_count, f2f_cmp_count, change_count);
     }
     Kokkos::finalize();
     return 0;

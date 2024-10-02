@@ -55,15 +55,29 @@ spack repo add ./spack-repo
 spack install statediff
 ```
 
-## Testing state-diff
+## Unit testing
 
-
-This repository also contains a few text examples located in the `state-diff/test` directory illustrating metadata creation and data states comparison processes.
+This repository contains unit tests located in the `state-diff/test` directory validating our metadata creation and data states comparison approaches.
 
 * `test_serialize.cpp`: Test the metadata creation process and its serialization to an archive using the [Cereal](https://github.com/USCiLab/cereal) library.
 * `test_compare.cpp`: Test the metadata creation and comparison processes. It highlights the complete workflow of state-diff in an offline comparison scenario.
 
 To run both test, execute the `make test` command from the build directory.
+
+## state-diff artifact evaluation
+
+This repository contains recipes to generate random checkpoints and analyze the checkpoints for reproducibility purpose. To evaluate the functionality of stated-diff, execute the following instructions after the building `state-diff`.
+
+
+```
+cd build
+
+src/tools/data_generator --data-len 1000000 -n 2 -e 0.0001 --num-changes 10000 --type float reproducibility_test --kokkos-num-threads=2 --kokkos-map-device-id-by=mpi_rank
+
+src/cli/statediff-cli reproducibility_test0.dat reproducibility_test1.dat --error 0.0001 --type float -c 4096 -s 1 --kokkos-num-threads=8 --kokkos-map-device-id-by=mpi_rank
+```
+
+In the example above, we are generating two checkpoints of 1000000 floating-point numbers such that 1% of the data is perturbed beyond the error tolerance of 1e-4. Given the two checkpoints, we use `statediff-cli` to verify and confirm that our approach can identify the changes within the checkpoints.
 
 ## Contacts
 

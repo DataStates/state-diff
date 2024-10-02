@@ -8,6 +8,12 @@ install (TARGETS statediff_extract_hacc
 )
 
 add_executable (data_generator data_generation.cpp)
+target_link_libraries(data_generator PRIVATE Kokkos::kokkos)
+target_link_libraries(data_generator PRIVATE argparse)
+target_include_directories(data_generator PRIVATE 
+  $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src>
+  $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+)
 
 # Install executables
 install (TARGETS data_generator

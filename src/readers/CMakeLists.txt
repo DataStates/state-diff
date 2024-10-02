@@ -55,12 +55,12 @@ if(NOT LIBURING_LIBRARY)
     endif()
 
     # Link liburing to your target
-    target_include_directories(statediff-io PRIVATE ${LIBURING_INCLUDE_DIR})
-    target_link_libraries(statediff-io PRIVATE ${LIBURING_LIBRARY})
+    target_include_directories(statediff-io PUBLIC ${LIBURING_INCLUDE_DIR})
+    target_link_libraries(statediff-io PUBLIC ${LIBURING_LIBRARY})
 else()
     # If liburing is found, use it
     find_path(LIBURING_INCLUDE_DIR NAMES liburing.h)
-    target_link_libraries(statediff-io PRIVATE ${LIBURING_LIBRARY})
+    target_link_libraries(statediff-io PUBLIC ${LIBURING_LIBRARY})
 endif()
 
 if(ADIOS2_FOUND)

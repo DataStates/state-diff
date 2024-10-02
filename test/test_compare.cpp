@@ -18,9 +18,6 @@ write_file(const std::string &fn, uint8_t *buffer, size_t size) {
     size_t transferred = 0, remaining = size;
     while (remaining > 0) {
         size_t ret = write(fd, buffer + transferred, remaining);
-        if (ret < 0)
-	    std::cerr << "cannot write " << size << " bytes to " << fn
-                                  << " , error = " << std::strerror(errno) << std::endl;
         remaining -= ret;
         transferred += ret;
     }

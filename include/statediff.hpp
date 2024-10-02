@@ -287,7 +287,7 @@ client_t<DataType, Reader>::compare_trees(
             KOKKOS_LAMBDA(uint32_t i) {
                 auto nhash_comp_access = nhash_comp.access();
                 uint32_t node = work_queue.pop();
-                bool identical = digests_same(tree_curr[node], tree_prev[node]);
+                bool identical = digests_same(tree_curr.tree_d(node), tree_prev.tree_d(node));
                 nhash_comp_access(0) += 1;
                 if (!identical) {
                     if ((n_chunks - 1 <= node) && (node < n_nodes)) {
