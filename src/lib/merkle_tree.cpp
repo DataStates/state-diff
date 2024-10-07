@@ -1,5 +1,6 @@
 #include "merkle_tree.hpp"
 #include "common/debug.hpp"
+#include "cuda_timer.hpp"
 
 using ExecSpace = Kokkos::DefaultExecutionSpace;
 
@@ -76,6 +77,287 @@ tree_t::tree_t(const size_t data_size, const size_t c_size, bool fuzzyhash)
 
 tree_t::tree_t() {}
 
+KOKKOS_INLINE_FUNCTION
+void
+tree_t::hash_leaves_kernel(uint8_t *data_ptr, client_info_t client_info,
+                           uint32_t left_leaf, uint32_t idx) const {
+    auto nchunks = num_leaves;
+    auto nnodes = num_nodes;
+    auto chunksize = chunk_size;
+    auto data_size = client_info.data_size;
+    auto dtype = client_info.data_type;
+    auto err_tol = client_info.error_tolerance;
+    bool use_fuzzy_hash = use_fuzzyhash;
+    auto &curr_tree = *this;
+
+    // Calculate leaf node
+    uint32_t leaf = left_leaf + idx;
+    // Adjust leaf if not on the lowest level
+    if (leaf >= nnodes) {
+        const uint32_t diff = leaf - nnodes;
+        leaf = ((nnodes - 1) / 2) + diff;
+    }
+    // Determine which chunk of data to hash
+    uint32_t num_bytes = chunksize;
+    uint64_t offset =
+        static_cast<uint64_t>(idx) * static_cast<uint64_t>(chunksize);
+    if (idx == nchunks - 1)   // Calculate how much data to hash
+        num_bytes = data_size - offset;
+    // Hash chunk
+    if (use_fuzzy_hash) {
+        curr_tree.calc_leaf_fuzzy_hash(data_ptr + offset, num_bytes, err_tol,
+                                       dtype, leaf);
+    } else {
+        curr_tree.calc_leaf_hash(data_ptr + offset, num_bytes, leaf);
+    }
+}
+
+void
+tree_t::create_leaves(uint8_t *data_ptr, client_info_t client_info,
+                      uint32_t left_leaf, std::string diff_label) {
+    auto data_size = client_info.data_size;
+    Kokkos::View<uint8_t *> data_d("Device pointer", data_size);
+    Kokkos::View<uint8_t *, Kokkos::HostSpace,
+                 Kokkos::MemoryTraits<Kokkos::Unmanaged>>
+        data_h(data_ptr, data_size);
+    Kokkos::deep_copy(data_d, data_h);
+    auto &curr_tree = *this;
+
+    Kokkos::parallel_for(
+        diff_label + std::string("Hash leaves"),
+        Kokkos::RangePolicy<>(0, num_leaves), KOKKOS_LAMBDA(uint32_t idx) {
+            curr_tree.hash_leaves_kernel(data_d.data(), client_info, left_leaf,
+                                         idx);
+        });
+}
+
+__global__ void
+_hash_leaves_kernel(uint8_t *data_ptr, client_info_t client_info,
+                    tree_t tree_obj, uint32_t left_leaf) {
+    uint32_t idx = blockIdx.x*blockDim.x + threadIdx.x;
+    tree_obj.hash_leaves_kernel(data_ptr, client_info, left_leaf, idx);
+}
+
+// void
+// tree_t::create_leaves_cuda(uint8_t *data_ptr, client_info_t client_info,
+//                            uint32_t left_leaf, std::string diff_label) {
+    
+//     auto data_size = client_info.data_size;
+//     auto chunksize = chunk_size;
+//     size_t device_buff_size = client_info.device_buff_size;
+//     size_t transfer_size = device_buff_size;
+//     auto &curr_tree = *this;
+//     int kernel_block_size = 256;   // number of threads per kernel blocks
+
+//     cudaStream_t io_stream, compute_stream;
+//     gpuErrchk(cudaStreamCreate(&io_stream));
+//     gpuErrchk(cudaStreamCreate(&compute_stream));
+//     gpuErrchk(cudaHostRegister(data_ptr, data_size, cudaHostRegisterDefault));
+
+//     // Variables to hold timing events
+//     CudaTimer data_load_timer("loading data", io_stream);
+//     CudaTimer compute_timer("hashing leaves", compute_stream);
+//     CudaTimer wait_timer("kernel awaits data", compute_stream);
+
+//     uint32_t num_transfers = data_size / device_buff_size;
+//     if (num_transfers * device_buff_size < data_size) {
+//         num_transfers += 1;
+//     }
+//     // printf("Data size: %zu\n", data_size);
+//     // printf("Device buffer size: %zu\n", device_buff_size);
+//     // printf("Number of transfer = %u\n", num_transfers);
+
+//     std::vector<cudaEvent_t> events(num_transfers);
+//     int deviceId;
+//     gpuErrchk(cudaGetDevice(&deviceId));
+//     cudaMemPool_t device_buffer;
+//     cudaMemPoolProps poolProps = {};
+//     poolProps.allocType = cudaMemAllocationTypePinned;
+//     poolProps.handleTypes = cudaMemHandleTypePosixFileDescriptor;
+//     poolProps.location.type = cudaMemLocationTypeDevice;
+//     poolProps.location.id = deviceId;
+//     poolProps.maxSize = data_size;
+//     gpuErrchk(cudaMemPoolCreate(&device_buffer, &poolProps));
+
+//     std::vector<uint8_t*> device_ptrs(num_transfers, nullptr);
+
+//     for (uint32_t i = 0; i < num_transfers; ++i) {
+//         if(i == (num_transfers - 1)) {
+//             transfer_size = data_size - (device_buff_size * i);
+//         }
+//         size_t offset = i * transfer_size;
+//         assert(transfer_size % chunksize == 0);
+
+//         // Allocate GPU buffer for data to transfer
+//         gpuErrchk(cudaMallocAsync(&device_ptrs[i], transfer_size, io_stream));
+
+//         // Transfer data from host to device using the io_stream
+//         data_load_timer.start();
+//         gpuErrchk(cudaMemcpyAsync(device_ptrs[i], &data_ptr[offset], transfer_size,
+//                         cudaMemcpyHostToDevice, io_stream));
+//         data_load_timer.stop();
+
+//         // Using cudaEvents to implement consumer-producer mechanism.
+//         // it also help for synchronization and consistency
+//         gpuErrchk(cudaEventCreateWithFlags(&events[i], cudaEventDisableTiming));
+//         gpuErrchk(cudaEventRecord(events[i], io_stream));
+
+//     }
+
+//     for (uint32_t i = 0; i < num_transfers; ++i) {
+//         if(i == (num_transfers - 1)) {
+//             transfer_size = data_size - (device_buff_size * i);
+//         }
+//         assert(transfer_size % chunksize == 0);
+
+//         // Wait on the previous event before kernel execution
+//         wait_timer.start();
+//         gpuErrchk(cudaStreamWaitEvent(compute_stream, events[i], 0));
+//         wait_timer.stop();
+
+//         // launh hashing kernels in a compute stream
+//         compute_timer.start();
+//         int num_blocks = ((transfer_size / chunksize) + kernel_block_size - 1) /
+//                          kernel_block_size;
+//         _hash_leaves_kernel<<<num_blocks, kernel_block_size, 0,
+//                               compute_stream>>>(device_ptrs[i], client_info,
+//                                                 curr_tree, left_leaf);
+//         compute_timer.stop();
+
+//         // Free memory back to the pool
+//         cudaFreeAsync(device_ptrs[i], compute_stream);
+//     }
+//     // Free unused memory accumulated in the pool back to the OS
+//     gpuErrchk(cudaStreamSynchronize(compute_stream));
+
+//     // Clean up
+//     for (size_t i = 0; i < num_transfers; ++i) {
+//         gpuErrchk(cudaEventDestroy(events[i]));
+//     }
+//     gpuErrchk(cudaStreamDestroy(io_stream));
+//     gpuErrchk(cudaStreamDestroy(compute_stream));
+
+//     // Final result
+//     cudaDeviceProp prop;
+//     cudaGetDeviceProperties(&prop, deviceId);
+    
+
+//     float data_size_gb = static_cast<float>(data_size) / (1024 * 1024 * 1024); // GB
+//     printf("Total Data Loading Time: %.3f ms\n", data_load_timer.getTotalTime());
+//     printf("Concurrent Kernels: %d\n", prop.concurrentKernels);
+//     printf("Async Engine Count: %d\n", prop.asyncEngineCount);
+//     printf("Data Loading Throughput: %.3f GBps\n", data_load_timer.getThroughput(data_size_gb));
+//     printf("Total Compute Time: %.3f ms\n", compute_timer.getTotalTime());
+//     printf("Compute Throughput: %.3f GBps\n", compute_timer.getThroughput(data_size_gb));
+//     printf("Total Wait Time: %.3f ms\n", wait_timer.getTotalTime());
+// }
+
+void
+tree_t::create_leaves_cuda(uint8_t *data_ptr, client_info_t client_info,
+                           uint32_t left_leaf, std::string diff_label) {
+    
+    auto data_size = client_info.data_size;
+    auto chunksize = chunk_size;
+    size_t device_buff_size = client_info.device_buff_size;
+    size_t transfer_size = device_buff_size;
+    auto &curr_tree = *this;
+    int kernel_block_size = 256;   // number of threads per kernel blocks
+
+    cudaStream_t io_stream, compute_stream;
+    gpuErrchk(cudaStreamCreate(&io_stream));
+    gpuErrchk(cudaStreamCreate(&compute_stream));
+    gpuErrchk(cudaHostRegister(data_ptr, data_size, cudaHostRegisterDefault));
+
+    // Variables to hold timing events
+    CudaTimer data_load_timer("loading data", io_stream);
+    CudaTimer compute_timer("hashing leaves", compute_stream);
+    CudaTimer wait_timer("kernel awaits data", compute_stream);
+
+    uint32_t num_transfers = data_size / device_buff_size;
+    if (num_transfers * device_buff_size < data_size) {
+        num_transfers += 1;
+    }
+    // printf("Data size: %zu\n", data_size);
+    // printf("Device buffer size: %zu\n", device_buff_size);
+    // printf("Number of transfer = %u\n", num_transfers);
+
+    std::vector<cudaEvent_t> events(num_transfers);
+    int deviceId;
+    gpuErrchk(cudaGetDevice(&deviceId));
+    cudaMemPool_t device_buffer;
+    cudaMemPoolProps poolProps = {};
+    poolProps.allocType = cudaMemAllocationTypePinned;
+    poolProps.handleTypes = cudaMemHandleTypePosixFileDescriptor;
+    poolProps.location.type = cudaMemLocationTypeDevice;
+    poolProps.location.id = deviceId;
+    poolProps.maxSize = data_size;
+    gpuErrchk(cudaMemPoolCreate(&device_buffer, &poolProps));
+    std::vector<uint8_t*> device_ptrs(num_transfers, nullptr);
+
+    for (uint32_t i = 0; i < num_transfers; ++i) {
+        if(i == (num_transfers - 1)) {
+            transfer_size = data_size - (device_buff_size * i);
+        }
+        size_t offset = i * transfer_size;
+        assert(transfer_size % chunksize == 0);
+
+        // Allocate GPU buffer for data to transfer
+        uint8_t *device_ptr;
+        gpuErrchk(cudaMallocFromPoolAsync(&device_ptrs[i], transfer_size, device_buffer,
+                                io_stream));
+
+        // Transfer data from host to device using the io_stream
+        data_load_timer.start();
+        gpuErrchk(cudaMemcpyAsync(device_ptrs[i], &data_ptr[offset], transfer_size,
+                        cudaMemcpyHostToDevice, io_stream));
+        data_load_timer.stop();
+
+        // Using cudaEvents to implement consumer-producer mechanism.
+        // it also help for synchronization and consistency
+        gpuErrchk(cudaEventCreateWithFlags(&events[i], cudaEventDisableTiming));
+        gpuErrchk(cudaEventRecord(events[i], io_stream));
+
+        // Wait on the previous event before kernel execution
+        wait_timer.start();
+        gpuErrchk(cudaStreamWaitEvent(compute_stream, events[i], 0));
+        wait_timer.stop();
+        // if(i > 0) {
+        //     wait_timer.start();
+        //     gpuErrchk(cudaStreamWaitEvent(compute_stream, events[i-1], 0));
+        //     wait_timer.stop();
+        // }
+
+        // launh hashing kernels in a compute stream
+        compute_timer.start();
+        int num_blocks = ((transfer_size / chunksize) + kernel_block_size - 1) /
+                         kernel_block_size;
+        _hash_leaves_kernel<<<num_blocks, kernel_block_size, 0,
+                              compute_stream>>>(device_ptrs[i], client_info,
+                                                curr_tree, left_leaf);
+        compute_timer.stop();
+
+        // Free memory back to the pool
+        cudaFreeAsync(device_ptrs[i], compute_stream);
+    }
+    // Free unused memory accumulated in the pool back to the OS
+    gpuErrchk(cudaStreamSynchronize(compute_stream));
+
+    // Clean up
+    for (size_t i = 0; i < num_transfers; ++i) {
+        gpuErrchk(cudaEventDestroy(events[i]));
+    }
+    gpuErrchk(cudaStreamDestroy(io_stream));
+    gpuErrchk(cudaStreamDestroy(compute_stream));
+
+    // Final result
+    float data_size_gb = static_cast<float>(data_size) / (1024 * 1024 * 1024); // GB
+    printf("Total Data Loading Time: %.3f ms\n", data_load_timer.getTotalTime());
+    printf("Data Loading Throughput: %.3f GBps\n", data_load_timer.getThroughput(data_size_gb));
+    printf("Total Compute Time: %.3f ms\n", compute_timer.getTotalTime());
+    printf("Compute Throughput: %.3f GBps\n", compute_timer.getThroughput(data_size_gb));
+    printf("Total Wait Time: %.3f ms\n", wait_timer.getTotalTime());
+}
+
 void
 tree_t::create(uint8_t *data_ptr, client_info_t client_info) {
 
@@ -96,71 +378,15 @@ tree_t::create(uint8_t *data_ptr, client_info_t client_info) {
 
     // Temporary values to avoid capturing this object in the lambda
     auto nchunks = num_leaves;
-    auto nnodes = num_nodes;
-    auto chunksize = chunk_size;
-    auto data_size = client_info.data_size;   // data.size();
-    auto dtype = client_info.data_type;
-    auto err_tol = client_info.error_tolerance;
-    bool use_fuzzy_hash = use_fuzzyhash;
-    size_t device_buff_size = client_info.device_buff_size;
     auto &curr_tree = *this;
-
-    // Create a custom stream for tree creation
-    ExecSpace create_stream = ExecSpace();
 
     std::string diff_label = std::string("Diff: ");
     Kokkos::Profiling::pushRegion(diff_label + std::string("Construct Tree"));
-    
-    // Create a temporary device buffer to stream data for tree creation
-    Kokkos::View<uint8_t *> device_buffer("device_buffer", device_buff_size);
 
-    size_t i = 0;
-    size_t nchunks_processed = 0;
-    while (i < data_size) {
-        size_t bytes_to_copy = std::min(device_buff_size, data_size - i);
-        uint32_t nchunks = bytes_to_copy / chunksize;
+    // Build the tree leaves
+    // create_leaves(data_ptr, client_info, left_leaf, diff_label);
+    create_leaves_cuda(data_ptr, client_info, left_leaf, diff_label);
 
-        // Copy bytes_to_copy from host to device
-        // To-do: Explore ways to remove the cost of initilization and memory allocation 
-        Kokkos::View<uint8_t *, Kokkos::HostSpace,
-                     Kokkos::MemoryTraits<Kokkos::Unmanaged>>
-            tmp_view(data_ptr + i, bytes_to_copy);
-        Kokkos::deep_copy(device_buffer, tmp_view);
-
-        Kokkos::parallel_for(
-            diff_label + std::string("Hash leaves"),
-            Kokkos::RangePolicy<ExecSpace>(create_stream, 0, nchunks),
-            KOKKOS_LAMBDA(uint32_t idx) {
-                // Calculate leaf node
-                uint32_t leaf = left_leaf + idx + nchunks_processed;
-                // Adjust leaf if not on the lowest level
-                if (leaf >= nnodes) {
-                    const uint32_t diff = leaf - nnodes;
-                    leaf = ((nnodes - 1) / 2) + diff;
-                }
-                // Determine which chunk of data to hash
-                uint32_t num_bytes = chunksize;
-                uint64_t offset = static_cast<uint64_t>(idx) *
-                                  static_cast<uint64_t>(chunksize);
-                if (offset + chunksize >
-                    bytes_to_copy) {   // Calculate how much data to hash
-                    num_bytes = bytes_to_copy - offset;
-                }
-
-                // Hash chunk from the device buffer
-                if (use_fuzzy_hash) {
-                    curr_tree.calc_leaf_fuzzy_hash(
-                        device_buffer.data() + offset, num_bytes, err_tol,
-                        dtype, leaf);
-                } else {
-                    curr_tree.calc_leaf_hash(device_buffer.data() + offset,
-                                             num_bytes, leaf);
-                }
-            });
-        create_stream.fence();
-        i += device_buff_size;
-        nchunks_processed += nchunks;
-    }
     // Build up tree level by level until last_lvl_beg
     while (level_beg >= last_lvl_beg) {
         std::string tree_constr_label =
@@ -168,14 +394,14 @@ tree_t::create(uint8_t *data_ptr, client_info_t client_info) {
             std::to_string(level_beg) + std::string(",") +
             std::to_string(level_end) + std::string("]");
         Kokkos::parallel_for(
-            tree_constr_label, Kokkos::RangePolicy<ExecSpace>(create_stream, level_beg, level_end + 1),
+            tree_constr_label,
+            Kokkos::RangePolicy<>(level_beg, level_end + 1),
             KOKKOS_LAMBDA(const uint32_t node) {
                 // Check if node is non leaf
                 if (node < nchunks - 1) {
                     curr_tree.calc_hash(node);
                 }
             });
-        create_stream.fence();
         level_beg = (level_beg - 1) / 2;
         level_end = (level_end - 2) / 2;
     }

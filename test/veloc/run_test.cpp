@@ -16,7 +16,8 @@ main(int argc, char **argv) {
     // minimum FP value in synthetic data
     float min_float = 0.0;
     // size in bytes of the synthetic data (1GB)
-    size_t data_size = 1024 * 1024 * 1024;
+    int MB = 1024;
+    size_t data_size = 1 * MB;
     // Application error tolerance
     float error_tolerance = 1e-4;
     // Random number seed to generate the synthetic data

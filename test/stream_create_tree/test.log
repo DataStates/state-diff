@@ -1,0 +1,1 @@
+g++ -std=c++17 --extended-lambda -o test_stream test_stream.cpp -I/home/kta7930/research/anl/install/kokkos/installgpu/include -L/home/kta7930/research/anl/install/kokkos/installgpu/lib -lkokkoscore

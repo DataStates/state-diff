@@ -38,6 +38,7 @@ main(int argc, char **argv) {
     float min_float = 0.0;
     // size in bytes of the synthetic data (1GB)
     int data_size = 1024 * 1024 * 1024;
+    // int data_size = 1024 * 1024;
     // Application error tolerance
     float error_tolerance = 1e-4;
     // Target chunk size. This example uses 16 bytes
@@ -52,7 +53,8 @@ main(int argc, char **argv) {
     std::string fname = "checkpoint.dat";
     std::string metadata_fn = "checkpoint.tree";
     int MB = 1024 * 1024;
-    int dev_buf_sizes[] = {MB, 16 * MB, 64 * MB, 256 * MB, 1024 * MB};
+    // int dev_buf_sizes[] = {MB, 16 * MB, 64 * MB, 256 * MB, 1024 * MB};
+    int dev_buf_sizes[] = {256 * MB};
 
     int num_chunks = data_size / chunk_size;
     std::cout << "Nunber of leaf nodes = " << num_chunks << std::endl;
@@ -81,7 +83,7 @@ main(int argc, char **argv) {
         for (int buf_size : dev_buf_sizes) {
             state_diff::client_t<float, io_uring_stream_t> client(
                 1, reader, data_size, error_tolerance, dtype, chunk_size,
-                root_level, fuzzy_hash);
+                root_level, fuzzy_hash, buf_size);
             auto start_create = std::chrono::high_resolution_clock::now();
             client.create(run_data);
             auto end_create = std::chrono::high_resolution_clock::now();
