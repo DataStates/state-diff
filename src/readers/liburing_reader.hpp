@@ -9,14 +9,14 @@
 
 class liburing_io_reader_t : public base_io_reader_t {
   const size_t MAX_RING_SIZE = 32768;
-  size_t req_submitted = 0, req_completed = 0;
+  size_t req_submitted = 0, req_completed = 0, req_submitted2 = 0;
   size_t fsize;
   int fd;
   std::string fname;
   std::queue<segment_t> submissions;
   std::unordered_set<size_t> completions;
-  io_uring ring;
-  struct io_uring_cqe *cqe[32768];
+  io_uring ring, ring2;
+  struct io_uring_cqe *cqe[32768], *cqe2[32768];
   std::mutex m;
   std::condition_variable cv;
   std::thread th;
