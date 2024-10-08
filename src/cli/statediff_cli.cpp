@@ -132,8 +132,8 @@ main(int argc, char **argv) {
     }
     std::string file0 = program.get<std::string>("run0");
     std::string file1 = program.get<std::string>("run1");
-    double error = program.get<double>("error");
     std::string dtype = program.get<std::string>("type");
+    double error = program.get<double>("error");
     size_t chunk_size = program.get<size_t>("chunk_size");
     size_t buffer_len = program.get<size_t>("buffer-len");
     size_t start_level = program.get<size_t>("start-level");
@@ -166,9 +166,9 @@ main(int argc, char **argv) {
     size_t elem_per_buffer = buffer_len/sizeof(float);
     size_t elem_per_chunk = chunk_size/sizeof(float);
     liburing_reader_t<float> reader0(file0, elem_per_buffer, elem_per_chunk, 
-                                     true, false, num_threads);
+                                     false, false, num_threads);
     liburing_reader_t<float> reader1(file1, elem_per_buffer, elem_per_chunk, 
-                                     true, false, num_threads);
+                                     false, false, num_threads);
 
     // Create client for file 0
     client_t<float, liburing_reader_t> client0(1, reader0, data_len, error, 

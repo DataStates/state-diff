@@ -426,8 +426,8 @@ client_t<DataType, Reader>::compare_with_new_reader(client_t &prev) {
     ASSERT(dataType == prev.dataType);
     ASSERT(errorValue == prev.errorValue);
 
-    liburing_io_reader_t reader0(prev.io_reader.filename);
-    liburing_io_reader_t reader1(io_reader.filename);
+    liburing_io_reader_t reader0(prev.io_reader.filename, Kokkos::num_threads());
+    liburing_io_reader_t reader1(io_reader.filename, Kokkos::num_threads());
 
     Timer::time_point beg = Timer::now();
     auto ndifferent = compare_trees(prev, working_queue, diff_hash_vec, num_hash_comp);
@@ -576,6 +576,7 @@ client_t<DataType, Reader>::compare_data_new_reader(client_t &prev,
                                  Kokkos::Bitset<> &changed_chunks,
                                  Kokkos::View<uint64_t[1]> &num_changed,
                                  Kokkos::View<uint64_t[1]> &num_comparisons) {
+    Timer::time_point setup_beg = Timer::now();
     STDOUT_PRINT("Number of first occurrences (Leaves) - Phase One: %u\n",
                  diff_hash_vec.size());
     std::string diff_label = std::string("Chkpt ") +
@@ -593,6 +594,15 @@ client_t<DataType, Reader>::compare_data_new_reader(client_t &prev,
     Kokkos::sort(diff_hash_vec.vector_d, 0, num_diff_hash);
     size_t elemPerChunk = prev.chunk_size / sizeof(DataType);
     Kokkos::Profiling::popRegion();
+    Timer::time_point setup_end = Timer::now();
+    std::cout << "Setup time: " <<  
+        std::chrono::duration_cast<Duration>(setup_end - setup_beg).count() << std::endl;
+    Timer::time_point vec_beg = Timer::now();
+    std::vector<segment_t> segments0(num_diff_hash), segments1(num_diff_hash);
+    std::vector<DataType> buffer0(num_diff_hash*elemPerChunk), buffer1(num_diff_hash*elemPerChunk);
+    Timer::time_point vec_end = Timer::now();
+    std::cout << "Vector allocation time: " <<  
+        std::chrono::duration_cast<Duration>(vec_end - vec_beg).count() << std::endl;
  
 //    auto &num_changes = num_changed;
 //    auto &changed_blocks = changed_chunks;
@@ -600,11 +610,10 @@ client_t<DataType, Reader>::compare_data_new_reader(client_t &prev,
     AbsoluteComp<DataType> abs_comp;
     if (num_diff_hash > 0) {
 
+        Timer::time_point total_beg = Timer::now();
         Timer::time_point read_beg = Timer::now();
 
         Kokkos::deep_copy(diff_hash_vec.vector_h, diff_hash_vec.vector_d);
-        std::vector<segment_t> segments0(num_diff_hash), segments1(num_diff_hash);
-        std::vector<DataType> buffer0(num_diff_hash*elemPerChunk), buffer1(num_diff_hash*elemPerChunk);
         Kokkos::parallel_for("Fill segment vectors", 
           Kokkos::RangePolicy<Kokkos::DefaultHostExecutionSpace>(0,num_diff_hash), 
           [&](size_t i) {
@@ -618,21 +627,18 @@ client_t<DataType, Reader>::compare_data_new_reader(client_t &prev,
             segments1[i].offset = diff_hash_vec.vector_h(i)*chunk_size;
             segments1[i].size = chunk_size;
         });
+        Kokkos::fence();
         Timer::time_point seg_end = Timer::now();
         std::cout << "Segment preparation time: " <<  
             std::chrono::duration_cast<Duration>(seg_end - read_beg).count() << std::endl;
 
-        //liburing_io_reader_t* reader0 = new liburing_io_reader_t(prev.io_reader.filename);
-        //liburing_io_reader_t* reader1 = new liburing_io_reader_t(io_reader.filename);
-        //mmap_io_reader_t* reader0 = new mmap_io_reader_t(prev.io_reader.filename);
-        //mmap_io_reader_t* reader1 = new mmap_io_reader_t(io_reader.filename);
-        //posix_io_reader_t* reader0 = new posix_io_reader_t(prev.io_reader.filename);
-        //posix_io_reader_t* reader1 = new posix_io_reader_t(io_reader.filename);
-
+        Timer::time_point enq_beg = Timer::now();
         reader0.enqueue_reads(segments0);
         reader1.enqueue_reads(segments1);
+        Timer::time_point enq_end = Timer::now();
         reader0.wait_all();
         reader1.wait_all();
+        Timer::time_point wait_end = Timer::now();
 
         Timer::time_point read_end = Timer::now();
         read_timer +=
@@ -666,8 +672,13 @@ client_t<DataType, Reader>::compare_data_new_reader(client_t &prev,
         Timer::time_point end = Timer::now();
         compare_timer +=
             std::chrono::duration_cast<Duration>(end - beg).count();
-        //delete reader0;
-        //delete reader1;
+
+        Timer::time_point total_end = Timer::now();
+
+        printf("2nd Phase: Enqueue reads: %f\n", std::chrono::duration_cast<Duration>(enq_end-enq_beg).count());
+        printf("2nd Phase: Wait: %f\n", std::chrono::duration_cast<Duration>(wait_end-enq_end).count());
+        printf("2nd Phase: Compare time: %f\n", std::chrono::duration_cast<Duration>(end - beg).count());
+        printf("2nd Phase: Total time: %f\n", std::chrono::duration_cast<Duration>(total_end - total_beg).count());
     }
 
     STDOUT_PRINT("Number of changed elements - Phase Two: %lu\n", nchange);
@@ -682,6 +693,7 @@ client_t<DataType, Reader>::compare_data(client_t &prev,
                                  Kokkos::Bitset<> &changed_chunks,
                                  Kokkos::View<uint64_t[1]> &num_changed,
                                  Kokkos::View<uint64_t[1]> &num_comparisons) {
+    read_timer = 0;
     STDOUT_PRINT("Number of first occurrences (Leaves) - Phase One: %u\n",
                  diff_hash_vec.size());
     std::string diff_label = std::string("Chkpt ") +
@@ -705,15 +717,7 @@ client_t<DataType, Reader>::compare_data(client_t &prev,
     auto &changed_blocks = changed_chunks;
     if (num_diff_hash > 0) {
 
-        Timer::time_point read_beg = Timer::now();
-
-        Kokkos::Profiling::pushRegion(
-            diff_label + std::string("Compare Tree start file streams"));
-        io_reader.start_stream(diff_hash_vec.vector_d.data(), num_diff_hash,
-                               blocksize);
-        prev.io_reader.start_stream(diff_hash_vec.vector_d.data(),
-                                    num_diff_hash, blocksize);
-        Kokkos::Profiling::popRegion();
+        Timer::time_point total_beg = Timer::now();
 
         Kokkos::Profiling::pushRegion(
             diff_label +
@@ -731,6 +735,15 @@ client_t<DataType, Reader>::compare_data(client_t &prev,
         Kokkos::Experimental::ScatterView<uint64_t[1]> num_comp(
             num_comparisons);
         Kokkos::Profiling::popRegion();
+        Kokkos::Profiling::pushRegion(
+            diff_label + std::string("Compare Tree start file streams"));
+        Timer::time_point read_beg = Timer::now();
+        io_reader.start_stream(diff_hash_vec.vector_d.data(), num_diff_hash,
+                               blocksize);
+        prev.io_reader.start_stream(diff_hash_vec.vector_d.data(),
+                                    num_diff_hash, blocksize);
+        Kokkos::Profiling::popRegion();
+
         for (size_t iter = 0; iter < num_iter; iter++) {
             Kokkos::Profiling::pushRegion("Next slice");
             sliceA = io_reader.next_slice();
@@ -744,7 +757,7 @@ client_t<DataType, Reader>::compare_data(client_t &prev,
             Timer::time_point read_end = Timer::now();
             read_timer +=
                 std::chrono::duration_cast<Duration>(read_end - read_beg).count();
-            Timer::time_point read_beg = Timer::now();
+            read_beg = Timer::now();
 
             Kokkos::Profiling::pushRegion(
                 diff_label + std::string("Compare Tree direct comparison"));
@@ -790,6 +803,12 @@ client_t<DataType, Reader>::compare_data(client_t &prev,
         prev.io_reader.end_stream();
         Kokkos::deep_copy(num_changes, num_diff);
         Kokkos::Profiling::popRegion();
+
+        Timer::time_point total_end = Timer::now();
+        printf("2nd Phase: Read time: %f\n", read_timer);
+        printf("2nd Phase: Compare time: %f\n", compare_timer);
+        printf("2nd Phase: Total time: %f\n",
+            std::chrono::duration_cast<Duration>(total_end - total_beg).count());
     }
     nchange = num_diff;
     STDOUT_PRINT("Number of changed elements - Phase Two: %lu\n", num_diff);

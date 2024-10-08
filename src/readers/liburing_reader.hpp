@@ -9,13 +9,15 @@
 
 class liburing_io_reader_t : public base_io_reader_t {
   const size_t MAX_RING_SIZE = 32768;
-  size_t req_submitted = 0, req_completed = 0, req_submitted2 = 0;
+  size_t nrings = 1;
+  //size_t req_submitted[2], req_completed[2];
+  size_t *req_submitted, *req_completed;
   size_t fsize;
   int fd;
   std::string fname;
   std::queue<segment_t> submissions;
   std::unordered_set<size_t> completions;
-  io_uring ring, ring2;
+  io_uring *ring;
   struct io_uring_cqe *cqe[32768], *cqe2[32768];
   std::mutex m;
   std::condition_variable cv;
@@ -28,7 +30,7 @@ class liburing_io_reader_t : public base_io_reader_t {
 
   public:
     liburing_io_reader_t(); // default
-    liburing_io_reader_t(std::string& name); // open file
+    liburing_io_reader_t(std::string& name, size_t num_rings=1); // open file
     ~liburing_io_reader_t() override; 
     int enqueue_reads(const std::vector<segment_t>& segments) override; // Add segments to read queue
     int wait(size_t id) override; // Wait for id to finish
@@ -57,7 +59,7 @@ class liburing_reader_t : public io_reader_t<DataType> {
     size_t elem_per_chunk = 0;
     size_t bytes_per_chunk = 0;
     size_t chunks_per_slice = 0;
-    int num_threads = 16;
+    int num_threads = 2;
     bool async = true;
     bool full_transfer = true;
     bool done = false;
