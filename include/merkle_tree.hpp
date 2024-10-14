@@ -1,9 +1,9 @@
 #ifndef __KOKKOS_MERKLE_TREE_HPP
 #define __KOKKOS_MERKLE_TREE_HPP
 #include "common/compare_utils.hpp"
+#include "common/io_utils.hpp"
 #include "common/statediff_bitset.hpp"
 #include "rounding_hash.hpp"
-#include "common/io_utils.hpp"
 #include <Kokkos_Core.hpp>
 #include <cereal/archives/binary.hpp>
 #include <cereal/types/vector.hpp>
@@ -12,7 +12,8 @@
 #ifdef __NVCC__
 #include "cuda.h"
 #include "cuda_runtime.h"
-#endif //__NVCC__
+#include "cuda_timer.hpp"
+#endif   //__NVCC__
 
 /** \class Merkle Tree class
  *  Merkle tree class. Merkle trees are trees where the leaves contain the
@@ -34,6 +35,10 @@ class tree_t {
     //                                                uint32_t idx);
     // void _hash_leaves_kernel(uint8_t *data_ptr, client_info_t client_info,
     //                 uint32_t left_leaf);
+    void create_leaves_cuda(uint8_t *data_ptr, client_info_t client_info,
+                            uint32_t left_leaf, std::string diff_label);
+    void create_leaves_cuda_pool(uint8_t *data_ptr, client_info_t client_info,
+                                 uint32_t left_leaf, std::string diff_label);
 
   public:
     size_t num_leaves;
@@ -53,9 +58,7 @@ class tree_t {
     KOKKOS_INLINE_FUNCTION HashDigest &operator[](uint32_t i) const;
     void create_leaves(uint8_t *data_ptr, client_info_t client_info,
                        uint32_t left_leaf, std::string diff_label);
-    void create_leaves_cuda(uint8_t *data_ptr, client_info_t client_info,
-                       uint32_t left_leaf, std::string diff_label);
-    
+
     KOKKOS_INLINE_FUNCTION void hash_leaves_kernel(uint8_t *data_ptr,
                                                    client_info_t client_info,
                                                    uint32_t left_leaf,
