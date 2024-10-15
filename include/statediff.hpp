@@ -428,6 +428,8 @@ client_t<DataType, Reader>::compare_with_new_reader(client_t &prev) {
 
     liburing_io_reader_t reader0(prev.io_reader.filename, Kokkos::num_threads());
     liburing_io_reader_t reader1(io_reader.filename, Kokkos::num_threads());
+    //posix_io_reader_t reader0(prev.io_reader.filename);
+    //posix_io_reader_t reader1(io_reader.filename);
 
     Timer::time_point beg = Timer::now();
     auto ndifferent = compare_trees(prev, working_queue, diff_hash_vec, num_hash_comp);
@@ -632,13 +634,26 @@ client_t<DataType, Reader>::compare_data_new_reader(client_t &prev,
         std::cout << "Segment preparation time: " <<  
             std::chrono::duration_cast<Duration>(seg_end - read_beg).count() << std::endl;
 
+        double enq_time = 0, wait_time = 0;
         Timer::time_point enq_beg = Timer::now();
         reader0.enqueue_reads(segments0);
-        reader1.enqueue_reads(segments1);
         Timer::time_point enq_end = Timer::now();
+        enq_time += std::chrono::duration_cast<Duration>(enq_end-enq_beg).count();
+
+        enq_beg = Timer::now();
+        reader1.enqueue_reads(segments1);
+        enq_end = Timer::now();
+        enq_time += std::chrono::duration_cast<Duration>(enq_end-enq_beg).count();
+
+        Timer::time_point wait_beg = Timer::now();
         reader0.wait_all();
-        reader1.wait_all();
         Timer::time_point wait_end = Timer::now();
+        wait_time += std::chrono::duration_cast<Duration>(wait_end-wait_beg).count();
+
+        wait_beg = Timer::now();
+        reader1.wait_all();
+        wait_end = Timer::now();
+        wait_time += std::chrono::duration_cast<Duration>(wait_end-wait_beg).count();
 
         Timer::time_point read_end = Timer::now();
         read_timer +=
@@ -646,7 +661,7 @@ client_t<DataType, Reader>::compare_data_new_reader(client_t &prev,
 
         Kokkos::Profiling::pushRegion(
             diff_label + std::string("Compare Tree direct comparison"));
-        Timer::time_point beg = Timer::now();
+        Timer::time_point comp_beg = Timer::now();
         uint64_t ndiff = 0;
         // Parallel comparison
         using PolicyType = Kokkos::RangePolicy<size_t, Kokkos::DefaultHostExecutionSpace>;
@@ -669,16 +684,16 @@ client_t<DataType, Reader>::compare_data_new_reader(client_t &prev,
         Kokkos::fence();
         nchange += ndiff;
         Kokkos::Profiling::popRegion();
-        Timer::time_point end = Timer::now();
+        Timer::time_point comp_end = Timer::now();
         compare_timer +=
-            std::chrono::duration_cast<Duration>(end - beg).count();
+            std::chrono::duration_cast<Duration>(comp_end - comp_beg).count();
 
         Timer::time_point total_end = Timer::now();
 
-        printf("2nd Phase: Enqueue reads: %f\n", std::chrono::duration_cast<Duration>(enq_end-enq_beg).count());
-        printf("2nd Phase: Wait: %f\n", std::chrono::duration_cast<Duration>(wait_end-enq_end).count());
-        printf("2nd Phase: Compare time: %f\n", std::chrono::duration_cast<Duration>(end - beg).count());
-        printf("2nd Phase: Total time: %f\n", std::chrono::duration_cast<Duration>(total_end - total_beg).count());
+        printf("2nd Phase: Enqueue reads: %2.10f\n", enq_time);
+        printf("2nd Phase: Wait time:     %2.10f\n", wait_time);
+        printf("2nd Phase: Compare time:  %2.10f\n", std::chrono::duration_cast<Duration>(comp_end - comp_beg).count());
+        printf("2nd Phase: Total time:    %2.10f\n", std::chrono::duration_cast<Duration>(total_end - total_beg).count());
     }
 
     STDOUT_PRINT("Number of changed elements - Phase Two: %lu\n", nchange);
