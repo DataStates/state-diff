@@ -18,10 +18,16 @@
 #include <unistd.h>
 #include <vector>
 
+struct file_info_t {
+    int fd;
+    size_t fsize;
+};
+
 struct segment_t {
     size_t id;
     uint8_t* buffer;
     size_t offset, size;
+    int fd;
 };
 
 class base_io_reader_t {

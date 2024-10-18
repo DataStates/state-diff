@@ -25,7 +25,10 @@ liburing_io_reader_t::~liburing_io_reader_t() {
         io_uring_queue_exit(&ring[i]);
     }
     // Close file
-    close(fd);
+    for(const auto& pair: file_info) {
+        close(pair.second.fd);
+    }
+//    close(fd);
     delete[] ring;
     delete[] req_completed;
     delete[] req_submitted;
@@ -37,23 +40,29 @@ liburing_io_reader_t::liburing_io_reader_t(std::string& name, size_t num_rings) 
     ring = new io_uring[nrings];
     req_submitted = new size_t[nrings];
     req_completed = new size_t[nrings];
+    file_info_t finfo;
     fname = name;
     fd = open(name.c_str(), O_RDONLY);
-    if (fd == -1) {
+    finfo.fd = fd;
+    if (finfo.fd == -1) {
         FATAL("cannot open " << fname << ", error = " << std::strerror(errno));
     }
 
     // Get file size
-    fsize = lseek(fd, 0, SEEK_END);
-    lseek(fd, 0, SEEK_SET);
+    fsize = lseek(finfo.fd, 0, SEEK_END);
+    lseek(finfo.fd, 0, SEEK_SET);
+    finfo.fsize = fsize;
+    
+    // Store file info
+    file_info[name] = finfo; 
 
     // Initialize ring 
 //    struct io_uring_params params;
 //    memset(&params, 0, sizeof(params));
 //    params.flags |= IORING_SETUP_SQPOLL;
 //    params.sq_thread_idle = 2000;
-//
 //    int ret = io_uring_queue_init_params(MAX_RING_SIZE, &ring, &params);
+
     for(size_t i=0; i<nrings; i++) {
         int ret = io_uring_queue_init(MAX_RING_SIZE, &ring[i], 0);
         if (ret < 0) {
@@ -96,7 +105,7 @@ uint32_t liburing_io_reader_t::request_completion() {
 //    }
 
     for(size_t i=0; i<nrings; i++) {
-        uint32_t nwait = MAX_RING_SIZE/8;
+        uint32_t nwait = MAX_RING_SIZE/4;
         if(req_submitted[i] - req_completed[i] < nwait)
             nwait = (req_submitted[i] - req_completed[i]);
 //        uint32_t nwait = io_uring_cq_ready(&ring[i]);
@@ -130,22 +139,25 @@ uint32_t liburing_io_reader_t::request_submission() {
     uint32_t per_ring = submissions.size() / nrings;
     if(per_ring*nrings < submissions.size())
         per_ring += 1;
-printf("Per ring submissions: %u\n", per_ring);
+//printf("Per ring submissions: %u\n", per_ring);
     for(size_t i=0; i<nrings; i++) {
+        uint32_t nincomplete = req_submitted[i] - req_completed[i];
 //        uint32_t nsubmit = MAX_RING_SIZE/8;
         uint32_t nsubmit = per_ring < MAX_RING_SIZE ? per_ring : MAX_RING_SIZE;
-        if(req_submitted[i] < req_completed[i])
-            nsubmit = req_completed[i] - req_submitted[i];
-        if(nsubmit > submissions.size())
-            nsubmit = submissions.size();
+        if(MAX_RING_SIZE - nincomplete < nsubmit)
+            nsubmit =  MAX_RING_SIZE - nincomplete;
+//        if(req_submitted[i] < req_completed[i])
+//            nsubmit = req_completed[i] - req_submitted[i];
+//        if(nsubmit > submissions.size())
+//            nsubmit = submissions.size();
     
         if(nsubmit > 0) {
             // Prep reads
             for(size_t j=0; j<nsubmit; j++) {
                 // Get segment from queue
                 segment_t seg = submissions.front();
-                if(seg.size + seg.offset > fsize)
-                    seg.size = fsize - seg.offset;
+//                if(seg.size + seg.offset > fsize)
+//                    seg.size = fsize - seg.offset;
                 // Prepare submission queue entry
                 auto sqe = io_uring_get_sqe(&ring[i]);
                 if (!sqe) {
@@ -154,7 +166,7 @@ printf("Per ring submissions: %u\n", per_ring);
                 }
                 // Save ID
                 io_uring_sqe_set_data64(sqe, seg.id);
-                io_uring_prep_read(sqe, fd, seg.buffer, seg.size, seg.offset);
+                io_uring_prep_read(sqe, seg.fd, seg.buffer, seg.size, seg.offset);
                 // Remove segment from queue
                 submissions.pop();
             }
@@ -225,40 +237,6 @@ int liburing_io_reader_t::io_thread() {
                 completed += req_completed[i];
                 submitted += req_submitted[i];
             }
-//            // Calculate how many reads to submit
-//            avail_cqe += nready;
-//            size_t num_reads = submissions.size();
-//            if(num_reads > avail_cqe) 
-//                num_reads = avail_cqe;
-//    
-//            // Prep reads
-//            for(size_t i=0; i<num_reads; i++) {
-//                // Get segment from queue
-//                segment_t seg = submissions.front();
-//                if(seg.size + seg.offset > fsize)
-//                    seg.size = fsize - seg.offset;
-//    
-//                // Prepare submission queue entry
-//                auto sqe = io_uring_get_sqe(&ring[0]);
-//                if (!sqe) {
-//                    fprintf(stderr, "Could not get sqe\n");
-//                    return -1;
-//                }
-//                // Save ID
-//                io_uring_sqe_set_data64(sqe, seg.id);
-//                io_uring_prep_read(sqe, fd, seg.buffer, seg.size, seg.offset);
-//    
-//                // Remove segment from queue
-//                submissions.pop();
-//            }
-//            avail_cqe -= num_reads;
-//            req_submitted[0] += num_reads;
-//    
-//            // Submit queued reads
-//            ret = io_uring_submit(&ring[0]);
-//            if(ret < 0) {
-//                fprintf(stderr, "io_uring_submit: %s\n", strerror(-ret));
-//            }
             // Loop if waiting for all segments 
         } while(wait_all_mode && ((submissions.size() > 0) || submitted > completed));
 
@@ -276,7 +254,11 @@ int liburing_io_reader_t::enqueue_reads(const std::vector<segment_t>& segments) 
 
     // Push segments onto queue and add ID to the in progress set
     for(size_t i=0; i<segments.size(); i++) {
-        submissions.push(segments[i]);
+        segment_t seg = segments[i];
+        seg.fd = fd;
+        if(seg.size + seg.offset > fsize)
+            seg.size = fsize - seg.offset;
+        submissions.push(seg);
     }
     
     // Notify background thread that there is work
@@ -285,7 +267,61 @@ int liburing_io_reader_t::enqueue_reads(const std::vector<segment_t>& segments) 
 #else
     // Push segments onto queue and add ID to the in progress set
     for(size_t i=0; i<segments.size(); i++) {
-        submissions.push(segments[i]);
+        segment_t seg = segments[i];
+        seg.fd = fd;
+        if(seg.size + seg.offset > fsize)
+            seg.size = fsize - seg.offset;
+        submissions.push(seg);
+    }
+
+    request_submission();
+#endif
+    
+    return 0;
+}
+
+int liburing_io_reader_t::enqueue_reads(const std::string& fname, const std::vector<segment_t>& segments) {
+    file_info_t finfo;
+    if(file_info.find(fname) != file_info.end()) {
+        finfo = file_info[fname];
+    } else {
+        finfo.fd = open(fname.c_str(), O_RDONLY);
+        if (finfo.fd == -1) {
+            FATAL("cannot open " << fname << ", error = " << std::strerror(errno));
+        }
+
+        // Get file size
+        finfo.fsize = lseek(finfo.fd, 0, SEEK_END);
+        lseek(finfo.fd, 0, SEEK_SET);
+        
+        // Store file info
+        file_info[fname] = finfo; 
+    }
+
+#ifdef BACKGROUND_THREAD
+    // Acquire lock
+    std::unique_lock<std::mutex> lock(m);
+
+    // Push segments onto queue and add ID to the in progress set
+    for(size_t i=0; i<segments.size(); i++) {
+        segment_t seg = segments[i];
+        seg.fd = finfo.fd;
+        if(seg.size + seg.offset > finfo.fsize)
+            seg.size = finfo.fsize - seg.offset;
+        submissions.push(seg);
+    }
+    
+    // Notify background thread that there is work
+    lock.unlock();
+    cv.notify_one();
+#else
+    // Push segments onto queue and add ID to the in progress set
+    for(size_t i=0; i<segments.size(); i++) {
+        segment_t seg = segments[i];
+        seg.fd = finfo.fd;
+        if(seg.size + seg.offset > finfo.fsize)
+            seg.size = finfo.fsize - seg.offset;
+        submissions.push(seg);
     }
 
     request_submission();
@@ -362,10 +398,10 @@ int liburing_io_reader_t::wait_all() {
     Timer::time_point clear_end = Timer::now();
     clear_time += 
         std::chrono::duration_cast<Duration>(clear_end - clear_beg).count();
-    printf("\tCheck time:      %f\n", check_time);
-    printf("\tSubmission time: %f\n", sub_time);
-    printf("\tCompletion time: %f\n", com_time);
-    printf("\tClear time:      %f\n", clear_time);
+    printf("\tCheck time:      %.8f\n", check_time);
+    printf("\tSubmission time: %.8f\n", sub_time);
+    printf("\tCompletion time: %.8f\n", com_time);
+    printf("\tClear time:      %.8f\n", clear_time);
 #endif
     return 0;
 }
