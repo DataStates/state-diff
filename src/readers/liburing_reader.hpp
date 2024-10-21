@@ -8,6 +8,11 @@
 #include <map>
 #include <unordered_set>
 
+struct file_info_t {
+    int fd;
+    size_t fsize;
+};
+
 class liburing_io_reader_t : public base_io_reader_t {
   const size_t MAX_RING_SIZE = 32768;
   size_t nrings = 1;
@@ -16,7 +21,6 @@ class liburing_io_reader_t : public base_io_reader_t {
   size_t fsize;
   std::map<std::string,file_info_t> file_info;
   int fd;
-  std::string fname;
   std::queue<segment_t> submissions;
   std::unordered_set<size_t> completions;
   io_uring *ring;
@@ -31,6 +35,7 @@ class liburing_io_reader_t : public base_io_reader_t {
   int io_thread();
 
   public:
+  std::string fname;
     liburing_io_reader_t(); // default
     liburing_io_reader_t(std::string& name, size_t num_rings=1); // open file
     ~liburing_io_reader_t() override; 
@@ -78,7 +83,7 @@ class liburing_reader_t : public io_reader_t<DataType> {
 
     size_t filesize;
     int file;
-    int max_ring_size=32768;
+    int max_ring_size=16384;
     int32_t num_cqe=0;
     struct io_uring ring;
     DataType *mmapped_file=NULL;

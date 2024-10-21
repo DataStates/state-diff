@@ -12,7 +12,14 @@ liburing_io_reader_t::~liburing_io_reader_t() {
 #ifdef BACKGROUND_THREAD
     // Flag background thread that everything is done
     std::unique_lock<std::mutex> lk(m);
-//    cv.wait(lk, [this] { return (submissions.size() == 0) && (req_completed[0] == req_submitted[0]); });
+    cv.wait(lk, [this] { 
+        auto completed = 0, submitted = 0;
+        for(size_t i=0; i<nrings; i++) {
+            completed += req_completed[i];
+            submitted += req_submitted[i];
+        }
+      return (submissions.size() == 0) && (completed == submitted); 
+    });
     // Signal IO thread to be inactive
     active = false;
     lk.unlock();
@@ -57,12 +64,6 @@ liburing_io_reader_t::liburing_io_reader_t(std::string& name, size_t num_rings) 
     file_info[name] = finfo; 
 
     // Initialize ring 
-//    struct io_uring_params params;
-//    memset(&params, 0, sizeof(params));
-//    params.flags |= IORING_SETUP_SQPOLL;
-//    params.sq_thread_idle = 2000;
-//    int ret = io_uring_queue_init_params(MAX_RING_SIZE, &ring, &params);
-
     for(size_t i=0; i<nrings; i++) {
         int ret = io_uring_queue_init(MAX_RING_SIZE, &ring[i], 0);
         if (ret < 0) {
@@ -93,22 +94,13 @@ uint32_t liburing_io_reader_t::request_completion() {
 //    for(const auto& entry : req_ready) {
 //        uint32_t nwait = entry.first;
 //        size_t i = entry.second;
-//printf("%u requests ready for ring %zu\n", nwait, i);
-
-//    std::multimap<uint32_t,size_t> req_ready;
-//    size_t ndone = 0;
-//    while(ndone < nrings) {
-//        req_ready.clear();
-//        for(size_t i=0; i<nrings; i++) {
-//            req_ready.insert(std::pair{io_uring_cq_ready(&ring[i]), i});
-//        }
-//    }
+////printf("%u requests ready for ring %zu\n", nwait, i);
 
     for(size_t i=0; i<nrings; i++) {
-        uint32_t nwait = MAX_RING_SIZE/4;
-        if(req_submitted[i] - req_completed[i] < nwait)
-            nwait = (req_submitted[i] - req_completed[i]);
-//        uint32_t nwait = io_uring_cq_ready(&ring[i]);
+//        uint32_t nwait = MAX_RING_SIZE/4;
+//        if(req_submitted[i] - req_completed[i] < nwait)
+//            nwait = (req_submitted[i] - req_completed[i]);
+        uint32_t nwait = io_uring_cq_ready(&ring[i]);
 
         if(nwait > 0) {
             int ret = io_uring_wait_cqe_nr(&ring[i], &cqe[0], nwait);
@@ -141,9 +133,9 @@ uint32_t liburing_io_reader_t::request_submission() {
         per_ring += 1;
 //printf("Per ring submissions: %u\n", per_ring);
     for(size_t i=0; i<nrings; i++) {
-        uint32_t nincomplete = req_submitted[i] - req_completed[i];
 //        uint32_t nsubmit = MAX_RING_SIZE/8;
         uint32_t nsubmit = per_ring < MAX_RING_SIZE ? per_ring : MAX_RING_SIZE;
+        uint32_t nincomplete = req_submitted[i] - req_completed[i];
         if(MAX_RING_SIZE - nincomplete < nsubmit)
             nsubmit =  MAX_RING_SIZE - nincomplete;
 //        if(req_submitted[i] < req_completed[i])
@@ -153,7 +145,11 @@ uint32_t liburing_io_reader_t::request_submission() {
     
         if(nsubmit > 0) {
             // Prep reads
+            uint32_t submitted = 0;
             for(size_t j=0; j<nsubmit; j++) {
+                if(submissions.size() == 0)
+                     break;
+                submitted += 1;
                 // Get segment from queue
                 segment_t seg = submissions.front();
 //                if(seg.size + seg.offset > fsize)
@@ -179,8 +175,8 @@ uint32_t liburing_io_reader_t::request_submission() {
             }
         
             // Update count of submitted requests
-            req_submitted[i] += nsubmit;
-            tot_submit += nsubmit;
+            req_submitted[i] += submitted;
+            tot_submit += submitted;
         }
     }
     return tot_submit;
@@ -398,10 +394,10 @@ int liburing_io_reader_t::wait_all() {
     Timer::time_point clear_end = Timer::now();
     clear_time += 
         std::chrono::duration_cast<Duration>(clear_end - clear_beg).count();
-    printf("\tCheck time:      %.8f\n", check_time);
-    printf("\tSubmission time: %.8f\n", sub_time);
-    printf("\tCompletion time: %.8f\n", com_time);
-    printf("\tClear time:      %.8f\n", clear_time);
+//    printf("\tCheck time:      %.8f\n", check_time);
+//    printf("\tSubmission time: %.8f\n", sub_time);
+//    printf("\tCompletion time: %.8f\n", com_time);
+//    printf("\tClear time:      %.8f\n", clear_time);
 #endif
     return 0;
 }

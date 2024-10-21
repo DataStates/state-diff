@@ -636,13 +636,8 @@ client_t<DataType, Reader>::compare_data_new_reader(client_t &prev,
 
         double enq_time = 0, wait_time = 0;
         Timer::time_point enq_beg = Timer::now();
-        reader0.enqueue_reads(segments0);
+        reader0.enqueue_reads(reader0.fname, segments0);
         Timer::time_point enq_end = Timer::now();
-        enq_time += std::chrono::duration_cast<Duration>(enq_end-enq_beg).count();
-
-        enq_beg = Timer::now();
-        reader1.enqueue_reads(segments1);
-        enq_end = Timer::now();
         enq_time += std::chrono::duration_cast<Duration>(enq_end-enq_beg).count();
 
         Timer::time_point wait_beg = Timer::now();
@@ -650,8 +645,15 @@ client_t<DataType, Reader>::compare_data_new_reader(client_t &prev,
         Timer::time_point wait_end = Timer::now();
         wait_time += std::chrono::duration_cast<Duration>(wait_end-wait_beg).count();
 
+        enq_beg = Timer::now();
+        reader1.enqueue_reads(reader1.fname, segments1);
+//        reader0.enqueue_reads(reader1.fname, segments1);
+        enq_end = Timer::now();
+        enq_time += std::chrono::duration_cast<Duration>(enq_end-enq_beg).count();
+
         wait_beg = Timer::now();
         reader1.wait_all();
+//        reader0.wait_all();
         wait_end = Timer::now();
         wait_time += std::chrono::duration_cast<Duration>(wait_end-wait_beg).count();
 
