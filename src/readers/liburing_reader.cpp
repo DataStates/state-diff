@@ -97,10 +97,12 @@ uint32_t liburing_io_reader_t::request_completion() {
 ////printf("%u requests ready for ring %zu\n", nwait, i);
 
     for(size_t i=0; i<nrings; i++) {
-//        uint32_t nwait = MAX_RING_SIZE/4;
-//        if(req_submitted[i] - req_completed[i] < nwait)
-//            nwait = (req_submitted[i] - req_completed[i]);
         uint32_t nwait = io_uring_cq_ready(&ring[i]);
+        if(nwait == 0)
+            nwait = MAX_RING_SIZE/4;
+//        uint32_t nwait = MAX_RING_SIZE/4;
+        if(req_submitted[i] - req_completed[i] < nwait)
+            nwait = (req_submitted[i] - req_completed[i]);
 
         if(nwait > 0) {
             int ret = io_uring_wait_cqe_nr(&ring[i], &cqe[0], nwait);
