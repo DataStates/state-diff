@@ -15,6 +15,7 @@
 #include <functional>
 #include <iostream>
 #include <vector>
+#include <chrono>
 
 namespace state_diff {
 
@@ -48,8 +49,7 @@ class client_t {
     size_t nchange = 0;
 
     // timers
-    std::vector<double> io_timer;
-    double compare_timer;
+    std::vector<double> compare_timers = {0, 0};
 
     void initialize(size_t n_chunks);
     void create_(std::vector<DataType> &data);
@@ -91,8 +91,10 @@ class client_t {
     size_t get_num_hash_comparisons() const;
     size_t get_num_comparisons() const;
     size_t get_num_changes() const;
-    double get_io_time() const;
-    double get_compare_time() const;
+    // double get_io_time() const;
+    std::vector<double> get_compare_time() const;
+    std::vector<double> get_create_time() const;
+    // double get_create_time() const;
     client_info_t get_client_info() const;
 };
 
@@ -227,13 +229,23 @@ template <typename DataType, template <typename> typename Reader>
 bool
 client_t<DataType, Reader>::compare_with(client_t &prev) {
     ASSERT(client_info == prev.client_info);
-
+    auto start_tree = std::chrono::high_resolution_clock::now();
     compare_trees(prev, working_queue, diff_hash_vec, num_hash_comp); // device
+    auto stop_tree = std::chrono::high_resolution_clock::now();
+    auto duration_tree = std::chrono::duration_cast<std::chrono::milliseconds>(stop_tree - start_tree);
+    std::cout << "Tree Comparison completed in " << duration_tree.count() << " ms" << std::endl;
+    compare_timers[0] = duration_tree.count();
 
     // Validate first occurences with direct comparison
-    if (diff_hash_vec.size() > 0)
+    if (diff_hash_vec.size() > 0) {
+        auto start_fp = std::chrono::high_resolution_clock::now();
         compare_data(prev, diff_hash_vec, changed_chunks, num_changed,
                      num_comparisons); // host or device to be determined by reader
+        auto stop_fp = std::chrono::high_resolution_clock::now();
+        auto duration_fp = std::chrono::duration_cast<std::chrono::milliseconds>(stop_fp - start_fp);
+        std::cout << "FP Comparison completed in " << duration_fp.count() << " ms" << std::endl;
+        compare_timers[1] = duration_fp.count();
+    }
     return get_num_changes() == 0;
 }
 
@@ -428,8 +440,8 @@ client_t<DataType, Reader>::compare_data(
                 offset_idx += 1;
             Kokkos::Profiling::popRegion();
             Timer::time_point end = Timer::now();
-            compare_timer +=
-                std::chrono::duration_cast<Duration>(end - beg).count();
+            // compare_timer +=
+            //     std::chrono::duration_cast<Duration>(end - beg).count();
         }
         Kokkos::Profiling::pushRegion(diff_label +
                                       std::string("Compare Tree finalize"));
@@ -469,16 +481,28 @@ client_t<DataType, Reader>::get_num_changes() const {
     return num_changed_h(0);
 }
 
-template <typename DataType, template <typename> typename Reader>
-double
-client_t<DataType, Reader>::get_io_time() const {
-    return io_timer[0];
-}
+// template <typename DataType, template <typename> typename Reader>
+// double
+// client_t<DataType, Reader>::get_io_time() const {
+//     return io_timer[0];
+// }
 
 template <typename DataType, template <typename> typename Reader>
-double
+std::vector<double>
+client_t<DataType, Reader>::get_create_time() const {
+    const double *timers = tree.get_timers();
+    return {timers[0], timers[1], timers[2], timers[3]};
+}
+// template <typename DataType, template <typename> typename Reader>
+// double
+// client_t<DataType, Reader>::get_create_time() const {
+//     return tree.get_time();
+// }
+
+template <typename DataType, template <typename> typename Reader>
+std::vector<double>
 client_t<DataType, Reader>::get_compare_time() const {
-    return compare_timer;
+    return compare_timers;
 }
 
 template <typename DataType, template <typename> typename Reader>

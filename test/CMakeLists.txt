@@ -31,6 +31,18 @@ set_target_properties(test_create_stream PROPERTIES
    CXX_EXTENSIONS OFF
 )
 
+
+add_executable(benchmark_tree_creation benchmark_tree_creation.cpp)
+target_include_directories(benchmark_tree_creation PUBLIC ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(benchmark_tree_creation PUBLIC Kokkos::kokkos)
+target_link_libraries(benchmark_tree_creation PRIVATE OpenSSL::SSL)
+target_link_libraries(benchmark_tree_creation PRIVATE statediff)
+set_target_properties(benchmark_tree_creation PROPERTIES
+   CXX_STANDARD 17
+   CXX_STANDARD_REQUIRED YES
+   CXX_EXTENSIONS OFF
+)
 add_test(NAME test_serialize COMMAND test_serialize --kokkos-num-threads=2 --kokkos-map-device-id-by=mpi_rank)
 add_test(NAME test_compare COMMAND test_compare --kokkos-num-threads=2 --kokkos-map-device-id-by=mpi_rank)
 add_test(NAME test_create_stream COMMAND test_create_stream --kokkos-map-device-id-by=mpi_rank)
+add_test(NAME benchmark_tree_creation COMMAND test_create_stream --kokkos-num-threads=8 --kokkos-map-device-id-by=mpi_rank)

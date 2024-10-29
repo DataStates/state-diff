@@ -13,6 +13,7 @@
 #include "cuda.h"
 #include "cuda_runtime.h"
 #include "cuda_timer.hpp"
+#include "nvtx3/nvToolsExt.h"
 #endif   //__NVCC__
 
 /** \class Merkle Tree class
@@ -22,6 +23,8 @@
  */
 class tree_t {
   private:
+    double timers[4];
+    double create_time;
     void digest_to_hex(const uint8_t *digest, char *output);
     KOKKOS_INLINE_FUNCTION bool calc_hash(uint32_t u) const;
     KOKKOS_INLINE_FUNCTION bool calc_leaf_hash(const void *data, uint64_t size,
@@ -37,8 +40,6 @@ class tree_t {
     //                 uint32_t left_leaf);
     void create_leaves_cuda(uint8_t *data_ptr, client_info_t client_info,
                             uint32_t left_leaf, std::string diff_label);
-    void create_leaves_cuda_pool(uint8_t *data_ptr, client_info_t client_info,
-                                 uint32_t left_leaf, std::string diff_label);
 
   public:
     size_t num_leaves;
@@ -71,5 +72,7 @@ class tree_t {
                                                    uint32_t num_nodes);
 
     void print_leaves();
+    // double get_time() const;
+    const double* get_timers() const;
 };
 #endif   //  __KOKKOS_MERKLE_TREE_HPP

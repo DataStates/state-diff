@@ -42,7 +42,7 @@ main(int argc, char **argv) {
     // Application error tolerance
     float error_tolerance = 1e-4;
     // Target chunk size. This example uses 16 bytes
-    int chunk_size = 512;
+    int chunk_size = 4096;
     // Use our rounding hash algorithm or exact hash.
     bool fuzzy_hash = true;
     char dtype = 'f';   // float
@@ -53,8 +53,8 @@ main(int argc, char **argv) {
     std::string fname = "checkpoint.dat";
     std::string metadata_fn = "checkpoint.tree";
     int MB = 1024 * 1024;
-    // int dev_buf_sizes[] = {1, 16 * MB, 64 * MB, 256 * MB, 1024 * MB};
-    int dev_buf_sizes[] = {64 * MB};
+    // int dev_buf_sizes[] = {16 * MB, 64 * MB, 256 * MB, 1024 * MB};
+    int dev_buf_sizes[] = {256 * MB};
 
     int num_chunks = data_size / chunk_size;
     std::cout << "Nunber of leaf nodes = " << num_chunks << std::endl;
