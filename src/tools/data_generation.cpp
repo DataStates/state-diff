@@ -71,7 +71,7 @@ int main(int argc, char** argv) {
     printf("Perturb mode:            %s\n",  generator_mode.c_str());
     uint64_t    num_changes    = program.get<uint64_t>("--num-changes");
     printf("Num changes:             %lu\n", num_changes);
-    std::string data_type      = program.get<std::string>("--data-type");
+    std::string data_type      = program.get<std::string>("--type");
     printf("Data type:               %s\n",  data_type.c_str());
     std::string out_filename   = program.get<std::string>("outname");
     printf("File name:               %s\n",  out_filename.c_str());
