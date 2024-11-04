@@ -1,4 +1,5 @@
 #include "mmap_reader.hpp"
+#include <limits>
 
 mmap_io_reader_t::mmap_io_reader_t() {
 }
@@ -9,7 +10,7 @@ mmap_io_reader_t::~mmap_io_reader_t() {
 
 mmap_io_reader_t::mmap_io_reader_t(std::string& name) {
     fname = name;
-    fd = open(name.c_str(), O_RDONLY | O_DIRECT);
+    fd = open(name.c_str(), O_RDONLY);
     if (fd == -1) {
         FATAL("cannot open " << fname << ", error = " << std::strerror(errno));
     }
@@ -55,13 +56,8 @@ int mmap_io_reader_t::wait(size_t id) {
         if(reads[pos].id == id)
             break;
     }
-    // while(segment_status[pos] == false) {
-    //   std::this_thread::sleep_for(std::chrono::duration<double, std::milli>(10));
-    // }
-    auto start = std::chrono::high_resolution_clock::now();
-    auto end = start + std::chrono::milliseconds(10);
-    while (std::chrono::high_resolution_clock::now() < end && segment_status[pos] == false) {
-        // Busy-wait, doing nothing.
+    while(segment_status[pos] == false) {
+      std::this_thread::sleep_for(std::chrono::duration<double, std::milli>(10));
     }
     return 0;
 }
@@ -79,12 +75,13 @@ int mmap_io_reader_t::wait_all() {
 }
 
 size_t mmap_io_reader_t::wait_any() {
-    // size_t id = -1;
-    size_t id = 0;
-    for(size_t pos=0; pos<reads.size(); pos++) {
-        if(segment_status[pos]) {
-            id = reads[pos].id;
+    size_t id = std::numeric_limits<size_t>::max();;
+    do {
+        for(size_t pos=0; pos<reads.size(); pos++) {
+            if(segment_status[pos]) {
+                id = reads[pos].id;
+            }
         }
-    }
+    } while(id == std::numeric_limits<size_t>::max());
     return id;
 }

@@ -1,13 +1,8 @@
-# Define the sources
-set(SOURCES
+add_library (statediff-io SHARED
     liburing_reader.cpp
     posix_reader.cpp
     mmap_reader.cpp
-    io_uring_stream.cpp
 )
-
-# Add the library
-add_library(statediff-io SHARED ${SOURCES})
 
 ##### Find dependencies
 # Liburing
@@ -57,13 +52,22 @@ else()
     target_link_libraries(statediff-io PUBLIC ${LIBURING_LIBRARY})
 endif()
 
+# find_package(liburing REQUIRED)
+add_definitions(-DWITH_LIBURING)
+
+# ADIOS2
+find_package(ADIOS2)
+if(ADIOS2_FOUND)
+    find_package(MPI REQUIRED)
+    add_definitions(-DWITH_ADIOS2)
+endif()
+
 ##### Add include directories
 target_include_directories (statediff-io PUBLIC
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/readers>
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
   $<BUILD_INTERFACE:${LIBURING_INCLUDE_DIR}>
-  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 ###### Install libraries
@@ -71,14 +75,7 @@ install (TARGETS statediff-io EXPORT statediffTargets
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
-
-install(FILES
-  ${PROJECT_SOURCE_DIR}/src/readers/io_uring_stream.hpp
-  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-)
-
 
 ###### Unit tests
 add_subdirectory(test)

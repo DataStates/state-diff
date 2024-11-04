@@ -1,9 +1,8 @@
 Makefile.local
 
 build/
-
 build*/
-
 extern/
+__pycache__/
 
 *.dat

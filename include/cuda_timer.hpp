@@ -1,55 +1,62 @@
+#ifndef __CUDA_TIMER_HPP
+#define __CUDA_TIMER_HPP
+
+#ifdef __NVCC__
+
 #include "cuda.h"
 #include "cuda_runtime.h"
 #include "nvtx3/nvToolsExt.h"
+#include <iostream>
+#include <vector>
 
 class CudaTimer {
-public:
+  public:
     CudaTimer(std::string event)
-        : event_(event), total_time_(0.0) {
-        cudaEventCreate(&start_);
-        cudaEventCreate(&stop_);
-    }
+        : event_name_(event), event_counter_(0), total_time_(0.0) {}
 
-    ~CudaTimer() {
-        cudaEventDestroy(start_);
-        cudaEventDestroy(stop_);
-    }
+    ~CudaTimer() {}
 
     void start(cudaStream_t &stream) {
-        nvtxRangePush(event_.c_str());
-        cudaEventRecord(start_, stream);
+        cudaEvent_t event;
+        cudaEventCreate(&event);
+        start_.push_back(event);
+        nvtxRangePush(event_name_.c_str());
+        cudaEventRecord(event, stream);
     }
 
     void stop(cudaStream_t &stream) {
-        cudaEventRecord(stop_, stream);
+        cudaEvent_t event;
+        cudaEventCreate(&event);
+        stop_.push_back(event);
+        cudaEventRecord(event, stream);
         nvtxRangePop();
-        cudaEventSynchronize(stop_);
-        float milliseconds = 0;
-        cudaEventElapsedTime(&milliseconds, start_, stop_);
-        total_time_ += milliseconds;
-    }
-
-    void record(cudaStream_t &stream) {
-        cudaEventRecord(stop_, stream);
-        nvtxRangePop();
+        event_counter_ += 1;
     }
 
     void finalize() {
-        // Synchronize to make sure all recorded events are complete before measuring
-        cudaEventSynchronize(stop_);
-        float milliseconds = 0;
-        cudaEventElapsedTime(&milliseconds, start_, stop_);
-        total_time_ += milliseconds;
+        for (size_t i = 0; i < event_counter_; i++) {
+            // Synchronize to make sure all recorded events are complete
+            cudaEventSynchronize(stop_[i]);
+            float milliseconds = 0;
+            cudaEventElapsedTime(&milliseconds, start_[i], stop_[i]);
+            total_time_ += milliseconds;
+            cudaEventDestroy(start_[i]);
+            cudaEventDestroy(stop_[i]);
+        }
     }
 
     float getTotalTime() const { return total_time_; }
 
     float getThroughput(float data_size_gb) const {
-        return data_size_gb / (total_time_ / 1000);   // Throughput in GB/s
+        return data_size_gb / (total_time_ / 1000.0f);   // Throughput in GB/s
     }
 
-private:
-    cudaEvent_t start_, stop_;
+  private:
+    std::vector<cudaEvent_t> start_, stop_;
+    size_t event_counter_;
     float total_time_;
-    std::string event_;
+    std::string event_name_;
 };
+
+#endif   // __NVCC__
+#endif   // __CUDA_TIMER_HPP

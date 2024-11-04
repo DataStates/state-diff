@@ -22,6 +22,7 @@ struct segment_t {
     size_t id;
     uint8_t* buffer;
     size_t offset, size;
+    int fd;
 };
 
 class base_io_reader_t {

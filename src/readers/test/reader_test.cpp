@@ -5,6 +5,7 @@
 #include <iostream>
 #include <typeinfo>
 #include <chrono>
+#include <algorithm>
 #include "io_reader.hpp"
 #include "liburing_reader.hpp"
 #include "posix_reader.hpp"
@@ -24,9 +25,16 @@ bool vectors_match(std::vector<float>& expected, std::vector<float>& buffer, siz
 template<typename Reader>
 bool wait_test(Reader& reader, std::vector<segment_t>& segments, std::vector<float>& expected, std::vector<float>& buffer, size_t chunk_size) {
   bool success = true;
+  std::vector<size_t> ids(segments.size(), 0);
+  for(size_t i=0; i<ids.size(); i++) {
+    ids[i] = i;
+  }
+  std::random_device rd;
+  std::mt19937 g(rd());
+  std::shuffle(ids.begin(), ids.end(), g);
   auto start = std::chrono::high_resolution_clock::now();  
   reader.enqueue_reads(segments);
-  for(size_t i=0; i<segments.size(); i++) {
+  for(size_t i: ids) {
     reader.wait(i);
     success = success && vectors_match(expected, buffer, i*chunk_size, (i+1)*chunk_size);
   }
@@ -61,7 +69,7 @@ bool wait_any_test(Reader& reader, std::vector<segment_t>& segments, std::vector
 
 int main(int argc, char** argv) {
   int result = 0;
-  size_t num_offsets = 1024*2;
+  size_t num_offsets = 1024*64;
   size_t data_len = 1024*1024*1024 / sizeof(float);
   size_t chunk_size = 128 / sizeof(float);
 
@@ -102,27 +110,27 @@ int main(int argc, char** argv) {
   if(!wait_test(posix_reader, segments, expected, buffer, chunk_size))
     result |= 1;
   if(!wait_all_test(posix_reader, segments, expected, buffer)) 
-    result |= 1;
+    result |= 2;
   if(!wait_any_test(posix_reader, segments, expected, buffer, chunk_size))
-    result |= 1;
+    result |= 4;
   buffer.assign(buffer.size(), 0.0f);
 
   mmap_io_reader_t mmap_reader(filename);
   if(!wait_test(mmap_reader, segments, expected, buffer, chunk_size))
-    result |= 2;
+    result |= 8;
   if(!wait_all_test(mmap_reader, segments, expected, buffer)) 
-    result |= 2;
+    result |= 16;
   if(!wait_any_test(mmap_reader, segments, expected, buffer, chunk_size))
-    result |= 2;
+    result |= 32;
   buffer.assign(buffer.size(), 0.0f);
 
   liburing_io_reader_t uring_reader(filename);
   if(!wait_test(uring_reader, segments, expected, buffer, chunk_size))
-    result |= 4;
+    result |= 64;
   if(!wait_all_test(uring_reader, segments, expected, buffer)) 
-    result |= 4;
+    result |= 128;
   if(!wait_any_test(uring_reader, segments, expected, buffer, chunk_size))
-    result |= 4;
+    result |= 256;
   buffer.assign(buffer.size(), 0.0f);
 
   std::remove("test.dat");

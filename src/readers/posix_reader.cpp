@@ -64,13 +64,8 @@ int posix_io_reader_t::wait(size_t id) {
         if(reads[pos].id == id)
             break;
     }
-    // while(segment_status[pos] == false) {
-    //   std::this_thread::sleep_for(std::chrono::duration<double, std::milli>(10));
-    // }
-    auto start = std::chrono::high_resolution_clock::now();
-    auto end = start + std::chrono::milliseconds(10);
-    while (std::chrono::high_resolution_clock::now() < end && segment_status[pos] == false) {
-        // Busy-wait, doing nothing.
+    while(segment_status[pos] == false) {
+      std::this_thread::sleep_for(std::chrono::duration<double, std::milli>(10));
     }
     return 0;
 }
@@ -88,8 +83,7 @@ int posix_io_reader_t::wait_all() {
 }
 
 size_t posix_io_reader_t::wait_any() {
-    // size_t id = -1;
-    size_t id = 0;
+    size_t id = -1;
     for(size_t pos=0; pos<reads.size(); pos++) {
         if(segment_status[pos]) {
             id = reads[pos].id;
