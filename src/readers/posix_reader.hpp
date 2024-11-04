@@ -8,7 +8,7 @@
 
 class posix_io_reader_t : public base_io_reader_t {
   size_t fsize;
-  int fd, num_threads = 4;
+  int fd, num_threads = 1;
   std::string fname;
   std::vector<segment_t> reads;
   std::vector<bool> segment_status;

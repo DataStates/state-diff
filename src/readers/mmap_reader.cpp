@@ -1,4 +1,5 @@
 #include "mmap_reader.hpp"
+#include <sys/mman.h>
 #include <limits>
 
 mmap_io_reader_t::mmap_io_reader_t() {
@@ -10,10 +11,9 @@ mmap_io_reader_t::~mmap_io_reader_t() {
 
 mmap_io_reader_t::mmap_io_reader_t(std::string& name) {
     fname = name;
-    fd = open(name.c_str(), O_RDONLY);
-    if (fd == -1) {
+    fd = open(name.c_str(), O_RDONLY | O_DIRECT);
+    if (fd == -1) 
         FATAL("cannot open " << fname << ", error = " << std::strerror(errno));
-    }
     fsize = lseek(fd, 0, SEEK_END);
     buffer = (uint8_t *) mmap(NULL, fsize, PROT_READ, MAP_PRIVATE, fd, 0);
     close(fd);
