@@ -130,7 +130,7 @@ tree_t::create_leaves(uint8_t *data_ptr, client_info_t client_info,
         });
 }
 
-// #ifdef __NVCC__
+#ifdef __NVCC__
 __global__ void
 _hash_leaves_kernel(uint8_t *data_ptr, client_info_t client_info,
                     tree_t tree_obj, uint32_t left_leaf) {
@@ -172,7 +172,7 @@ tree_t::create_leaves_cuda(uint8_t *data_ptr, client_info_t client_info,
         gpuErrchk(cudaEventCreate(&events[i]));
     }
 
-    for (int i = 0; i < num_transfers; i++) {
+    for (uint32_t i = 0; i < num_transfers; i++) {
         int stream_idx = i % n_streams;
 
         // Copy the block of data to the current buffer asynchronously
@@ -210,7 +210,7 @@ tree_t::create_leaves_cuda(uint8_t *data_ptr, client_info_t client_info,
         _hash_leaves_kernel<<<num_blocks, kernel_block_size, 0,
                               streams[stream_idx]>>>(
             device_ptrs[stream_idx], client_info, curr_tree, left_leaf);
-        compute_timer.record(streams[stream_idx]);
+        compute_timer.stop(streams[stream_idx]);
         // nvtxRangePop();
     }
 
@@ -218,8 +218,8 @@ tree_t::create_leaves_cuda(uint8_t *data_ptr, client_info_t client_info,
         gpuErrchk(cudaStreamSynchronize(streams[i]));
     }
 
-    // data_load_timer.finalize();
-    // wait_timer.finalize();
+    data_load_timer.finalize();
+    wait_timer.finalize();
     compute_timer.finalize();
 
     for (int i = 0; i < n_streams; i++) {
@@ -232,7 +232,7 @@ tree_t::create_leaves_cuda(uint8_t *data_ptr, client_info_t client_info,
     // Final result
     timers[0] = data_load_timer.getTotalTime();
     timers[1] = wait_timer.getTotalTime();
-    timers[2] = compute_timer.getTotalTime() * num_transfers;
+    timers[2] = compute_timer.getTotalTime();
     float data_size_gb =
         static_cast<float>(data_size) / (1024 * 1024 * 1024);   // GB
     printf("Total Data Loading Time: %.3f ms\n", timers[0]);
@@ -244,7 +244,7 @@ tree_t::create_leaves_cuda(uint8_t *data_ptr, client_info_t client_info,
            data_size_gb / (timers[2] / 1000));
 }
 
-// #endif   //__NVCC__
+#endif   //__NVCC__
 
 void
 tree_t::create(uint8_t *data_ptr, client_info_t client_info) {

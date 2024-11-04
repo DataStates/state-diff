@@ -176,14 +176,14 @@ main(int argc, char **argv) {
                           dtype[0], chunk_size, start_level, approx_hash);
 
     // Create merkle tree
-    client0.create(data0);
+    client0.create((uint8_t *) data0.data());
 
     // Create client for file 1
     client_t<float, liburing_reader_t> client1(2, reader1, data_len, error, 
                           dtype[0], chunk_size, start_level, approx_hash);
 
     // Create merkle tree
-    client1.create(data1);
+    client1.create((uint8_t *) data1.data());
 
     // Compare files
     if(use_new_reader) {
