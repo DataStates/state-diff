@@ -6,49 +6,51 @@ add_library (statediff-io SHARED
 
 ##### Find dependencies
 # Liburing
-find_package(liburing 2.6 REQUIRED)
-target_link_libraries(statediff-io liburing::liburing)
-#find_library(LIBURING_LIBRARY NAMES uring)
-#
-## If liburing is not found, download and build it
-#if(NOT LIBURING_LIBRARY)
-#    message("Did not find liburing")
-#    include(ExternalProject)
-#
-#    # Add external project for liburing
-#    ExternalProject_Add(
-#      liburing
-#      GIT_REPOSITORY https://github.com/axboe/liburing.git
-#      GIT_TAG liburing-2.6
-#      PREFIX ${CMAKE_BINARY_DIR}/liburing
-#      CONFIGURE_COMMAND ./configure --prefix=${CMAKE_BINARY_DIR}/liburing/install
-#      BUILD_COMMAND make
-#      INSTALL_COMMAND make install
-#      UPDATE_COMMAND ""
-#      BUILD_IN_SOURCE 1
-#    #   STAMP_DIR ${CMAKE_BINARY_DIR}/liburing-stamp
-#    )
-#
-#    # Specify the install directory
-#    set(LIBURING_INSTALL_DIR ${CMAKE_BINARY_DIR}/liburing/install)
-#
-#    # Manually set the include directories and libraries
-#    set(LIBURING_INCLUDE_DIR ${LIBURING_INSTALL_DIR}/include)
-#    set(LIBURING_LIBRARY ${LIBURING_INSTALL_DIR}/lib/liburing.so)
-#
-#    # Ensure liburing is built before proceeding
-#    add_dependencies(statediff-io liburing)
-#    target_link_libraries(statediff-io uring)
-#else()
-#    message("Found liburing")
-#    # If found, set the include directories and libraries
-#    find_path(LIBURING_INCLUDE_DIR NAMES liburing.h)
-#    find_path(LIBURING_LIBRARY_PATH NAMES liburing.so)
-#    set(LIBURING_LIBRARY uring)
-#    message("${LIBURING_INCLUDE_DIR}")
-#    message("${LIBURING_LIBRARY_PATH}")
-#    target_link_libraries(statediff-io uring)
-#endif()
+find_library(LIBURING_LIBRARY NAMES uring)
+
+# If liburing is not found, download and build it
+if(NOT LIBURING_LIBRARY)
+    include(ExternalProject)
+
+    # Set installation directory for liburing
+    set(LIBURING_INSTALL_DIR ${CMAKE_BINARY_DIR}/liburing/install)
+
+    # Check if liburing was already installed
+    if(NOT EXISTS ${LIBURING_INSTALL_DIR}/lib/liburing.so)
+        # Add external project for liburing
+        ExternalProject_Add(
+          liburing
+          GIT_REPOSITORY https://github.com/axboe/liburing.git
+          GIT_TAG liburing-2.6
+          PREFIX ${CMAKE_BINARY_DIR}/liburing
+          CONFIGURE_COMMAND ./configure --prefix=${LIBURING_INSTALL_DIR}
+          BUILD_COMMAND make
+          INSTALL_COMMAND make install
+          UPDATE_COMMAND ""
+          BUILD_IN_SOURCE 1
+          STAMP_DIR ${CMAKE_BINARY_DIR}/liburing-stamp
+        )
+    else()
+        message(STATUS "liburing is already installed at ${LIBURING_INSTALL_DIR}. Skipping installation.")
+    endif()
+
+    # Set the include directories and library paths manually
+    set(LIBURING_INCLUDE_DIR ${LIBURING_INSTALL_DIR}/include)
+    set(LIBURING_LIBRARY ${LIBURING_INSTALL_DIR}/lib/liburing.so)
+
+    # Ensure liburing is built before proceeding
+    if(TARGET liburing)
+        add_dependencies(statediff-io liburing)
+    endif()
+
+    # Link liburing to your target
+    target_include_directories(statediff-io PUBLIC ${LIBURING_INCLUDE_DIR})
+    target_link_libraries(statediff-io PUBLIC ${LIBURING_LIBRARY})
+else()
+    # If liburing is found, use it
+    find_path(LIBURING_INCLUDE_DIR NAMES liburing.h)
+    target_link_libraries(statediff-io PUBLIC ${LIBURING_LIBRARY})
+endif()
 
 # find_package(liburing REQUIRED)
 add_definitions(-DWITH_LIBURING)

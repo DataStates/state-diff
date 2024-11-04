@@ -4,10 +4,11 @@ project(statediff VERSION 0.0.1 LANGUAGES CXX)
 ##### Global settings
 include(GNUInstallDirs)
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
-add_definitions(-O2 -g -Wall -D__BENCHMARK -D__ASSERT -D__INFO)
-set(CMAKE_CXX_STANDARD 23)
+add_definitions(-g -Wall -D__BENCHMARK -D__ASSERT -D__INFO)
+set(CMAKE_CXX_STANDARD 20)
 
 ##### Find dependencies
+find_package(Threads REQUIRED)
 find_package(Kokkos REQUIRED)
 find_package(OpenSSL REQUIRED)
 
@@ -19,7 +20,7 @@ add_subdirectory(src)
 
 ##### Testing
 # enable_testing()
-# add_subdirectory(test)
+add_subdirectory(test)
 
 ###### Export sets and Configs
 install(EXPORT statediffTargets

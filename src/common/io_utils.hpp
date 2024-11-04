@@ -1,3 +1,6 @@
+#ifndef __IO_UTILS_HPP
+#define __IO_UTILS_HPP
+
 #include <chrono>
 
 using Timer = std::chrono::high_resolution_clock;
@@ -74,4 +77,6 @@ template<typename T>
 void host_free(T* host_ptr) {
   free(host_ptr);
 }
+#endif
+
 #endif

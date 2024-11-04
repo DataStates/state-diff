@@ -10,6 +10,7 @@
 //#define STDOUT
 #include "argparse/argparse.hpp"
 #include "statediff.hpp"
+#include "io_reader.hpp"
 
 using namespace state_diff;
 
