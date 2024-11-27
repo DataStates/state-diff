@@ -5,9 +5,18 @@ BUILD_DIR="$HOME/research/anl/state-diff/build"
 MB=$((1024 * 1024))
 GB=$((1024 * $MB))
 data_size=$((2 * $GB))
-# data_size=$((16 * $MB))
-ratio=1
-max_ratio=4;
+host_cache=$((2 * $GB))
+dev_cache=$((2 * $GB))
+seg_size=$((128 * $MB))
+
+# data_size=$((1024))
+# seg_size=$((128))
+# host_cache=$((128 * $MB))
+# dev_cache=$((128 * $MB))
+
+batch_size=8
+max_batch_size=8
+# max_batch_size=$(( $dev_cache / $seg_size))
 outname="test"
 
 echo "==============================================================================="
@@ -19,14 +28,14 @@ $BUILD_DIR/src/tools/data_generator --data-len $data_size -n 1 -e 0 --num-change
 echo "==============================================================================="
 echo " Test data loader "
 echo "==============================================================================="
-while [ $ratio -le $max_ratio ]
+while [ $batch_size -le $max_batch_size ]
 do
-  batch_size=$(($data_size / $ratio))
-  echo "DataSize = $data_size is $ratio times BatchSize = $batch_size"
-  nsys profile --trace=cuda,nvtx -o profile_loader_${ratio} --force-overwrite true \
-    $BUILD_DIR/test/loader_test test0.dat $data_size $batch_size $1
+  echo "Batch Size = $batch_size"
+  echo "$BUILD_DIR/src/loader/test/single_loader_test $host_cache $dev_cache test0.dat $seg_size $batch_size"
+  nsys profile --trace=cuda,nvtx -o profile_loader_${batch_size} --force-overwrite true \
+    $BUILD_DIR/src/loader/test/single_loader_test $host_cache $dev_cache test0.dat $seg_size $batch_size
   /home/kta7930/research/anl/install/vmtouch/usr/local/bin/vmtouch -ve test0.dat
-  ratio=$(( $ratio * 2 ))
+  batch_size=$(( $batch_size * 2 ))
 done
 
 rm test0.dat

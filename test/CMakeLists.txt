@@ -31,17 +31,8 @@ set_target_properties(test_create_stream PROPERTIES
    CXX_EXTENSIONS OFF
 )
 
-add_executable(loader_test test_data_loader.cpp)
-target_include_directories(loader_test PUBLIC ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(loader_test PRIVATE Kokkos::kokkos)
-target_link_libraries(loader_test PRIVATE statediff-io)
-set_target_properties(loader_test PROPERTIES
-    CXX_STANDARD 17
-    CXX_STANDARD_REQUIRED YES
-    CXX_EXTENSIONS OFF
-)
+
 
 add_test(NAME test_serialize COMMAND test_serialize --kokkos-num-threads=2 --kokkos-map-device-id-by=mpi_rank)
 add_test(NAME test_compare COMMAND test_compare --kokkos-num-threads=2 --kokkos-map-device-id-by=mpi_rank)
 add_test(NAME test_create_stream COMMAND test_create_stream --kokkos-map-device-id-by=mpi_rank)
-add_test(NAME loader_test COMMAND loader_test)

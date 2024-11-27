@@ -1,4 +1,4 @@
-#include "io_uring_stream.hpp"
+#include "liburing_reader.hpp"
 #include "statediff.hpp"
 #include <cereal/archives/binary.hpp>
 #include <chrono>
@@ -78,10 +78,10 @@ main(int argc, char **argv) {
         // save checkpoint for offline tree cretion and comparison
         write_file(fname, (uint8_t *)run_data.data(), data_size);
         std::cout << "EXEC STATE:: File saved" << std::endl;
-        io_uring_stream_t<float> reader(fname, chunk_size / sizeof(float));
+        liburing_io_reader_t reader(fname);
 
         for (int buf_size : dev_buf_sizes) {
-            state_diff::client_t<float, io_uring_stream_t> client(
+            state_diff::client_t<float, liburing_io_reader_t> client(
                 1, reader, data_size, error_tolerance, dtype, chunk_size,
                 root_level, fuzzy_hash, buf_size);
             auto start_create = std::chrono::high_resolution_clock::now();

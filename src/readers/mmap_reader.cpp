@@ -53,7 +53,8 @@ int mmap_io_reader_t::enqueue_reads(const std::vector<segment_t>& segments) {
 int mmap_io_reader_t::wait(size_t id) {
     size_t pos = 0;
     for(pos=0; pos < reads.size(); pos++) {
-        if(reads[pos].id == id)
+        // if(reads[pos].id == id)
+        if(reads[pos].offset == id)
             break;
     }
     while(segment_status[pos] == false) {
@@ -79,7 +80,8 @@ size_t mmap_io_reader_t::wait_any() {
     do {
         for(size_t pos=0; pos<reads.size(); pos++) {
             if(segment_status[pos]) {
-                id = reads[pos].id;
+                // id = reads[pos].id;
+                id = reads[pos].offset;
             }
         }
     } while(id == std::numeric_limits<size_t>::max());

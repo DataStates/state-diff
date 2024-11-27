@@ -25,6 +25,9 @@ class mmap_io_reader_t : public base_io_reader_t {
     int wait(size_t id) override; // Wait for id to finish
     int wait_all() override; // wait for all pending reads to finish
     size_t wait_any() override; // wait for any available read to finish
+    size_t size() {
+        return fsize;
+    }
 };
 
 #endif // __MMAP_READER_HPP

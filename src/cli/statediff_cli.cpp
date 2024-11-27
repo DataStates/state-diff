@@ -6,11 +6,9 @@
 #include <string>
 #include <unistd.h>
 #include <vector>
-//#define DEBUG
-//#define STDOUT
 #include "argparse/argparse.hpp"
 #include "statediff.hpp"
-#include "io_reader.hpp"
+#include "liburing_reader.hpp"
 
 using namespace state_diff;
 
@@ -112,11 +110,6 @@ main(int argc, char **argv) {
         .default_value(1)
         .scan<'u', size_t>();
     
-    program.add_argument("--new-reader")
-        .help("Use new readers for I/O")
-        .default_value(false)
-        .implicit_value(true);
-
     try {
         program.parse_args(argc, argv);
     } catch (const std::runtime_error &err) {
@@ -140,7 +133,6 @@ main(int argc, char **argv) {
     size_t start_level = program.get<size_t>("start-level");
     size_t num_threads = program.get<size_t>("num-threads");
     bool approx_hash = program.get<bool>("approx-hash");
-    bool use_new_reader = program.get<bool>("new-reader");
     bool verbose = program.get<bool>("verbose");
 
     if(verbose) {
@@ -164,33 +156,25 @@ main(int argc, char **argv) {
     read_file(file0, data0, data_len);
     read_file(file1, data1, data_len);
 
-    size_t elem_per_buffer = buffer_len/sizeof(float);
-    size_t elem_per_chunk = chunk_size/sizeof(float);
-    liburing_reader_t<float> reader0(file0, elem_per_buffer, elem_per_chunk, 
-                                     false, false, num_threads);
-    liburing_reader_t<float> reader1(file1, elem_per_buffer, elem_per_chunk, 
-                                     false, false, num_threads);
+    liburing_io_reader_t reader0(file0);
+    liburing_io_reader_t reader1(file1);
 
     // Create client for file 0
-    client_t<float, liburing_reader_t> client0(1, reader0, data_len, error, 
+    client_t<float, liburing_io_reader_t> client0(1, reader0, data_len, error, 
                           dtype[0], chunk_size, start_level, approx_hash);
 
     // Create merkle tree
     client0.create((uint8_t *) data0.data());
 
     // Create client for file 1
-    client_t<float, liburing_reader_t> client1(2, reader1, data_len, error, 
+    client_t<float, liburing_io_reader_t> client1(2, reader1, data_len, error, 
                           dtype[0], chunk_size, start_level, approx_hash);
 
     // Create merkle tree
     client1.create((uint8_t *) data1.data());
 
     // Compare files
-    if(use_new_reader) {
-        client0.compare_with_new_reader(client1);
-    } else {
-        client0.compare_with(client1);
-    }
+    client0.compare_with(client1);
 
     if (client0.get_num_changes() == 0) {
         std::cout << "SUCCESS::Files " << file0 << " and " << file1

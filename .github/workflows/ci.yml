@@ -1,0 +1,47 @@
+name: Build and Install Statediff with Spack
+
+on:
+  push:
+    branches:
+      - online-sd
+  pull_request:
+    branches:
+      - online-sd
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout state-diff repository
+        uses: actions/checkout@v2
+
+      - name: Install Spack
+        run: |
+          git clone https://github.com/spack/spack.git
+          export SPACK_ROOT=$(pwd)/spack
+          . $SPACK_ROOT/share/spack/setup-env.sh
+
+      - name: Cache Spack install directory
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.spack
+            $(spack location -i statediff)
+          key: ${{ runner.os }}-spack-${{ hashFiles('**/spack-repo') }}
+          restore-keys: |
+            ${{ runner.os }}-spack-
+      
+      - name: Add Spack repository
+        run: |
+          spack repo add ./spack-repo
+
+      - name: Install statediff with Spack (parallel)
+        run: |
+          spack install statediff -j 4
+
+      - name: Run tests with 'make test'
+        run: |
+          cd $(spack location -i statediff)/build
+          make test
+

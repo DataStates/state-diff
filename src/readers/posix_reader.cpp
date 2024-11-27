@@ -47,7 +47,7 @@ int posix_io_reader_t::enqueue_reads(const std::vector<segment_t>& segments) {
     size_t per_thread = segments.size() / num_threads;
     if(per_thread*num_threads < segments.size())
         per_thread += 1;
-    for(size_t i=0; i<num_threads; i++) {
+    for(int i=0; i<num_threads; i++) {
         size_t beg = i*per_thread;
         size_t end = (i+1)*per_thread;
         if(end > segments.size())
@@ -61,7 +61,8 @@ int posix_io_reader_t::enqueue_reads(const std::vector<segment_t>& segments) {
 int posix_io_reader_t::wait(size_t id) {
     size_t pos = 0;
     for(pos=0; pos < reads.size(); pos++) {
-        if(reads[pos].id == id)
+        // if(reads[pos].id == id)
+        if(reads[pos].offset == id)
             break;
     }
     while(segment_status[pos] == false) {
@@ -83,10 +84,12 @@ int posix_io_reader_t::wait_all() {
 }
 
 size_t posix_io_reader_t::wait_any() {
-    size_t id = -1;
+    // size_t id = -1;
+    size_t id = 0;
     for(size_t pos=0; pos<reads.size(); pos++) {
         if(segment_status[pos]) {
-            id = reads[pos].id;
+            // id = reads[pos].id;
+            id = reads[pos].offset;
             segment_status[pos] = false;
         }
     }

@@ -1,4 +1,4 @@
-#include "io_uring_stream.hpp"
+#include "liburing_reader.hpp"
 #include "statediff.hpp"
 #include <cereal/archives/binary.hpp>
 #include <chrono>
@@ -77,8 +77,8 @@ main(int argc, char **argv) {
 
         // read data, build tree and save
         // liburing_io_reader_t reader(fname);
-        io_uring_stream_t<float> reader(fname, chunk_size / sizeof(float));
-        state_diff::client_t<float, io_uring_stream_t> client(
+        liburing_io_reader_t reader(fname);
+        state_diff::client_t<float, liburing_io_reader_t> client(
             1, reader, data_size, error_tolerance, dtype, chunk_size,
             root_level, fuzzy_hash);
         client.create(run_data);
@@ -96,7 +96,7 @@ main(int argc, char **argv) {
         std::cout << "EXEC STATE:: Tree created and saved" << std::endl;
 
         // load metadata file, deserialize tree
-        state_diff::client_t<float, io_uring_stream_t> new_client(1, reader);
+        state_diff::client_t<float, liburing_io_reader_t> new_client(1, reader);
         auto start_deserialize = std::chrono::high_resolution_clock::now();
         {
             std::ifstream ifs(metadata_fn, std::ios::binary);

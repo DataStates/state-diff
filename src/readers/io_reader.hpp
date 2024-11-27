@@ -17,13 +17,7 @@
 #include <type_traits>
 #include <unistd.h>
 #include <vector>
-
-struct segment_t {
-    size_t id;
-    uint8_t* buffer;
-    size_t offset, size;
-    int fd;
-};
+#include "common/segment.hpp"
 
 class base_io_reader_t {
   public:
@@ -34,6 +28,7 @@ class base_io_reader_t {
     virtual int wait(size_t id) = 0; // Wait for id to finish
     virtual int wait_all() = 0; // wait for all pending reads to finish
     virtual size_t wait_any() = 0; // wait for any available read to finish
+    virtual size_t size() = 0; // Get the size of the corresponding file
 };
 
 struct read_offsets_t {

@@ -163,7 +163,8 @@ uint32_t liburing_io_reader_t::request_submission() {
                     return -1;
                 }
                 // Save ID
-                io_uring_sqe_set_data64(sqe, seg.id);
+                // io_uring_sqe_set_data64(sqe, seg.id);
+                io_uring_sqe_set_data64(sqe, seg.offset);
                 io_uring_prep_read(sqe, seg.fd, seg.buffer, seg.size, seg.offset);
                 // Remove segment from queue
                 submissions.pop();
@@ -185,7 +186,7 @@ uint32_t liburing_io_reader_t::request_submission() {
 }
 
 int liburing_io_reader_t::io_thread() {
-    int ret;
+    // int ret;
     uint32_t avail_cqe=MAX_RING_SIZE;
     while(active) {
         // Pause until one of three scenarios

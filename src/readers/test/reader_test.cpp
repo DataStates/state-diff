@@ -92,7 +92,7 @@ int main(int argc, char** argv) {
       expected[i*chunk_size + j] = data[offsets[i] * chunk_size + j];
     }
     segment_t seg;
-    seg.id = i;
+    // seg.id = i;
     seg.buffer = (uint8_t*)(buffer.data()+chunk_size*i);
     seg.offset = offsets[i]*chunk_size*sizeof(float);
     seg.size = chunk_size*sizeof(float);
