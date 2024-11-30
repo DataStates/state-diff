@@ -14,8 +14,8 @@ seg_size=$((128 * $MB))
 # host_cache=$((128 * $MB))
 # dev_cache=$((128 * $MB))
 
-batch_size=8
-max_batch_size=8
+batch_size=4
+max_batch_size=4
 # max_batch_size=$(( $dev_cache / $seg_size))
 outname="test"
 
@@ -38,4 +38,5 @@ do
   batch_size=$(( $batch_size * 2 ))
 done
 
+$BUILD_DIR/src/loader/test/benchmark test0.dat
 rm test0.dat

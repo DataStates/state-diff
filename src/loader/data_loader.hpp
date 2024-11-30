@@ -46,7 +46,6 @@ class data_loader_t {
                   size_t seg_size, size_t batch_size, TransferType trans_type,
                   std::optional<std::vector<size_t>> offsets = std::nullopt);
     void next(void *ptr);
-    uint8_t *next(TransferType trans_type);
-    void wait();
+    std::pair<uint8_t *, size_t> next(TransferType trans_type);
 };
 #endif   // __DATA_LOADER_HPP

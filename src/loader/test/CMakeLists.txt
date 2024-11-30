@@ -7,3 +7,10 @@ set_target_properties(single_loader_test PROPERTIES
     CXX_STANDARD_REQUIRED YES
     CXX_EXTENSIONS OFF
 )
+
+add_executable(benchmark benchmark.cpp)
+set_target_properties(benchmark PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS OFF
+)

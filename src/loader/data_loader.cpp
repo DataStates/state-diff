@@ -3,10 +3,11 @@
 data_loader_t::data_loader_t(size_t host_cache_size, size_t device_cache_size)
     : host_cache_size_(host_cache_size), device_cache_size_(device_cache_size),
       data_ptr_(nullptr) {
-
+    TIMER_START(init_loader);
     host_cache_ = new host_cache_t(gpu_id, host_cache_size_);
     device_cache_ = new device_cache_t(gpu_id, device_cache_size_);
     INFO("Loader - host and device caches initialized");
+    TIMER_STOP(init_loader, "Initialized data loader");
 }
 
 data_loader_t::~data_loader_t() {
@@ -86,7 +87,7 @@ data_loader_t::file_load(FileReader &io_reader, size_t start_foffset,
                          TransferType trans_type,
                          std::optional<std::vector<size_t>> offsets,
                          bool merge_seg) {
-
+    TIMER_START(file_load);
     assert(trans_type == TransferType::FileToHost ||
            trans_type == TransferType::FileToDevice &&
                "Invalid TransferType: Must be FileToHost or FileToDevice");
@@ -125,8 +126,8 @@ data_loader_t::file_load(FileReader &io_reader, size_t start_foffset,
     } else {
         INFO("Loader - Creating segments without given file offsets");
         size_t data_size = io_reader.size() - start_foffset;
-        batch_size_ = 1;
-        seg_size *= max_batch_size(seg_size);
+        // batch_size_ = 1;
+        // seg_size *= max_batch_size(seg_size);
         size_t total_segs = data_size / seg_size;
         total_segs =
             (total_segs * seg_size < data_size) ? (total_segs + 1) : total_segs;
@@ -145,10 +146,13 @@ data_loader_t::file_load(FileReader &io_reader, size_t start_foffset,
             host_cache_->stage_in(seg_batch);
         }
     }
+    TIMER_STOP(file_load, "Created segments and staged for file read");
 }
 
 void
 data_loader_t::next(void *ptr) {
+    // NB: Ensure that each segment in batch is of size seg_size
+    TIMER_START(next);
     cudaPointerAttributes attributes;
     cudaError_t err = cudaPointerGetAttributes(&attributes, ptr);
     if (err == cudaSuccess && attributes.type == cudaMemoryTypeDevice) {
@@ -158,12 +162,14 @@ data_loader_t::next(void *ptr) {
         batch_t *front_batch = host_cache_->get_completed();
         host_cache_->coalesce_and_copy(front_batch, ptr);
     }
+    TIMER_STOP(next, "Retrieved pointer to next batch of data for computation");
 }
 
 // This implementation of next works because the memory for the segments in a
 // batch point are allocated contiguously from the data_store
-uint8_t *
+std::pair<uint8_t *, size_t>
 data_loader_t::next(TransferType trans_type) {
+    TIMER_START(next);
     assert(trans_type == TransferType::HostToDevice ||
            trans_type == TransferType::HostPinned ||
            trans_type == TransferType::FileToHost ||
@@ -176,7 +182,9 @@ data_loader_t::next(TransferType trans_type) {
     } else {
         front_batch = host_cache_->get_completed();
     }
-    return front_batch->data[0].buffer;
+    TIMER_STOP(next, "Retrieved pointer to next batch of data for computation");
+    size_t ready_size = front_batch->data->size*front_batch->batch_size;
+    return {front_batch->data[0].buffer, ready_size};
 }
 
 void
@@ -190,6 +198,3 @@ data_loader_t::mem_load(std::vector<uint8_t> &data, size_t start_foffset,
                "Invalid TransferType: Must be HostToDevice or HostPinned");
     data_ptr_ = data.data();
 }
-
-void
-data_loader_t::wait() {}

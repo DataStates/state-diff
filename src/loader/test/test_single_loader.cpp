@@ -30,11 +30,11 @@ mult_by_two_h(uint32_t *data, size_t n_ele_batch) {
 
 void
 process_data(uint32_t *data_ptr, uint32_t *data_h_ptr, size_t n_ele_batch,
-             size_t iter) {
+             size_t proc_ele) {
     cudaPointerAttributes attributes;
     cudaError_t err = cudaPointerGetAttributes(&attributes, data_ptr);
     size_t cpy_size = n_ele_batch * sizeof(uint32_t);
-    uint32_t *dst_ptr = data_h_ptr + iter * n_ele_batch;
+    uint32_t *dst_ptr = data_h_ptr + proc_ele;
     if (err == cudaSuccess && attributes.type == cudaMemoryTypeDevice) {
         int tpb = THREAD_PER_BLOCK;
         int num_blocks = (n_ele_batch + tpb - 1) / tpb;
@@ -100,22 +100,18 @@ main(int argc, char **argv) {
     // Create reader
     liburing_io_reader_t uring_reader(filename);
     size_t data_size = uring_reader.size();   // size in bytes
-    size_t num_batch = data_size / (batch_size * seg_size);
-    num_batch = (num_batch * (batch_size * seg_size) < data_size)
-                    ? num_batch + 1
-                    : num_batch;
     size_t num_ele_total = data_size / sizeof(uint32_t);
-    size_t num_ele_batch = num_ele_total / num_batch;
     std::vector<uint32_t> data_h(num_ele_total);
     std::vector<uint32_t> data_veri_h(num_ele_total);
+    uint32_t *data_h_ptr = data_h.data();
+    cudaHostRegister(data_h_ptr, data_size, cudaHostRegisterDefault);
 
     printf("Client - Configuration: Filename = %s; Data Size = %zu MB; Host "
            "Cache = %zu MB; "
-           "Device Cache = %zu MB;\n\tNbatch = %zu; Batch Size = %zu segs; Seg "
-           "Size = %zu MB;\n\tNEleTot = %zu; NEleBatch = %zu\n",
+           "Device Cache = %zu MB;\n\tBatch Size = %zu segs; Seg "
+           "Size = %zu MB;\n\tNEleTot = %zu\n",
            filename.c_str(), data_size / MB, host_cache_size / MB,
-           dev_cache_size / MB, num_batch, batch_size, seg_size / MB,
-           num_ele_total, num_ele_batch);
+           dev_cache_size / MB, batch_size, seg_size / MB, num_ele_total);
 
     // create loader
     data_loader_t data_loader(host_cache_size, dev_cache_size);
@@ -127,31 +123,30 @@ main(int argc, char **argv) {
     data_loader.file_load(uring_reader, start_foffset, seg_size, batch_size,
                           trans_type);
     auto nd_init = std::chrono::high_resolution_clock::now();
-    uint32_t *data_ptr = nullptr;
-    if (trans_type == TransferType::FileToHost) {
-        data_ptr = new uint32_t[num_ele_batch];
-    } else if (trans_type == TransferType::FileToDevice) {
-        cudaMalloc((void **)&data_ptr, num_ele_batch * sizeof(uint32_t));
-    } else {
-        std::cerr << "Client - Unsupported transfer type" << std::endl;
-    }
 
     // start computation
     double load_time = 0;
     double proc_time = 0;
-    for (size_t i = 0; i < num_batch; i++) {
-        printf("Client - Getting batch %zu for computation\n", i + 1);
+    size_t proc_elements = 0;
+    size_t i = 0;
+
+    while (proc_elements < num_ele_total) {
+        printf("Client - Processing batch %zu\n", ++i);
         auto st_ld = std::chrono::high_resolution_clock::now();
-        data_loader.next(data_ptr);
+        auto next_batch = data_loader.next(trans_type);
+        uint32_t *data_ptr = (uint32_t *)next_batch.first;
+        size_t ready_size = next_batch.second;
+        size_t num_ele_batch = ready_size / sizeof(uint32_t);
         auto nd_ld = std::chrono::high_resolution_clock::now();
         load_time +=
             std::chrono::duration_cast<Duration>(nd_ld - st_ld).count();
-        printf("Client - Processing batch %zu\n", i + 1);
+
         auto st_cp = std::chrono::high_resolution_clock::now();
-        process_data(data_ptr, data_h.data(), num_ele_batch, i);
+        process_data(data_ptr, data_h_ptr, num_ele_batch, proc_elements);
         auto nd_cp = std::chrono::high_resolution_clock::now();
         proc_time +=
             std::chrono::duration_cast<Duration>(nd_cp - st_cp).count();
+        proc_elements += num_ele_batch;
     }
     printf("Client - Processed all batches\n");
     auto end = std::chrono::high_resolution_clock::now();
@@ -167,19 +162,14 @@ main(int argc, char **argv) {
     validate(data_veri_h.data(), data_h.data(), num_ele_total);
 
     std::cout << "Stats: \nInit time = "
-              << std::chrono::duration_cast<Duration>(nd_init - st_init).count() << " s"
+              << std::chrono::duration_cast<Duration>(nd_init - st_init).count()
+              << " s"
               << "\nLoad throughput = "
               << (data_size / (1024 * 1024 * 1024)) / load_time << " GB/s"
               << "\nCompute throughput = "
               << (data_size / (1024 * 1024 * 1024)) / proc_time << " GB/s"
               << " \nTotal Exec time = "
-              << std::chrono::duration_cast<Duration>(end - start).count() << " s"
-              << std::endl;
-
-    if (trans_type == TransferType::FileToHost) {
-        delete[] data_ptr;
-    } else if (trans_type == TransferType::FileToDevice) {
-        cudaFree(data_ptr);
-    }
+              << std::chrono::duration_cast<Duration>(end - start).count()
+              << " s" << std::endl;
     return 0;
 }

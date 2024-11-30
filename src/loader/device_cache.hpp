@@ -3,6 +3,7 @@
 
 #include "base_cache.hpp"
 #include "common/io_utils.hpp"
+#include "cuda_timer.hpp"
 #include <cuda_runtime.h>
 
 class device_cache_t : public base_cache_t {
