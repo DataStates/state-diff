@@ -1,10 +1,10 @@
 #ifndef __SEGMENT_BATCH_HPP
 #define __SEGMENT_BATCH_HPP
 
+#include "common/debug.hpp"
 #include <cassert>
 #include <iostream>
 #include <vector>
-#include "common/debug.hpp"
 
 struct segment_t {
     size_t offset;     // Start offset in file
@@ -46,6 +46,7 @@ struct batch_t {
         assert(count < batch_size);
         data[count++] = item;
     }
+    void inc_last(size_t inc_size) { data[count - 1].size += inc_size; }
     std::vector<segment_t> to_vec() {
         return std::vector<segment_t>(data, data + count);
     }
