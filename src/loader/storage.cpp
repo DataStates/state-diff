@@ -74,6 +74,7 @@ storage_t::deallocate(batch_t *seg_batch) {
         if (head_ == tail_)
             tail_ = 0;
         stored_segs_.pop_front();
+        DBG("Store - Deallocated resources for batch item " << i << "/" << seg_batch->batch_size);
     }
     lck.unlock();
     cv_.notify_one();

@@ -28,9 +28,10 @@ class data_loader_t {
     size_t host_cache_size_;
     size_t device_cache_size_;
     int gpu_id = 0;
+    int instance_count = 0;
 
     size_t max_batch_size(size_t seg_size);
-    void merge_create_seg(std::vector<size_t> &offsets, size_t total_segs,
+    void merge_create_seg(int id, std::vector<size_t> &offsets, size_t total_segs,
                           size_t batch_size_, size_t seg_size);
 
   public:
@@ -38,14 +39,14 @@ class data_loader_t {
 
     ~data_loader_t();
 
-    void file_load(FileReader &io_reader, size_t start_foffset, size_t seg_size,
+    int file_load(FileReader &io_reader, size_t start_foffset, size_t seg_size,
                    size_t batch_size, TransferType trans_type,
                    std::optional<std::vector<size_t>> offsets = std::nullopt,
                    bool merge_seg = false);
-    void mem_load(std::vector<uint8_t> &data, size_t start_foffset,
+    void mem_load(int loader_id, std::vector<uint8_t> &data, size_t start_foffset,
                   size_t seg_size, size_t batch_size, TransferType trans_type,
                   std::optional<std::vector<size_t>> offsets = std::nullopt);
-    void next(void *ptr);
-    std::pair<uint8_t *, size_t> next(TransferType trans_type);
+    void next(int loader_id, void *ptr);
+    std::pair<uint8_t *, size_t> next(int loader_id, TransferType trans_type);
 };
 #endif   // __DATA_LOADER_HPP

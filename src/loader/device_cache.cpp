@@ -7,70 +7,73 @@ device_cache_t::device_cache_t(int gpu_id, size_t tot_cache_size)
     INFO("Device - Creating a cache of size " << tot_cache_size / (1024 * 1024)
                                               << " MB");
     data_store_ = new storage_t(start_ptr_, tot_cache_size_);
-    fetch_thread_ = std::thread([&] { fetch_(); });   // H2D thread
-    fetch_thread_.detach();
     gpuErrchk(cudaStreamCreateWithFlags(&h2d_stream_, cudaStreamNonBlocking));
-    INFO("Device - Started fetch thread on device cache");
 }
 
 device_cache_t::~device_cache_t() {
     wait_for_completion();
-    fetch_q_.set_inactive();
-    ready_q_.set_inactive();
-    if (fetch_thread_.joinable()) {
-        fetch_thread_.join();
-    }
     is_active_ = false;
+    for (auto& fqueue : fetch_q_)
+        fqueue.second.set_inactive();
+    
+    for (auto& rqueue : ready_q_)
+        rqueue.second.set_inactive();
+
     gpuErrchk(cudaFree(start_ptr_));
     gpuErrchk(cudaStreamDestroy(h2d_stream_));
     DBG("Device - Cache destroyed");
 };
 
 void
-device_cache_t::stage_in(batch_t *seg_batch) {
-    TIMER_START(dev_stagein);
-    fetch_q_.push(seg_batch);
-    DBG("Device - batch staged in");
-    TIMER_STOP(dev_stagein, "Device staged batch in for h2d copy");
+device_cache_t::activate(int id) {
+    fetch_thread_[id] = std::thread([this, id] { fetch_(id); });   // H2D thread
+    fetch_thread_[id].detach();
+    INFO("Device (" << id << ")- Started fetch thread on device cache");
 }
 
 void
-device_cache_t::stage_out(batch_t *seg_batch) {
-    TIMER_START(dev_stageout);
-    ready_q_.push(seg_batch);
-    DBG("Device - batch staged out");
-    TIMER_STOP(dev_stageout, "Staged batch for d2h copy");
+device_cache_t::stage_in(int id, batch_t *seg_batch) {
+    fetch_q_[id].push(seg_batch);
+    INFO("Device (" << id << ")- Staged batch in for h2d copy");
 }
 
 void
-device_cache_t::set_next_tier(base_cache_t *cache_tier) {
-    DBG("Device - Setting next tier for outgoing transfers");
-    next_cache_tier_ = cache_tier;
-    flush_thread_ = std::thread([&] { flush_(); });
-    flush_thread_.detach();
-    INFO("Host - Started flush threads");
+device_cache_t::stage_out(int id, batch_t *seg_batch) {
+    ready_q_[id].push(seg_batch);
+    INFO("Device (" << id << ")- Staged batch for d2h copy");
 }
 
 void
-device_cache_t::fetch_() {
+device_cache_t::set_next_tier(int id, base_cache_t *cache_tier) {
+    DBG("Device (" << id << ")- Setting next tier for outgoing transfers");
+    if(next_cache_tier_ == nullptr)
+        next_cache_tier_ = cache_tier;
+    next_cache_tier_->activate(id);
+    flush_thread_[id] = std::thread([&, id] { flush_(id); });
+    flush_thread_[id].detach();
+    INFO("Device (" << id << ")- Started flush threads");
+}
+
+void
+device_cache_t::fetch_(int id) {
     while (is_active_) {
         // wait for item
-        DBG("Device - Waiting for items to be pushed onto the fetch_q");
+        DBG("Device (" << id << ")- Waiting for items to be pushed onto the fetch_q");
         TIMER_START(dev_waitfetch);
-        bool res = fetch_q_.wait_any();
-        TIMER_STOP(dev_waitfetch, "waited any batch for device fetch");
+        bool res = fetch_q_[id].wait_any();
+        TIMER_STOP(dev_waitfetch, "Device (" << id << ")- Waited any batch for device fetch");
         if (!res)
             FATAL("Undefined behavior in fetch metadata queue of device cache");
         // get item and transfer item to destination
         CudaTimer transfer_timer("h2d_cpy");
         TIMER_START(dev_fetch);
-        size_t curr_capacity = fetch_q_.size();
+        size_t curr_capacity = fetch_q_[id].size();
         for (size_t i = 0; i < curr_capacity; i++) {
-            batch_t *host_item = fetch_q_.front();
+            batch_t *host_item = fetch_q_[id].front();
             batch_t *dev_item = new batch_t(host_item);
-            DBG("Device - Allocating memory to front batch");
+            DBG("Device (" << id << ")- Allocating memory to front batch");
             data_store_->allocate(dev_item);
-            DBG("Device - H2D transfer of batch");
+            DBG("Device (" << id << ")- H2D transfer of batch");
             transfer_timer.start(h2d_stream_);
             for (size_t i = 0; i < dev_item->batch_size; i++) {
                 gpuErrchk(cudaMemcpyAsync(dev_item->data[i].buffer,
@@ -80,57 +83,62 @@ device_cache_t::fetch_() {
             }
             gpuErrchk(cudaStreamSynchronize(h2d_stream_));
             transfer_timer.stop(h2d_stream_);
-            DBG("Device - Adding item to ready queue");
-            stage_out(dev_item); // not needed at this stage
-            fetch_q_.pop();
+            DBG("Device (" << id << ")- Adding item to ready queue");
+            stage_out(id, dev_item); // not needed at this stage
+            fetch_q_[id].pop();
         }
         transfer_timer.finalize();
         float h2d_time = transfer_timer.getTotalTime();
         TIMER_STOP(dev_fetch,
-                   "fetched "
+                   "(" << id << ")- Fetched "
                        << curr_capacity
                        << " batches to device with total h2d_cpy time of "
                        << h2d_time << " ms");
     }
-    INFO("Device - Fetch thread exiting\n");
+    INFO("Device (" << id << ")- Fetch thread exiting\n");
 }
 
 void
-device_cache_t::flush_() {
+device_cache_t::flush_(int id) {
     while (is_active_) {
+        DBG("Device (" << id << ")- Waiting for item to be loaded on ready queue");
         TIMER_START(dev_waitflush);
-        bool res = ready_q_.wait_any();
-        TIMER_STOP(dev_waitflush, "waited any batch for device flush");
+        bool res = ready_q_[id].wait_any();
+        TIMER_STOP(dev_waitflush, "(" << id << ")- Waited any batch for device flush");
         if (!res)
             FATAL("Undefined behavior in flush metadata queue of device cache");
-        DBG("Device - Waiting for item to be loaded on ready queue");
         TIMER_START(dev_flush);
-        size_t curr_capacity = ready_q_.size();
+        size_t curr_capacity = ready_q_[id].size();
         for (size_t i = 0; i < curr_capacity; i++) {
-            batch_t *item = ready_q_.front();
-            next_cache_tier_->stage_in(item);
-            ready_q_.pop();
+            batch_t *item = ready_q_[id].front();
+            next_cache_tier_->stage_in(id, item);
             data_store_->deallocate(item);
+            ready_q_[id].pop();
         }
-        TIMER_STOP(dev_flush, "flushed and deallocated "
+        TIMER_STOP(dev_flush, "(" << id << ")- Flushed and deallocated "
                                   << curr_capacity
                                   << " batches from device cache");
     }
-    INFO("Device - Flush thread exiting");
+    INFO("Device (" << id << ")- Flush thread exiting");
 }
 
 bool
 device_cache_t::wait_for_completion() {
     INFO("Device - Waiting for all jobs on fetch_q to be completed");
-    return fetch_q_.wait_for_completion();
+    for (auto& fqueue : fetch_q_)
+        fqueue.second.wait_for_completion();
+    
+    for (auto& rqueue : ready_q_)
+        rqueue.second.wait_for_completion();
+    return true;
 }
 
 batch_t *
-device_cache_t::get_completed() {
-    DBG("Device - Getting completed jobs from ready_q");
-    ready_q_.wait_any();
-    batch_t *front_batch = ready_q_.front();
-    ready_q_.pop();
+device_cache_t::get_completed(int id) {
+    DBG("Device (" << id << ")- Getting completed jobs from ready_q");
+    ready_q_[id].wait_any();
+    batch_t *front_batch = ready_q_[id].front();
+    ready_q_[id].pop();
     return front_batch;
 }
 
