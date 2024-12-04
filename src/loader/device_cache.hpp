@@ -21,6 +21,7 @@ class device_cache_t : public base_cache_t {
     void set_next_tier(int id, base_cache_t *cache_tier);
     bool wait_for_completion();
     batch_t *get_completed(int id);
+    bool release(int id);
     void coalesce_and_copy(batch_t *consumed_item, void *ptr);
 };
 #endif   // __DEVICE_CACHE_HPP

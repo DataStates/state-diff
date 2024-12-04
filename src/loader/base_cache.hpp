@@ -38,6 +38,7 @@ class base_cache_t {
     virtual void set_next_tier(int id, base_cache_t *cache_tier) = 0;
     virtual bool wait_for_completion() = 0;
     virtual batch_t* get_completed(int id) = 0;
+    virtual bool release(int id) = 0;
     virtual void coalesce_and_copy(batch_t* consumed_item, void *ptr) = 0;
 };
 #endif   //__BASE_CACHE_HPP

@@ -80,7 +80,8 @@ data_loader_t::merge_create_seg(int id, std::vector<size_t> &offsets,
     }
 }
 
-int data_loader_t::file_load(FileReader &io_reader, size_t start_foffset,
+int
+data_loader_t::file_load(FileReader &io_reader, size_t start_foffset,
                          size_t seg_size, size_t batch_size,
                          TransferType trans_type,
                          std::optional<std::vector<size_t>> offsets,
@@ -90,9 +91,11 @@ int data_loader_t::file_load(FileReader &io_reader, size_t start_foffset,
            trans_type == TransferType::FileToDevice &&
                "Invalid TransferType: Must be FileToHost or FileToDevice");
 
-    host_cache_->set_reader(instance_count, &io_reader);
+    int loader_id = instance_count++;
+    ready_count[loader_id] = 0;
+    host_cache_->set_reader(loader_id, &io_reader);
     if (trans_type == TransferType::FileToDevice) {
-        host_cache_->set_next_tier(instance_count, device_cache_);
+        host_cache_->set_next_tier(loader_id, device_cache_);
     }
 
     size_t batch_size_ =
@@ -100,29 +103,32 @@ int data_loader_t::file_load(FileReader &io_reader, size_t start_foffset,
 
     // create segments
     if (offsets.has_value()) {
-        INFO("Loader - Creating segments given file offsets");
+        INFO("Loader (" << loader_id
+                        << ")- Creating segments given file offsets");
         size_t total_segs = offsets->size();
         if (merge_seg) {
-            merge_create_seg(instance_count, *offsets, total_segs, batch_size_, seg_size);
+            merge_create_seg(loader_id, *offsets, total_segs, batch_size_,
+                             seg_size);
         } else {
             size_t n_iter = total_segs / batch_size_;
             n_iter =
                 (n_iter * batch_size_ < total_segs) ? (n_iter + 1) : n_iter;
             for (size_t i = 0; i < n_iter; i++) {
                 batch_t *seg_batch = new batch_t(batch_size_);
-                DBG("Loader - Staging batch " << i + 1 << " of size "
-                                              << batch_size_
-                                              << " for read from file");
+                DBG("Loader (" << loader_id << ")- Staging batch " << i + 1
+                               << " of size " << batch_size_
+                               << " for read from file");
                 for (size_t j = 0; j < batch_size_; j++) {
                     size_t index = i * batch_size_ + j;
                     segment_t seg((*offsets)[index], seg_size);
                     seg_batch->push(seg);
                 }
-                host_cache_->stage_in(instance_count, seg_batch);
+                host_cache_->stage_in(loader_id, seg_batch);
             }
         }
     } else {
-        INFO("Loader - Creating segments without given file offsets");
+        INFO("Loader (" << loader_id
+                        << ")- Creating segments without given file offsets");
         size_t data_size = io_reader.size() - start_foffset;
         // batch_size_ = 1;
         // seg_size *= max_batch_size(seg_size);
@@ -134,40 +140,60 @@ int data_loader_t::file_load(FileReader &io_reader, size_t start_foffset,
 
         for (size_t i = 0; i < n_iter; i++) {
             batch_t *seg_batch = new batch_t(batch_size_);
-            DBG("Loader - Staging batch " << i + 1 << " of size " << batch_size_
-                                         << " for read from file");
+            DBG("Loader (" << loader_id << ")- Staging batch " << i + 1
+                           << " of size " << batch_size_
+                           << " for read from file");
             for (size_t j = 0; j < batch_size_; j++) {
                 size_t index = i * batch_size_ + j;
                 segment_t seg(index * seg_size, seg_size);
                 seg_batch->push(seg);
             }
-            host_cache_->stage_in(instance_count, seg_batch);
+            host_cache_->stage_in(loader_id, seg_batch);
         }
     }
     TIMER_STOP(file_load, "Created segments and staged for file read");
-    return instance_count++;
+    return loader_id;
 }
 
-void
+size_t
 data_loader_t::next(int id, void *ptr) {
     // NB: Ensure that each segment in batch is of size seg_size
     TIMER_START(next);
     cudaPointerAttributes attributes;
     cudaError_t err = cudaPointerGetAttributes(&attributes, ptr);
+    batch_t *front_batch;
     if (err == cudaSuccess && attributes.type == cudaMemoryTypeDevice) {
-        batch_t *front_batch = device_cache_->get_completed(id);
+        front_batch = device_cache_->get_completed(id);
         device_cache_->coalesce_and_copy(front_batch, ptr);
+        device_cache_->release(id);
     } else {
-        batch_t *front_batch = host_cache_->get_completed(id);
+        front_batch = host_cache_->get_completed(id);
         host_cache_->coalesce_and_copy(front_batch, ptr);
+        host_cache_->release(id);
     }
     TIMER_STOP(next, "Retrieved pointer to next batch of data for computation");
+    size_t ready_size = front_batch->data->size * front_batch->batch_size;
+    return ready_size;
 }
 
 // This implementation of next works because the memory for the segments in a
-// batch point are allocated contiguously from the data_store
+// batch point are allocated contiguously from the data_store. However, once the
+// pointer to the ready batch is returned to the user, we can load new data
+// inplace because the loader does not know when the kernel completed
+// computation. To address that issue, we implement an approach that keeps track
+// of the number of batches returned to deallocate the previous batch before
+// returning a pointer to the next batch.
+
+batch_t *
+get_next(int id, base_cache_t *cache_tier, bool should_release) {
+    if (should_release)
+        cache_tier->release(id);
+    return cache_tier->get_completed(id);
+}
+
 std::pair<uint8_t *, size_t>
 data_loader_t::next(int id, TransferType trans_type) {
+    size_t call_count = ready_count[id]++;
     TIMER_START(next);
     assert(trans_type == TransferType::HostToDevice ||
            trans_type == TransferType::HostPinned ||
@@ -177,19 +203,19 @@ data_loader_t::next(int id, TransferType trans_type) {
     batch_t *front_batch;
     if (trans_type == TransferType::HostToDevice ||
         trans_type == TransferType::FileToDevice) {
-        front_batch = device_cache_->get_completed(id);
+        front_batch = get_next(id, device_cache_, call_count > 0);
     } else {
-        front_batch = host_cache_->get_completed(id);
+        front_batch = get_next(id, host_cache_, call_count > 0);
     }
     TIMER_STOP(next, "Retrieved pointer to next batch of data for computation");
-    size_t ready_size = front_batch->data->size*front_batch->batch_size;
+    size_t ready_size = front_batch->data->size * front_batch->batch_size;
     return {front_batch->data[0].buffer, ready_size};
 }
 
 void
-data_loader_t::mem_load(int loader_id, std::vector<uint8_t> &data, size_t start_foffset,
-                        size_t seg_size, size_t batch_size,
-                        TransferType trans_type,
+data_loader_t::mem_load(int loader_id, std::vector<uint8_t> &data,
+                        size_t start_foffset, size_t seg_size,
+                        size_t batch_size, TransferType trans_type,
                         std::optional<std::vector<size_t>> offsets) {
 
     assert(trans_type == TransferType::HostToDevice ||

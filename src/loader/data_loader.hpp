@@ -28,7 +28,8 @@ class data_loader_t {
     size_t host_cache_size_;
     size_t device_cache_size_;
     int gpu_id = 0;
-    int instance_count = 0;
+    std::atomic<int> instance_count{0};
+    std::unordered_map<int, size_t> ready_count;
 
     size_t max_batch_size(size_t seg_size);
     void merge_create_seg(int id, std::vector<size_t> &offsets, size_t total_segs,
@@ -46,7 +47,7 @@ class data_loader_t {
     void mem_load(int loader_id, std::vector<uint8_t> &data, size_t start_foffset,
                   size_t seg_size, size_t batch_size, TransferType trans_type,
                   std::optional<std::vector<size_t>> offsets = std::nullopt);
-    void next(int loader_id, void *ptr);
+    size_t next(int loader_id, void *ptr);
     std::pair<uint8_t *, size_t> next(int loader_id, TransferType trans_type);
 };
 #endif   // __DATA_LOADER_HPP

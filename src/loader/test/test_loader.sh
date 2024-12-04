@@ -4,7 +4,7 @@ BUILD_DIR="$HOME/research/anl/state-diff/build"
 
 MB=$((1024 * 1024))
 GB=$((1024 * $MB))
-data_size=$((1 * $GB))
+data_size=$((2 * $GB))
 host_cache=$((2 * $GB))
 dev_cache=$((2 * $GB))
 seg_size=$((128 * $MB))
@@ -15,7 +15,7 @@ seg_size=$((128 * $MB))
 # dev_cache=$((128 * $MB))
 
 batch_size=4
-max_batch_size=8
+max_batch_size=4
 # max_batch_size=$(( $dev_cache / $seg_size))
 outname="test"
 
