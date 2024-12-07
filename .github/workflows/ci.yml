@@ -3,10 +3,10 @@ name: Build and Install Statediff with Spack
 on:
   push:
     branches:
-      - online-sd
+      - rev-cereal
   pull_request:
     branches:
-      - online-sd
+      - rev-cereal
 
 jobs:
   build:
