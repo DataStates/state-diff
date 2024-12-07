@@ -52,7 +52,7 @@ main(int argc, char **argv) {
     int root_level = 1;
     std::string fname = "checkpoint.dat";
     std::string metadata_fn = "checkpoint.tree";
-    int MB = 1024 * 1024;
+    // int MB = 1024 * 1024;
     // int dev_buf_sizes[] = {16 * MB, 64 * MB, 256 * MB, 1024 * MB};
     int dev_buf_sizes[] = {256 * MB};
 

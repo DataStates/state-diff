@@ -29,7 +29,7 @@ if(NOT EXISTS "${CEREAL_INCLUDE_DIR}/cereal/cereal.hpp")
 endif()
 
 # Link the executable to the necessary libraries.
-target_link_libraries(statediff PUBLIC statediff-io Kokkos::kokkos)
+target_link_libraries(statediff PUBLIC statediff-io statediff-loader Kokkos::kokkos)
 
 # Add -fPIC
 # target_compile_options(statediff PUBLIC -fPIC)

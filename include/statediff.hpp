@@ -8,6 +8,7 @@
 #include "common/compare_utils.hpp"
 #include "common/debug.hpp"
 #include "common/statediff_bitset.hpp"
+#include "data_loader.hpp"
 #include "io_reader.hpp"
 // #include "reader_factory.hpp"
 #include "merkle_tree.hpp"
@@ -18,21 +19,27 @@
 #include <iostream>
 #include <vector>
 
+#define KB 1024
+#define MB (1024 * KB)
+#define GB (1024ULL * MB)
+
 namespace state_diff {
 
 template <typename DataType, typename Reader> class client_t {
 
     // Defaults
     static const size_t DEFAULT_CHUNK_SIZE = 4096;
-    static const size_t DEFAULT_DEV_BUFF_SIZE = 0;
     static const size_t DEFAULT_START_LEVEL = 13;
     static const bool DEFAULT_FUZZY_HASH = true;
     static const char DEFAULT_DTYPE = 'f';
+    static const size_t DEFAULT_HOST_CACHE = 2ULL * GB;
+    static const size_t DEFAULT_DEVICE_CACHE = 2ULL * GB;
 
     // client variables
     client_info_t client_info;
     tree_t tree;
     Reader &io_reader;
+    data_loader_t data_loader;
 
     // comparison state
     Queue working_queue;   // device
@@ -57,16 +64,21 @@ template <typename DataType, typename Reader> class client_t {
     void create_(std::vector<DataType> &data);
 
   public:
-    client_t(int id, Reader &reader);
+    client_t(int client_id, Reader &reader,
+             size_t host_cache_size = DEFAULT_HOST_CACHE,
+             size_t dev_cache_size = DEFAULT_DEVICE_CACHE);
     client_t(int client_id, Reader &reader, size_t data_size, double error,
              char dtype = DEFAULT_DTYPE, size_t chunk_size = DEFAULT_CHUNK_SIZE,
              size_t start_level = DEFAULT_START_LEVEL,
              bool fuzzyhash = DEFAULT_FUZZY_HASH,
-             size_t dev_buff_size = DEFAULT_DEV_BUFF_SIZE);
+             size_t host_cache_size = DEFAULT_HOST_CACHE,
+             size_t dev_cache_size = DEFAULT_DEVICE_CACHE);
     ~client_t();
 
     void create(std::vector<DataType> &data);
     void create(uint8_t *data_ptr);
+    void create(Reader &reader,
+                std::optional<TransferType> cache_tier = std::nullopt);
     template <class Archive>
     void save(Archive &ar, const unsigned int version) const;
     template <class Archive> void load(Archive &ar, const unsigned int version);
@@ -94,32 +106,38 @@ template <typename DataType, typename Reader> class client_t {
 };
 
 template <typename DataType, typename Reader>
-client_t<DataType, Reader>::client_t(int id, Reader &reader)
-    : io_reader(reader) {}
+client_t<DataType, Reader>::client_t(int client_id, Reader &reader,
+                                     size_t host_cache_size,
+                                     size_t dev_cache_size)
+    : io_reader(reader), data_loader(host_cache_size, dev_cache_size) {}
 
+// TO-DO: Remove reader from params because we do not it. Do that after
+// refactoring the comparison code to use the data_loader.
 template <typename DataType, typename Reader>
-client_t<DataType, Reader>::client_t(int id, Reader &reader, size_t data_size,
-                                     double error, char dtype,
-                                     size_t chunk_size, size_t start,
-                                     bool fuzzyhash, size_t dev_buff_size)
-    : io_reader(reader) {
-    // DEBUG_PRINT("Begin setup\n");
+client_t<DataType, Reader>::client_t(int client_id, Reader &reader,
+                                     size_t data_size, double error, char dtype,
+                                     size_t min_chunk_size, size_t start,
+                                     bool fuzzyhash, size_t host_cache_size,
+                                     size_t dev_cache_size)
+    : io_reader(reader), data_loader(host_cache_size, dev_cache_size) {
+    DBG("Begin client setup");
     std::string setup_region_name = std::string("StateDiff:: Checkpoint ") +
-                                    std::to_string(id) + std::string(": Setup");
+                                    std::to_string(client_id) +
+                                    std::string(": Setup");
     Kokkos::Profiling::pushRegion(setup_region_name.c_str());
-    size_t buff_size = dev_buff_size ? dev_buff_size : data_size;
-    client_info = client_info_t{id,        dtype, data_size, chunk_size,
-                                buff_size, start, error};
-    tree = tree_t(data_size, chunk_size, fuzzyhash);   // device execspace
+    size_t optim_chksize = data_loader.get_chunksize(data_size);
+    client_info = client_info_t{client_id,      dtype, data_size,
+                                min_chunk_size, start, error};
+    tree = tree_t(data_size, optim_chksize, fuzzyhash);
 
-    size_t n_chunks = data_size / chunk_size;
-    if (n_chunks * chunk_size < data_size)
+    size_t n_chunks = data_size / optim_chksize;
+    if (n_chunks * optim_chksize < data_size)
         n_chunks += 1;
 
     initialize(n_chunks);
 
     Kokkos::Profiling::popRegion();
-    // DEBUG_PRINT("Finished setup\n");
+    DBG("Finished client setup");
 }
 
 template <typename DataType, typename Reader>
@@ -150,46 +168,7 @@ client_t<DataType, Reader>::~client_t() {}
  */
 template <typename DataType, typename Reader>
 void
-client_t<DataType, Reader>::create_(std::vector<DataType> &data) {
-    Kokkos::Timer timer;
-
-    // Get a uint8_t pointer to the data
-    uint8_t *data_ptr = reinterpret_cast<uint8_t *>(data.data());
-    size_t data_size = client_info.data_size;   // Size of the data in bytes
-
-    // Start timing data transfer
-    Kokkos::View<uint8_t *> data_ptr_d("Device pointer", data_size);
-    Kokkos::View<uint8_t *, Kokkos::HostSpace,
-                 Kokkos::MemoryTraits<Kokkos::Unmanaged>>
-        data_ptr_h(data_ptr, data_size);
-
-    Kokkos::deep_copy(data_ptr_d, data_ptr_h);
-    // Calculate and print runtime and throughput for data transfer
-    double transfer_time = timer.seconds();
-    std::cout << "Data transfer time: " << transfer_time << " seconds"
-              << std::endl;
-    double transfer_throughput = data_size / transfer_time;
-    std::cout << "Data transfer throughput: "
-              << transfer_throughput / (1024 * 1024 * 1024) << " GB/s"
-              << std::endl;
-
-    // Start timing tree creation
-    timer.reset();   // Reset timer
-    tree.create(data_ptr_d.data(), client_info);
-    // tree.create(data_ptr, client_info);
-    double tree_creation_time = timer.seconds();
-    std::cout << "Tree creation time: " << tree_creation_time << " seconds"
-              << std::endl;
-    double tree_creation_throughput = data_size / tree_creation_time;
-    std::cout << "Tree creation throughput: "
-              << tree_creation_throughput / (1024 * 1024 * 1024) << " GB/s"
-              << std::endl;
-}
-
-template <typename DataType, typename Reader>
-void
 client_t<DataType, Reader>::create(std::vector<DataType> &data) {
-    // Get a uint8_t pointer to the data
     uint8_t *data_ptr = reinterpret_cast<uint8_t *>(data.data());
     tree.create(data_ptr, client_info);
 }
@@ -198,6 +177,17 @@ template <typename DataType, typename Reader>
 void
 client_t<DataType, Reader>::create(uint8_t *data_ptr) {
     tree.create(data_ptr, client_info);
+}
+
+template <typename DataType, typename Reader>
+void
+client_t<DataType, Reader>::create(Reader &reader,
+                                   std::optional<TransferType> cache_tier) {
+    TransferType create_tree_tier =
+        cache_tier.value_or(TransferType::FileToHost);
+    int ld = data_loader.file_load(reader, 0, client_info.chunk_size, 0,
+                                   create_tree_tier);
+    tree.create(client_info, data_loader, ld, create_tree_tier);
 }
 
 /**
@@ -228,12 +218,6 @@ template <typename DataType, typename Reader>
 bool
 client_t<DataType, Reader>::compare_with(client_t &prev) {
     ASSERT(client_info == prev.client_info);
-
-    // liburing_io_reader_t reader0(prev.io_reader.filename,
-    // Kokkos::num_threads()); liburing_io_reader_t reader1(io_reader.filename,
-    // Kokkos::num_threads());
-    // posix_io_reader_t reader0(prev.io_reader.filename);
-    // posix_io_reader_t reader1(io_reader.filename);
 
     Timer::time_point beg = Timer::now();
     auto ndifferent =
@@ -288,8 +272,8 @@ client_t<DataType, Reader>::compare_trees(
         last_lvl_beg = left_leaf;
     if (last_lvl_end > right_leaf)
         last_lvl_end = right_leaf;
-    // DEBUG_PRINT("Leaf range [%u,%u]\n", left_leaf, right_leaf);
-    // DEBUG_PRINT("Start level [%u,%u]\n", last_lvl_beg, last_lvl_end);
+    DBG("Leaf range [" << left_leaf << "," << right_leaf << "]");
+    DBG("Start level [" << last_lvl_beg << "," << last_lvl_end << "]");
     Kokkos::Experimental::ScatterView<uint64_t[1]> nhash_comp(num_hash_comp);
     Kokkos::Profiling::popRegion();
 

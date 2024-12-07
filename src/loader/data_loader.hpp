@@ -8,6 +8,7 @@
 #include "io_reader.hpp"
 #include <cassert>
 #include <optional>
+#include <cmath>
 
 #include <algorithm>
 
@@ -49,5 +50,6 @@ class data_loader_t {
                   std::optional<std::vector<size_t>> offsets = std::nullopt);
     size_t next(int loader_id, void *ptr);
     std::pair<uint8_t *, size_t> next(int loader_id, TransferType trans_type);
+    size_t get_chunksize(size_t data_size);
 };
 #endif   // __DATA_LOADER_HPP

@@ -3,6 +3,7 @@
 #include "common/compare_utils.hpp"
 #include "common/io_utils.hpp"
 #include "common/statediff_bitset.hpp"
+#include "data_loader.hpp"
 #include "rounding_hash.hpp"
 #include <Kokkos_Core.hpp>
 #include <cereal/archives/binary.hpp>
@@ -23,6 +24,8 @@
  */
 class tree_t {
   private:
+  static const TransferType DEFAULT_CACHE_TIER = TransferType::FileToHost;
+
     double timers[4];
     double create_time;
     void digest_to_hex(const uint8_t *digest, char *output);
@@ -51,6 +54,8 @@ class tree_t {
     tree_t(const size_t data_size, const size_t chunk_size, bool fuzzyhash);
     tree_t();
 
+    void create(client_info_t client_info, data_loader_t &data_loader,
+                int ld_idx, TransferType cache_tier = DEFAULT_CACHE_TIER);
     void create(uint8_t *data_ptr, client_info_t client_info);
     template <class Archive>
     void save(Archive &ar, const unsigned int version) const;
@@ -73,6 +78,6 @@ class tree_t {
 
     void print_leaves();
     // double get_time() const;
-    const double* get_timers() const;
+    const double *get_timers() const;
 };
 #endif   //  __KOKKOS_MERKLE_TREE_HPP

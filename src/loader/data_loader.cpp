@@ -212,6 +212,15 @@ data_loader_t::next(int id, TransferType trans_type) {
     return {front_batch->data[0].buffer, ready_size};
 }
 
+size_t
+data_loader_t::get_chunksize(size_t data_size) {
+    double peak_bw = 25;
+    float rate_of_change = 0.5;
+    size_t opt_chksize = data_size / (exp(data_size / peak_bw*rate_of_change) + 1);
+    printf("Optimum chun size is %zu\n", opt_chksize);
+    return 1024;
+}
+
 void
 data_loader_t::mem_load(int loader_id, std::vector<uint8_t> &data,
                         size_t start_foffset, size_t seg_size,

@@ -88,7 +88,6 @@ struct client_info_t {
     char data_type;
     size_t data_size;
     size_t chunk_size;
-    size_t device_buff_size;
     size_t start_level;
     double error_tolerance;
 
@@ -114,7 +113,6 @@ struct client_info_t {
                                     const client_info_t &info) {
         os << "ID: " << info.id << ", Type: " << info.data_type
            << ", Chunk (B): " << info.chunk_size
-           << ", D_Buff (B): " << info.device_buff_size
            << ", Error: " << info.error_tolerance;
         return os;
     }

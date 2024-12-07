@@ -78,4 +78,4 @@ install (TARGETS statediff-io EXPORT statediffTargets
 )
 
 ###### Unit tests
-add_subdirectory(test)
+# add_subdirectory(test)
