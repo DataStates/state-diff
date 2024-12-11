@@ -3,11 +3,11 @@ target_include_directories(test_serialize PUBLIC ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(test_serialize PUBLIC Kokkos::kokkos)
 target_link_libraries(test_serialize PRIVATE OpenSSL::SSL)
 target_link_libraries(test_serialize PUBLIC statediff)
-set_target_properties(test_serialize PROPERTIES
-    CXX_STANDARD 17
-    CXX_STANDARD_REQUIRED YES
-    CXX_EXTENSIONS OFF
-)
+#set_target_properties(test_serialize PROPERTIES
+#    CXX_STANDARD 17
+#    CXX_STANDARD_REQUIRED YES
+#    CXX_EXTENSIONS OFF
+#)
 
 add_executable(test_compare test_compare.cpp)
 target_include_directories(test_compare PUBLIC ${CMAKE_SOURCE_DIR}/include)

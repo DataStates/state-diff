@@ -22,6 +22,9 @@ add_subdirectory(src)
 ##### State-diff Testing
 add_subdirectory(test)
 
+##### State-diff Benchmarking
+add_subdirectory(benchmark)
+
 ###### Export sets and Configs
 install(EXPORT statediffTargets
         FILE statediffTargets.cmake

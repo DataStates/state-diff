@@ -79,7 +79,7 @@ main(int argc, char **argv) {
         // liburing_io_reader_t reader(fname);
         liburing_io_reader_t reader(fname);
         state_diff::client_t<float, liburing_io_reader_t> client(
-            1, reader, data_size, error_tolerance, dtype, chunk_size,
+            1, data_size, error_tolerance, dtype, chunk_size,
             root_level, fuzzy_hash);
         client.create(run_data);
         auto start_serialize = std::chrono::high_resolution_clock::now();
@@ -96,7 +96,7 @@ main(int argc, char **argv) {
         std::cout << "EXEC STATE:: Tree created and saved" << std::endl;
 
         // load metadata file, deserialize tree
-        state_diff::client_t<float, liburing_io_reader_t> new_client(1, reader);
+        state_diff::client_t<float, liburing_io_reader_t> new_client(1);
         auto start_deserialize = std::chrono::high_resolution_clock::now();
         {
             std::ifstream ifs(metadata_fn, std::ios::binary);

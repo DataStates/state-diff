@@ -160,21 +160,21 @@ main(int argc, char **argv) {
     liburing_io_reader_t reader1(file1);
 
     // Create client for file 0
-    client_t<float, liburing_io_reader_t> client0(1, reader0, data_len, error, 
+    client_t<float, liburing_io_reader_t> client0(1, data_len, error, 
                           dtype[0], chunk_size, start_level, approx_hash);
 
     // Create merkle tree
     client0.create((uint8_t *) data0.data());
 
     // Create client for file 1
-    client_t<float, liburing_io_reader_t> client1(2, reader1, data_len, error, 
+    client_t<float, liburing_io_reader_t> client1(2, data_len, error, 
                           dtype[0], chunk_size, start_level, approx_hash);
 
     // Create merkle tree
     client1.create((uint8_t *) data1.data());
 
     // Compare files
-    client0.compare_with(client1);
+    client0.compare_with(0, reader0, client1, reader1);
 
     if (client0.get_num_changes() == 0) {
         std::cout << "SUCCESS::Files " << file0 << " and " << file1
@@ -191,7 +191,7 @@ main(int argc, char **argv) {
         std::cout << "Tree comparison time: " 
                   << client0.get_tree_comparison_time() << std::endl;
         std::cout << "Direct comparison time: " 
-                  << client0.get_compare_time() << std::endl;
+                  << client0.get_data_compare_time() << std::endl;
     }
 
     }

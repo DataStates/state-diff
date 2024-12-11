@@ -26,7 +26,7 @@ class tree_t {
   private:
   static const TransferType DEFAULT_CACHE_TIER = TransferType::FileToHost;
 
-    double timers[4];
+    double timers[3];
     double create_time;
     void digest_to_hex(const uint8_t *digest, char *output);
     KOKKOS_INLINE_FUNCTION bool calc_hash(uint32_t u) const;
@@ -35,14 +35,6 @@ class tree_t {
     KOKKOS_INLINE_FUNCTION bool
     calc_leaf_fuzzy_hash(const void *data, uint64_t size, float errorValue,
                          const char dataType, uint32_t u) const;
-    // KOKKOS_INLINE_FUNCTION void hash_leaves_kernel(uint8_t *data_ptr,
-    //                                                client_info_t client_info,
-    //                                                uint32_t left_leaf,
-    //                                                uint32_t idx);
-    // void _hash_leaves_kernel(uint8_t *data_ptr, client_info_t client_info,
-    //                 uint32_t left_leaf);
-    void create_leaves_cuda(uint8_t *data_ptr, client_info_t client_info,
-                            uint32_t left_leaf, std::string diff_label);
 
   public:
     size_t num_leaves;
@@ -62,8 +54,6 @@ class tree_t {
     template <class Archive> void load(Archive &ar, const unsigned int version);
 
     KOKKOS_INLINE_FUNCTION HashDigest &operator[](uint32_t i) const;
-    void create_leaves(uint8_t *data_ptr, client_info_t client_info,
-                       uint32_t left_leaf, std::string diff_label);
 
     KOKKOS_INLINE_FUNCTION void hash_leaves_kernel(uint8_t *data_ptr,
                                                    client_info_t client_info,

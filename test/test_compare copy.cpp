@@ -90,13 +90,13 @@ main(int argc, char **argv) {
         liburing_io_reader_t reader_2(fn_2);
 
         state_diff::client_t<float, liburing_io_reader_t> client_0(
-            0, data_size, error_tolerance, dtype, chunk_size,
+            0, reader_0, data_size, error_tolerance, dtype, chunk_size,
             root_level, fuzzy_hash);
         state_diff::client_t<float, liburing_io_reader_t> client_1(
-            1, data_size, error_tolerance, dtype, chunk_size,
+            1, reader_1, data_size, error_tolerance, dtype, chunk_size,
             root_level, fuzzy_hash);
         state_diff::client_t<float, liburing_io_reader_t> client_2(
-            2, data_size, error_tolerance, dtype, chunk_size,
+            2, reader_2, data_size, error_tolerance, dtype, chunk_size,
             root_level, fuzzy_hash);
         client_0.create(run_0_data);
         client_1.create(run_1_data);
@@ -104,21 +104,21 @@ main(int argc, char **argv) {
         std::cout << "EXEC STATE:: Trees created" << std::endl;
 
         // compare the checkpoints one-to-one
-        client_0.compare_with(0, reader_0, client_0, reader_0);
+        client_0.compare_with(client_0, 0, reader_0);
         std::cout << "EXEC STATE:: (0-0) Comparison completed with "
                   << client_0.get_num_changes() << " mismatches" << std::endl;
         if (client_0.get_num_changes() != 0) {
             test_status = -1;
         }
 
-        client_1.compare_with(0, reader_1, client_0, reader_0);
+        client_1.compare_with(client_0, 0, reader_1);
         std::cout << "EXEC STATE:: (1-0) Comparison completed with "
                   << client_1.get_num_changes() << " mismatches" << std::endl;
         if (client_1.get_num_changes() != 0) {
             test_status = -1;
         }
 
-        client_2.compare_with(0, reader_2, client_0, reader_0);
+        client_2.compare_with(client_0, 0, reader_2);
         std::cout << "EXEC STATE:: (2-0) comparison completed with "
                   << client_2.get_num_changes() << " mismatches" << std::endl;
         if (client_2.get_num_changes() != data_len) {

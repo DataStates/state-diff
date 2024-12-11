@@ -82,7 +82,7 @@ main(int argc, char **argv) {
 
         for (int buf_size : dev_buf_sizes) {
             state_diff::client_t<float, liburing_io_reader_t> client(
-                1, reader, data_size, error_tolerance, dtype, chunk_size,
+                1, data_size, error_tolerance, dtype, chunk_size,
                 root_level, fuzzy_hash, buf_size);
             auto start_create = std::chrono::high_resolution_clock::now();
             client.create(run_data);

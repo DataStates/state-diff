@@ -89,7 +89,7 @@ main(int argc, char **argv) {
 
         // read data, build tree and save (tree + data) to BP file
         state_diff::client_t<float, adios_reader_t> client(
-            1, reader, data_size, error_tolerance, dtype, chunk_size,
+            1, data_size, error_tolerance, dtype, chunk_size,
             root_level, fuzzy_hash);
         client.create(run_data);
         std::vector<uint8_t> ser_buf;

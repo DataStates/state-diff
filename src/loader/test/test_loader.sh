@@ -15,8 +15,7 @@ seg_size=$((128 * $MB))
 # dev_cache=$((128 * $MB))
 
 batch_size=4
-max_batch_size=4
-# max_batch_size=$(( $dev_cache / $seg_size))
+max_batch_size=($batch_size * (2**5)) # 5 experiments
 outname="test"
 
 echo "==============================================================================="
@@ -36,11 +35,9 @@ do
   
   echo "Batch Size = $batch_size"
   echo $cmd
-  # nsys profile --trace=cuda,nvtx -o profile_loader_${batch_size} --force-overwrite true 
-  $cmd
+  nsys profile --trace=cuda,nvtx -o profile_loader_${batch_size} --force-overwrite true $cmd
   /home/kta7930/research/anl/install/vmtouch/usr/local/bin/vmtouch -ve test0.dat test1.dat
   batch_size=$(( $batch_size * 2 ))
 done
 
-$BUILD_DIR/src/loader/test/benchmark test0.dat
 rm test0.dat test1.dat

@@ -1,4 +1,4 @@
-# add_definitions(-D__DEBUG)
+add_definitions(-D__DEBUG)
 
 add_library (statediff-loader SHARED
     data_loader.cpp

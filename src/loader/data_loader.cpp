@@ -26,7 +26,7 @@ data_loader_t::max_batch_size(size_t seg_size) {
 
 std::vector<std::pair<size_t, int>>
 coalesce(std::vector<size_t> offsets) {
-    std::sort(offsets.begin(), offsets.end());
+    // std::sort(offsets.begin(), offsets.end());
     std::vector<std::pair<size_t, int>> new_offsets;
     for (size_t offset : offsets) {
         if (new_offsets.empty()) {
@@ -50,7 +50,7 @@ data_loader_t::merge_create_seg(int id, std::vector<size_t> &offsets,
                                 size_t total_segs, size_t batch_size_,
                                 size_t seg_size) {
     INFO("Loader - Merging contiguous segments for file reading");
-    std::sort(offsets.begin(), offsets.end());
+    // std::sort(offsets.begin(), offsets.end());
     std::vector<std::pair<size_t, int>> new_offsets;
     size_t i = 0;
     batch_t *seg_batch = new batch_t(batch_size_);

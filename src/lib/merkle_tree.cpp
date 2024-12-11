@@ -134,7 +134,8 @@ tree_t::create(client_info_t client_info, data_loader_t &data_loader,
     auto &curr_tree = *this;
     std::string diff_label = std::string("Diff: ");
     Kokkos::Profiling::pushRegion(diff_label + std::string("Construct Tree"));
-    printf("Create Params Init: %.3f ms\n", create_timer.seconds() * 1000.0);
+    timers[0] = create_timer.seconds() * 1000.0;
+    // printf("Create Params Init: %.3f ms\n", create_timer.seconds() * 1000.0);
 
     // Build the tree leaves
     create_timer.reset();
@@ -156,7 +157,8 @@ tree_t::create(client_info_t client_info, data_loader_t &data_loader,
             });
         work_start = work_end;
     }
-    printf("Leaves Creation: %.3f ms\n", create_timer.seconds() * 1000.0);
+    timers[1] = create_timer.seconds() * 1000.0;
+    // printf("Leaves Creation: %.3f ms\n", create_timer.seconds() * 1000.0);
 
     // Build up tree level by level until last_lvl_beg
     create_timer.reset();
@@ -176,7 +178,8 @@ tree_t::create(client_info_t client_info, data_loader_t &data_loader,
         level_beg = (level_beg - 1) / 2;
         level_end = (level_end - 2) / 2;
     }
-    printf("Rest of Tree Creation: %.3f ms\n", create_timer.seconds() * 1000.0);
+    timers[2] = create_timer.seconds() * 1000.0;
+    // printf("Rest of Tree Creation: %.3f ms\n", create_timer.seconds() * 1000.0);
     Kokkos::Profiling::popRegion();
 }
 
@@ -206,7 +209,9 @@ tree_t::create(uint8_t *data_ptr, client_info_t client_info) {
 
     std::string diff_label = std::string("Diff: ");
     Kokkos::Profiling::pushRegion(diff_label + std::string("Construct Tree"));
-    printf("Create Params Init: %.3f ms\n", create_timer.seconds() * 1000.0);
+    timers[0] = create_timer.seconds() * 1000.0;
+    // printf("Create Params Init: %.3f ms\n", create_timer.seconds() * 1000.0);
+
     create_timer.reset();
     // Build the tree leaves
     Kokkos::View<uint8_t *> data_d("Device pointer", data_size);
@@ -221,7 +226,8 @@ tree_t::create(uint8_t *data_ptr, client_info_t client_info) {
             curr_tree.hash_leaves_kernel(data_d.data(), client_info, left_leaf,
                                          idx);
         });
-    printf("Leaves Creation: %.3f ms\n", create_timer.seconds() * 1000.0);
+    timers[1] = create_timer.seconds() * 1000.0;
+    // printf("Leaves Creation: %.3f ms\n", create_timer.seconds() * 1000.0);
 
     // Build up tree level by level until last_lvl_beg
     create_timer.reset();
@@ -241,7 +247,8 @@ tree_t::create(uint8_t *data_ptr, client_info_t client_info) {
         level_beg = (level_beg - 1) / 2;
         level_end = (level_end - 2) / 2;
     }
-    printf("Rest of Tree Creation: %.3f ms\n", create_timer.seconds() * 1000.0);
+    timers[2] = create_timer.seconds() * 1000.0;
+    // printf("Rest of Tree Creation: %.3f ms\n", create_timer.seconds() * 1000.0);
     Kokkos::Profiling::popRegion();
 }
 
