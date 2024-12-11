@@ -25,7 +25,9 @@ Note that the exact install directory and Kokkos directory will vary depending o
 
 # Authors and Contacts
 **University of Tennessee Knoxville**: Nigel Tan (nphtan2@gmail.com), Walter J. Ashworth, Befikir Bogale, Michela Taufer (taufer@gmail.com)
+
 **Rochester Institute of Technology**: Kevin Assogba and M. Mustafa Rafique
+
 **Argonne National Laboratory**: Bogdan Nicolae (bnicolae@anl.gov) and Franck Cappello
 
 # Citing
