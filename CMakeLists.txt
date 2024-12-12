@@ -23,7 +23,7 @@ add_subdirectory(src)
 add_subdirectory(test)
 
 ##### State-diff Benchmarking
-add_subdirectory(benchmark)
+add_subdirectory(scripts)
 
 ###### Export sets and Configs
 install(EXPORT statediffTargets
