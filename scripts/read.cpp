@@ -2,8 +2,10 @@
 #include <fstream>
 #include <chrono>
 #include <vector>
+#ifdef __NVCC__
 #include "cuda.h"
 #include "cuda_runtime.h"
+#endif
 
 int
 main(int argc, char **argv) {
@@ -27,6 +29,7 @@ main(int argc, char **argv) {
     std::cout << "Benchmark: F2H read in " << duration << " msec at "
               << throughput << " GB/s" << std::endl;
 
+#ifdef __NVCC__
     uint8_t *ptr_d;
     cudaHostRegister(ptr_h, data_size, cudaHostRegisterDefault);
     cudaMalloc((void **)&ptr_d, data_size);
@@ -37,4 +40,6 @@ main(int argc, char **argv) {
     throughput = (data_size / (1024 * 1024 * 1024)) / (duration/1000.0);
     std::cout << "Benchmark: H2D cpy of all data in " << duration << " msec at "
               << throughput << " GB/s" << std::endl;
+#endif
+
 }

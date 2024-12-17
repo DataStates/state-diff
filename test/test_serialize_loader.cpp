@@ -38,11 +38,11 @@ main(int argc, char **argv) {
     float min_float = 0.0;
     // size in bytes of the synthetic data (1GB)
     // int data_size = 1024 * 1024 * 1024;
-    int data_size = 16 * 1024 * 1024;
+    int data_size = 16 * 1024 * 1024; // 16MB
     // Application error tolerance
     float error_tolerance = 1e-4;
     // Target chunk size. This example uses 16 bytes
-    int chunk_size = 4096;
+    int chunk_size = 512;
     // Use our rounding hash algorithm or exact hash.
     bool fuzzy_hash = true;
     char dtype = 'f';   // float
@@ -52,9 +52,6 @@ main(int argc, char **argv) {
     int root_level = 1;
     std::string fname = "checkpoint.dat";
     std::string metadata_fn = "checkpoint.tree";
-    // int MB = 1024 * 1024;
-    // int dev_buf_sizes[] = {16 * MB, 64 * MB, 256 * MB, 1024 * MB};
-    int dev_buf_sizes[] = {256 * MB};
 
     int num_chunks = data_size / chunk_size;
     std::cout << "Nunber of leaf nodes = " << num_chunks << std::endl;
@@ -78,23 +75,49 @@ main(int argc, char **argv) {
         // save checkpoint for offline tree cretion and comparison
         write_file(fname, (uint8_t *)run_data.data(), data_size);
         std::cout << "EXEC STATE:: File saved" << std::endl;
-        liburing_io_reader_t reader(fname);
 
-        for (int buf_size : dev_buf_sizes) {
-            state_diff::client_t<float> client(
-                1, data_size, error_tolerance, dtype, chunk_size,
-                root_level, fuzzy_hash, buf_size);
-            auto start_create = std::chrono::high_resolution_clock::now();
-            client.create(run_data);
-            auto end_create = std::chrono::high_resolution_clock::now();
-            std::chrono::duration<double> create_time =
-                end_create - start_create;
-            std::cout << "Buffer size: " << buf_size
-                      << ", Creation time: " << create_time.count()
-                      << " seconds, throughput: "
-                      << (data_size / create_time.count()) / (1024 * MB)
-                      << " GB/s" << std::endl;
+        // read data, build tree and save
+        liburing_io_reader_t reader(fname);
+        state_diff::client_t<float> client(
+            1, data_size, error_tolerance, dtype, chunk_size,
+            root_level, fuzzy_hash);
+        client.create(reader);
+        auto start_serialize = std::chrono::high_resolution_clock::now();
+        {
+            std::ofstream ofs(metadata_fn, std::ios::binary);
+            cereal::BinaryOutputArchive oa(ofs);
+            oa(client);
+            ofs.close();
         }
+        auto end_serialize = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> serialize_duration =
+            end_serialize - start_serialize;
+
+        std::cout << "EXEC STATE:: Tree created and saved" << std::endl;
+
+        // load metadata file, deserialize tree
+        state_diff::client_t<float> new_client(1);
+        auto start_deserialize = std::chrono::high_resolution_clock::now();
+        {
+            std::ifstream ifs(metadata_fn, std::ios::binary);
+            cereal::BinaryInputArchive ia(ifs);
+            ia(new_client);
+            ifs.close();
+        }
+        auto end_deserialize = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> deserialize_duration =
+            end_deserialize - start_deserialize;
+        std::cout << "EXEC STATE:: Tree deserialized" << std::endl;
+
+        auto client_info = client.get_client_info();
+        auto new_client_info = new_client.get_client_info();
+        if (!(client_info == new_client_info)) {
+            test_status = -1;
+        }
+        std::cout << "Serialization took " << serialize_duration.count()
+                  << " seconds" << std::endl;
+        std::cout << "Deserialization took " << deserialize_duration.count()
+                  << " seconds" << std::endl;
     }
     Kokkos::finalize();
     return test_status;

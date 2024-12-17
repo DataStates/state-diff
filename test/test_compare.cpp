@@ -38,7 +38,7 @@ main(int argc, char **argv) {
     float min_float = 0.0;
     // size in bytes of the synthetic data (1GB)
     // size_t data_size = 1024 * 1024 * 1024;
-    size_t data_size = 1024 * 1024;   // 1MB
+    size_t data_size = 16 * 1024 * 1024;   // 16MB
     // Application error tolerance
     float error_tolerance = 1e-4;
     // Target chunk size. This example uses 16 bytes
@@ -55,6 +55,7 @@ main(int argc, char **argv) {
     int num_chunks = data_size / chunk_size;
     std::cout << "Nunber of leaf nodes = " << num_chunks << std::endl;
 
+    int experiment_id = std::stoi(argv[1]);
     Kokkos::initialize(argc, argv);
     {
         // Create synthetic datasets
@@ -86,44 +87,54 @@ main(int argc, char **argv) {
 
         // read data, build tree and save
         liburing_io_reader_t reader_0(fn_0);
-        liburing_io_reader_t reader_1(fn_1);
-        liburing_io_reader_t reader_2(fn_2);
-
-        state_diff::client_t<float, liburing_io_reader_t> client_0(
-            0, data_size, error_tolerance, dtype, chunk_size,
-            root_level, fuzzy_hash);
-        state_diff::client_t<float, liburing_io_reader_t> client_1(
-            1, data_size, error_tolerance, dtype, chunk_size,
-            root_level, fuzzy_hash);
-        state_diff::client_t<float, liburing_io_reader_t> client_2(
-            2, data_size, error_tolerance, dtype, chunk_size,
-            root_level, fuzzy_hash);
+        state_diff::client_t<float> client_0(0, data_size, error_tolerance,
+                                             dtype, chunk_size, root_level,
+                                             fuzzy_hash);
         client_0.create(run_0_data);
-        client_1.create(run_1_data);
-        client_2.create(run_2_data);
-        std::cout << "EXEC STATE:: Trees created" << std::endl;
 
-        // compare the checkpoints one-to-one
-        client_0.compare_with(0, reader_0, client_0, reader_0);
-        std::cout << "EXEC STATE:: (0-0) Comparison completed with "
-                  << client_0.get_num_changes() << " mismatches" << std::endl;
-        if (client_0.get_num_changes() != 0) {
-            test_status = -1;
+        if (experiment_id == 1) {
+            liburing_io_reader_t reader_1(fn_1);
+            state_diff::client_t<float> client_1(1, data_size, error_tolerance,
+                                                 dtype, chunk_size, root_level,
+                                                 fuzzy_hash);
+            client_1.create(run_1_data);
+            std::cout << "EXEC STATE:: Trees created" << std::endl;
+            std::cout << "EXEC STATE:: Comparing 0 to 1" << std::endl;
+            client_1.compare_with(0, reader_1, client_0, reader_0);
+            std::cout << "EXEC STATE:: (1-0) Comparison completed with "
+                      << client_1.get_num_changes() << " mismatches"
+                      << std::endl;
+            if (client_1.get_num_changes() != 0) {
+                test_status = -1;
+            }
+        } else if (experiment_id == 2) {
+            liburing_io_reader_t reader_2(fn_2);
+            state_diff::client_t<float> client_2(2, data_size, error_tolerance,
+                                                 dtype, chunk_size, root_level,
+                                                 fuzzy_hash);
+            client_2.create(run_2_data);
+            std::cout << "EXEC STATE:: Trees created" << std::endl;
+            std::cout << "EXEC STATE:: Comparing 0 to 2" << std::endl;
+            client_2.compare_with(0, reader_2, client_0, reader_0);
+            std::cout << "EXEC STATE:: (2-0) comparison completed with "
+                      << client_2.get_num_changes() << " mismatches"
+                      << std::endl;
+            if (client_2.get_num_changes() != data_len) {
+                test_status = -1;
+            }
+        } else {
+            std::cout << "EXEC STATE:: Trees created" << std::endl;
+            std::cout << "EXEC STATE:: Comparing 0 to 0" << std::endl;
+            client_0.compare_with(0, reader_0, client_0, reader_0);
+            std::cout << "EXEC STATE:: (0-0) Comparison completed with "
+                      << client_0.get_num_changes() << " mismatches"
+                      << std::endl;
+            if (client_0.get_num_changes() != 0) {
+                test_status = -1;
+            }
         }
 
-        client_1.compare_with(0, reader_1, client_0, reader_0);
-        std::cout << "EXEC STATE:: (1-0) Comparison completed with "
-                  << client_1.get_num_changes() << " mismatches" << std::endl;
-        if (client_1.get_num_changes() != 0) {
-            test_status = -1;
-        }
-
-        client_2.compare_with(0, reader_2, client_0, reader_0);
-        std::cout << "EXEC STATE:: (2-0) comparison completed with "
-                  << client_2.get_num_changes() << " mismatches" << std::endl;
-        if (client_2.get_num_changes() != data_len) {
-            test_status = -1;
-        }
+        
     }
     Kokkos::finalize();
     return test_status;

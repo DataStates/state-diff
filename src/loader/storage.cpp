@@ -1,8 +1,8 @@
 #include "storage.hpp"
 
 storage_t::storage_t(uint8_t *start, size_t total_size)
-    : start_(start), total_size_(total_size), curr_size_(0), head_(0),
-      tail_(0) {
+    : start_(start), head_(0), tail_(0), total_size_(total_size),
+      curr_size_(0) {
     DBG("Store - Storage initialized with start as uint8_t pointer");
 }
 
@@ -39,9 +39,11 @@ storage_t::allocate(batch_t *seg_batch) {
     for (size_t i = 0; i < seg_batch->batch_size; i++) {
         segment_t &seg = seg_batch->data[i];
         assert(seg.size < total_size_);
-        DBG("Store - Waiting for resources to allocate batch item " << i << "/" << seg_batch->batch_size);
+        DBG("Store - Waiting for resources to allocate batch item "
+            << i << "/" << seg_batch->batch_size);
         cv_.wait(lck, [this, &seg] { return can_allocate(seg.size); });
-        DBG("Store - Resources are now available for batch item " << i << "/" << seg_batch->batch_size);
+        DBG("Store - Resources are now available for batch item "
+            << i << "/" << seg_batch->batch_size);
         seg.buffer = start_ + head_;
         head_ = (head_ + seg.size) % total_size_;
         curr_size_ += seg.size;
@@ -74,7 +76,8 @@ storage_t::deallocate(batch_t *seg_batch) {
         if (head_ == tail_)
             tail_ = 0;
         stored_segs_.pop_front();
-        DBG("Store - Deallocated resources for batch item " << i << "/" << seg_batch->batch_size);
+        DBG("Store - Deallocated resources for batch item "
+            << i << "/" << seg_batch->batch_size);
     }
     lck.unlock();
     cv_.notify_one();

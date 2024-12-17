@@ -160,14 +160,14 @@ main(int argc, char **argv) {
     liburing_io_reader_t reader1(file1);
 
     // Create client for file 0
-    client_t<float, liburing_io_reader_t> client0(1, data_len, error, 
+    client_t<float> client0(1, data_len, error, 
                           dtype[0], chunk_size, start_level, approx_hash);
 
     // Create merkle tree
     client0.create((uint8_t *) data0.data());
 
     // Create client for file 1
-    client_t<float, liburing_io_reader_t> client1(2, data_len, error, 
+    client_t<float> client1(2, data_len, error, 
                           dtype[0], chunk_size, start_level, approx_hash);
 
     // Create merkle tree

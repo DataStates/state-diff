@@ -37,7 +37,8 @@ main(int argc, char **argv) {
     // minimum FP value in synthetic data
     float min_float = 0.0;
     // size in bytes of the synthetic data (1GB)
-    int data_size = 1024 * 1024 * 1024;
+    // int data_size = 1024 * 1024 * 1024;
+    int data_size = 16 * 1024 * 1024; // 16MB
     // Application error tolerance
     float error_tolerance = 1e-4;
     // Target chunk size. This example uses 16 bytes
@@ -78,7 +79,7 @@ main(int argc, char **argv) {
         // read data, build tree and save
         // liburing_io_reader_t reader(fname);
         liburing_io_reader_t reader(fname);
-        state_diff::client_t<float, liburing_io_reader_t> client(
+        state_diff::client_t<float> client(
             1, data_size, error_tolerance, dtype, chunk_size,
             root_level, fuzzy_hash);
         client.create(run_data);
@@ -96,7 +97,7 @@ main(int argc, char **argv) {
         std::cout << "EXEC STATE:: Tree created and saved" << std::endl;
 
         // load metadata file, deserialize tree
-        state_diff::client_t<float, liburing_io_reader_t> new_client(1);
+        state_diff::client_t<float> new_client(1);
         auto start_deserialize = std::chrono::high_resolution_clock::now();
         {
             std::ifstream ifs(metadata_fn, std::ios::binary);

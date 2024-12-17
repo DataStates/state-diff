@@ -24,7 +24,6 @@
  */
 class tree_t {
   private:
-  static const TransferType DEFAULT_CACHE_TIER = TransferType::FileToHost;
 
     double timers[3];
     double create_time;
@@ -35,6 +34,16 @@ class tree_t {
     KOKKOS_INLINE_FUNCTION bool
     calc_leaf_fuzzy_hash(const void *data, uint64_t size, float errorValue,
                          const char dataType, uint32_t u) const;
+    KOKKOS_INLINE_FUNCTION void hash_leaves_kernel(uint8_t *data_ptr,
+                                                   client_info_t client_info,
+                                                   uint32_t left_leaf,
+                                                   uint32_t idx) const;
+    KOKKOS_INLINE_FUNCTION uint32_t num_leaf_descendents(uint32_t node,
+                                                         uint32_t num_nodes);
+    KOKKOS_INLINE_FUNCTION uint32_t leftmost_leaf(uint32_t node,
+                                                  uint32_t num_nodes);
+    KOKKOS_INLINE_FUNCTION uint32_t rightmost_leaf(uint32_t node,
+                                                   uint32_t num_nodes);
 
   public:
     size_t num_leaves;
@@ -47,7 +56,7 @@ class tree_t {
     tree_t();
 
     void create(client_info_t client_info, data_loader_t &data_loader,
-                int ld_idx, TransferType cache_tier = DEFAULT_CACHE_TIER);
+                int ld_idx, TransferType cache_tier);
     void create(uint8_t *data_ptr, client_info_t client_info);
     template <class Archive>
     void save(Archive &ar, const unsigned int version) const;
@@ -55,19 +64,7 @@ class tree_t {
 
     KOKKOS_INLINE_FUNCTION HashDigest &operator[](uint32_t i) const;
 
-    KOKKOS_INLINE_FUNCTION void hash_leaves_kernel(uint8_t *data_ptr,
-                                                   client_info_t client_info,
-                                                   uint32_t left_leaf,
-                                                   uint32_t idx) const;
-    KOKKOS_INLINE_FUNCTION uint32_t num_leaf_descendents(uint32_t node,
-                                                         uint32_t num_nodes);
-    KOKKOS_INLINE_FUNCTION uint32_t leftmost_leaf(uint32_t node,
-                                                  uint32_t num_nodes);
-    KOKKOS_INLINE_FUNCTION uint32_t rightmost_leaf(uint32_t node,
-                                                   uint32_t num_nodes);
-
     void print_leaves();
-    // double get_time() const;
     const double *get_timers() const;
 };
 #endif   //  __KOKKOS_MERKLE_TREE_HPP

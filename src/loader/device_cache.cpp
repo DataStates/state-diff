@@ -1,3 +1,5 @@
+#ifdef __NVCC__
+
 #include "device_cache.hpp"
 
 device_cache_t::device_cache_t(int gpu_id, size_t tot_cache_size)
@@ -166,3 +168,5 @@ device_cache_t::coalesce_and_copy(batch_t *consumed_item, void *ptr) {
                          cudaMemcpyDeviceToDevice));
     data_store_->deallocate(consumed_item);
 }
+
+#endif

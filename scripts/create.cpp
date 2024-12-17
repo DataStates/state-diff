@@ -27,7 +27,7 @@ main(int argc, char **argv) {
     {
         // for (int chunk_size = min_chunk_size; chunk_size < max_chunk_size;
         //      chunk_size *= 2) {
-        state_diff::client_t<float, liburing_io_reader_t> client(
+        state_diff::client_t<float> client(
             1, data_size, error_tolerance, dtype, chunk_size, root_level,
             fuzzy_hash, host_cache, dev_cache);
 

@@ -3,7 +3,6 @@
 
 #include "common/debug.hpp"
 #include "cuda_timer.hpp"
-#include "device_cache.hpp"
 #include "host_cache.hpp"
 #include "io_reader.hpp"
 #include <cassert>
@@ -11,6 +10,13 @@
 #include <cmath>
 
 #include <algorithm>
+
+#ifdef __NVCC__
+#include "device_cache.hpp"
+#define EXEC_IF_NVCC(instruction) instruction
+#else
+#define EXEC_IF_NVCC(instruction)
+#endif
 
 enum TransferType : int {
     FileToHost = 0,
@@ -22,17 +28,19 @@ enum TransferType : int {
 class data_loader_t {
 
     using FileReader = base_io_reader_t;
-
+    
     uint8_t *data_ptr_;
-    host_cache_t *host_cache_;
-    device_cache_t *device_cache_;
     size_t host_cache_size_;
     size_t device_cache_size_;
+    host_cache_t *host_cache_;
+    EXEC_IF_NVCC(
+        device_cache_t *device_cache_;
+    );
     int gpu_id = 0;
     std::atomic<int> instance_count{0};
     std::unordered_map<int, size_t> ready_count;
 
-    size_t max_batch_size(size_t seg_size);
+    size_t max_batch_size(size_t seg_size, size_t data_size);
     void merge_create_seg(int id, std::vector<size_t> &offsets, size_t total_segs,
                           size_t batch_size_, size_t seg_size);
 

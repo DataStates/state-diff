@@ -2,8 +2,12 @@
 
 host_cache_t::host_cache_t(int gpu_id, size_t tot_cache_size)
     : base_cache_t(gpu_id, tot_cache_size) {
+#ifdef __NVCC__
     gpuErrchk(cudaSetDevice(gpu_id_));
     gpuErrchk(cudaMallocHost((void **)&start_ptr_, tot_cache_size_));
+#else
+    start_ptr_ = (uint8_t *) malloc(tot_cache_size_);
+#endif
     INFO("Host - Creating a cache of size " << tot_cache_size / (1024 * 1024)
                                             << " MB");
     data_store_ = new storage_t(start_ptr_, tot_cache_size_);

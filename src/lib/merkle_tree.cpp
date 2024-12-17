@@ -148,6 +148,7 @@ tree_t::create(client_info_t client_info, data_loader_t &data_loader,
         if (curr_n_leaves * chunk_size < ready_size)
             curr_n_leaves += 1;
         size_t work_end = work_start + curr_n_leaves;
+        // printf("Work start = %zu; Work end = %zu; Ready size = %zu; curr_n_leaves = %zu\n", work_start, work_end, ready_size, curr_n_leaves);
         Kokkos::parallel_for(
             diff_label + std::string("Hash leaves"),
             Kokkos::RangePolicy<>(work_start, work_end),
@@ -155,8 +156,10 @@ tree_t::create(client_info_t client_info, data_loader_t &data_loader,
                 curr_tree.hash_leaves_kernel(data_ptr, client_info, left_leaf,
                                              idx);
             });
+        // Kokkos::fence();
         work_start = work_end;
     }
+    
     timers[1] = create_timer.seconds() * 1000.0;
     // printf("Leaves Creation: %.3f ms\n", create_timer.seconds() * 1000.0);
 

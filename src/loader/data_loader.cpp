@@ -1,24 +1,25 @@
 #include "data_loader.hpp"
 
 data_loader_t::data_loader_t(size_t host_cache_size, size_t device_cache_size)
-    : host_cache_size_(host_cache_size), device_cache_size_(device_cache_size),
-      data_ptr_(nullptr) {
+    : data_ptr_(nullptr), host_cache_size_(host_cache_size),
+      device_cache_size_(device_cache_size) {
     TIMER_START(init_loader);
     host_cache_ = new host_cache_t(gpu_id, host_cache_size_);
-    device_cache_ = new device_cache_t(gpu_id, device_cache_size_);
+    EXEC_IF_NVCC(device_cache_ =
+                     new device_cache_t(gpu_id, device_cache_size_););
     INFO("Loader - host and device caches initialized");
     TIMER_STOP(init_loader, "Initialized data loader");
 }
 
 data_loader_t::~data_loader_t() {
     host_cache_ = nullptr;
-    device_cache_ = nullptr;
+    EXEC_IF_NVCC(device_cache_ = nullptr;);
     DBG("Loader - destroyed");
 };
 
 size_t
-data_loader_t::max_batch_size(size_t seg_size) {
-    size_t max_payload = std::min(host_cache_size_, device_cache_size_);
+data_loader_t::max_batch_size(size_t seg_size, size_t data_size) {
+    size_t max_payload = std::min({data_size, host_cache_size_, device_cache_size_});
     size_t n_segs = max_payload / seg_size;
     n_segs = (n_segs * seg_size < max_payload) ? (n_segs + 1) : n_segs;
     return n_segs;
@@ -94,12 +95,16 @@ data_loader_t::file_load(FileReader &io_reader, size_t start_foffset,
     int loader_id = instance_count++;
     ready_count[loader_id] = 0;
     host_cache_->set_reader(loader_id, &io_reader);
-    if (trans_type == TransferType::FileToDevice) {
+
+    EXEC_IF_NVCC(if (trans_type == TransferType::FileToDevice) {
         host_cache_->set_next_tier(loader_id, device_cache_);
-    }
+    });
+
+    // size_t batch_size_ =
+    //     (batch_size < 1) ? max_batch_size(seg_size) : batch_size;
 
     size_t batch_size_ =
-        (batch_size < 1) ? max_batch_size(seg_size) : batch_size;
+        (batch_size < 1) ? max_batch_size(seg_size, io_reader.size()) : batch_size;
 
     // create segments
     if (offsets.has_value()) {
@@ -115,7 +120,7 @@ data_loader_t::file_load(FileReader &io_reader, size_t start_foffset,
                 (n_iter * batch_size_ < total_segs) ? (n_iter + 1) : n_iter;
             for (size_t i = 0; i < n_iter; i++) {
                 batch_t *seg_batch = new batch_t(batch_size_);
-                DBG("Loader (" << loader_id << ")- Staging batch " << i + 1
+                INFO("Loader (" << loader_id << ")- Staging batch " << i + 1
                                << " of size " << batch_size_
                                << " for read from file");
                 for (size_t j = 0; j < batch_size_; j++) {
@@ -159,14 +164,20 @@ size_t
 data_loader_t::next(int id, void *ptr) {
     // NB: Ensure that each segment in batch is of size seg_size
     TIMER_START(next);
-    cudaPointerAttributes attributes;
-    cudaError_t err = cudaPointerGetAttributes(&attributes, ptr);
     batch_t *front_batch;
-    if (err == cudaSuccess && attributes.type == cudaMemoryTypeDevice) {
-        front_batch = device_cache_->get_completed(id);
-        device_cache_->coalesce_and_copy(front_batch, ptr);
-        device_cache_->release(id);
-    } else {
+    bool request_processed = false;
+
+    EXEC_IF_NVCC(
+        cudaPointerAttributes attributes;
+        cudaError_t err = cudaPointerGetAttributes(&attributes, ptr);
+        if (err == cudaSuccess && attributes.type == cudaMemoryTypeDevice) {
+            front_batch = device_cache_->get_completed(id);
+            device_cache_->coalesce_and_copy(front_batch, ptr);
+            device_cache_->release(id);
+            request_processed = true;
+        });
+
+    if (!request_processed) {
         front_batch = host_cache_->get_completed(id);
         host_cache_->coalesce_and_copy(front_batch, ptr);
         host_cache_->release(id);
@@ -200,13 +211,13 @@ data_loader_t::next(int id, TransferType trans_type) {
            trans_type == TransferType::FileToHost ||
            trans_type == TransferType::FileToDevice && "Invalid TransferType!");
 
+    base_cache_t *cache_tier = host_cache_;
     batch_t *front_batch;
     if (trans_type == TransferType::HostToDevice ||
         trans_type == TransferType::FileToDevice) {
-        front_batch = get_next(id, device_cache_, call_count > 0);
-    } else {
-        front_batch = get_next(id, host_cache_, call_count > 0);
+        EXEC_IF_NVCC(cache_tier = device_cache_;);
     }
+    front_batch = get_next(id, cache_tier, call_count > 0);
     TIMER_STOP(next, "Retrieved pointer to next batch of data for computation");
     size_t ready_size = front_batch->data->size * front_batch->batch_size;
     return {front_batch->data[0].buffer, ready_size};
@@ -216,7 +227,8 @@ size_t
 data_loader_t::get_chunksize(size_t data_size) {
     double peak_bw = 25;
     float rate_of_change = 0.5;
-    size_t opt_chksize = data_size / (exp(data_size / peak_bw*rate_of_change) + 1);
+    size_t opt_chksize =
+        data_size / (exp(data_size / peak_bw * rate_of_change) + 1);
     printf("Optimum chun size is %zu\n", opt_chksize);
     return 1024;
 }

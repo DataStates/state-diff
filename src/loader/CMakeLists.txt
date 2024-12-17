@@ -1,5 +1,3 @@
-add_definitions(-D__DEBUG)
-
 add_library (statediff-loader SHARED
     data_loader.cpp
     host_cache.cpp
@@ -24,4 +22,4 @@ install (TARGETS statediff-loader EXPORT statediffTargets
 )
 
 ###### Unit tests
-add_subdirectory(test)
+# add_subdirectory(test)

@@ -14,6 +14,11 @@ target_include_directories(data_generator PRIVATE
   $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src>
   $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
 )
+set_target_properties(data_generator PROPERTIES
+    CXX_STANDARD 14
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS OFF
+)
 
 # Install executables
 install (TARGETS data_generator
