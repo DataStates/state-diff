@@ -97,7 +97,7 @@ main(int argc, char **argv) {
         std::cout << "EXEC STATE:: Tree created and saved" << std::endl;
 
         // load metadata file, deserialize tree
-        state_diff::client_t<float> new_client(1);
+        state_diff::client_t<float> new_client;
         auto start_deserialize = std::chrono::high_resolution_clock::now();
         {
             std::ifstream ifs(metadata_fn, std::ios::binary);

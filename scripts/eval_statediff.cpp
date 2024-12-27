@@ -1,10 +1,12 @@
-#include "direct_io.hpp"
+#include "common/direct_io.hpp"
+#include "liburing_reader.hpp"
 #include "mpi.h"
-#include "state_diff.hpp"
+#include "statediff.hpp"
 #include "stdio.h"
 #include <Kokkos_Core.hpp>
 #include <Kokkos_Random.hpp>
 #include <argparse/argparse.hpp>
+#include <cereal/archives/binary.hpp>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -25,11 +27,7 @@ main(int argc, char **argv) {
         // Setup argument parser
         argparse::ArgumentParser program("statediff");
         program.add_argument("-v", "--verbose")
-            .help("Deduplicate files")
-            .default_value(false)
-            .implicit_value(true);
-        program.add_argument("--fuzzy-hash")
-            .help("Decide whether to use fuzzy hash")
+            .help("Compute differences between immutable data states")
             .default_value(false)
             .implicit_value(true);
         program.add_argument("-c", "--chunk-size")
@@ -39,19 +37,30 @@ main(int argc, char **argv) {
         program.add_argument("-t", "--type")
             .required()
             .help("Data type")
-            .default_value(std::string("byte"))
+            .default_value(std::string("float"))
             .choices("byte", "float", "double");
+        program.add_argument("-e", "--error")
+            .help("Error tolerance for comparing floating-point data")
+            .default_value(static_cast<double>(0.0f))
+            .scan<'g', double>();
         program.add_argument("-l", "--level")
             .help("Level to start/stop processing the tree. Root is level 0.")
             .default_value(static_cast<uint32_t>(13))
             .scan<'u', uint32_t>();
-        program.add_argument("--buffer-len")
-            .help("Size of device buffers used for asynchronous data "
-                  "transfers. (bytes)")
+        program.add_argument("--host-cache")
+            .help("Size of host cache for data transfers. (bytes)")
+            .default_value(static_cast<size_t>(1073741824))
+            .scan<'u', size_t>();
+        program.add_argument("--dev-cache")
+            .help("Size of device cache for data transfers. (bytes)")
             .default_value(static_cast<size_t>(1073741824))
             .scan<'u', size_t>();
         program.add_argument("--run0")
             .help("Checkpoint files for run 0")
+            .nargs(argparse::nargs_pattern::any)
+            .default_value(std::vector<std::string>());
+        program.add_argument("--run1")
+            .help("Checkpoint files for run 1")
             .nargs(argparse::nargs_pattern::any)
             .default_value(std::vector<std::string>());
         program.add_argument("--run0-full")
@@ -62,20 +71,12 @@ main(int argc, char **argv) {
             .help("Full checkpoint files for run 1")
             .nargs(argparse::nargs_pattern::any)
             .default_value(std::vector<std::string>());
-        program.add_argument("--run1")
-            .help("Checkpoint files for run 1")
-            .nargs(argparse::nargs_pattern::any)
-            .default_value(std::vector<std::string>());
         program.add_argument("-o", "--output-filename")
             .help("Save tree data to file")
             .default_value(std::string(""));
         program.add_argument("-r", "--result-logname")
             .help("Filename for storing csv logs")
             .default_value(std::string("result_log"));
-        program.add_argument("-e", "--error")
-            .help("Error tolerance for comparing floating-point data")
-            .default_value(static_cast<double>(0.0f))
-            .scan<'g', double>();
 
         // Parse and retrieve arguments
         try {
@@ -87,31 +88,31 @@ main(int argc, char **argv) {
         }
         // Load arguments into convenience variables
         uint32_t chunk_size = program.get<uint32_t>("-c");
-        uint32_t level = program.get<uint32_t>("-l");
-        bool fuzzy_hash = false;
-        if (program["--fuzzy-hash"] == true)
-            fuzzy_hash = true;
-        size_t buffer_len = program.get<size_t>("--buffer-len");
         std::string dtype = program.get<std::string>("--type");
-        std::string logname = program.get<std::string>("--result-logname");
+        double err_tol = program.get<double>("--error");
+        uint32_t level = program.get<uint32_t>("-l");
+        size_t host_cache = program.get<size_t>("--host-cache");
+        size_t dev_cache = program.get<size_t>("--dev-cache");
         auto run0_all_files = program.get<std::vector<std::string>>("--run0");
         auto run1_all_files = program.get<std::vector<std::string>>("--run1");
         auto run0_all_full_files =
             program.get<std::vector<std::string>>("--run0-full");
         auto run1_all_full_files =
             program.get<std::vector<std::string>>("--run1-full");
+        std::string output_fname =
+            program.get<std::string>("--output-filename");
+        std::string logname = program.get<std::string>("--result-logname");
+        STDOUT_PRINT("Chunk Size: %u\n", chunk_size);
+        STDOUT_PRINT("Data Type:  %s\n", dtype.c_str());
+        STDOUT_PRINT("Error Tol:  %s\n", err_tol);
+        STDOUT_PRINT("Start Level %u\n", level);
+        STDOUT_PRINT("Host Cache:  %s\n", dtype.c_str());
+        STDOUT_PRINT("Dev Cache:  %s\n", dtype.c_str());
+
         std::sort(run0_all_files.begin(), run0_all_files.end());
         std::sort(run1_all_files.begin(), run1_all_files.end());
         std::sort(run0_all_full_files.begin(), run0_all_full_files.end());
         std::sort(run1_all_full_files.begin(), run1_all_full_files.end());
-
-        double err_tol = program.get<double>("--error");
-        std::string output_fname =
-            program.get<std::string>("--output-filename");
-        STDOUT_PRINT("Chunk size: %u\n", chunk_size);
-        STDOUT_PRINT("Start level %u\n", level);
-        STDOUT_PRINT("Fuzzy hash? %d\n", fuzzy_hash);
-        STDOUT_PRINT("Data type:  %s\n", dtype.c_str());
 
         int world_rank = 0, world_size = 1;
         MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
@@ -156,6 +157,7 @@ main(int argc, char **argv) {
                 }
             }
         }
+
         if (run1_all_files.size() > 0) {
             for (uint32_t i = 0; i < run1_all_files.size(); i++) {
                 if ((int)i % world_size == world_rank) {
@@ -170,8 +172,8 @@ main(int argc, char **argv) {
                 }
             }
         }
-        uint32_t num_diffs = run0_files.size();
-        bool comparing_runs = run1_files.size() == num_diffs;
+        uint32_t num_file_per_run = run0_files.size();
+        bool comparing_runs = run1_files.size() == num_file_per_run;
         for (uint32_t i = 0; i < run0_files.size(); i++) {
             printf("Rank %d: Run 0 File %d: %s\n", world_rank, i,
                    run0_files[i].c_str());
@@ -188,290 +190,171 @@ main(int argc, char **argv) {
         uint64_t n_comparisons = 0;
         uint64_t n_hash_comp = 0;
 
-        // Create deduplicator
-        CompareTreeDeduplicator comp_deduplicator(chunk_size, level, fuzzy_hash,
-                                                  err_tol, dtype[0]);
-        comp_deduplicator.comp_op = Absolute;
+        double setup_time = 0;
+        double read_time = 0;
+        double deserialize_time = 0;
+        double compare_time1 = 0;
+        double compare_time2 = 0;
+        double serialize_time = 0;
+        double write_time = 0;
 
+        // Create statediff clients
+        bool fuzzy_hash = true;
+        size_t base_data_size = 0;
+        std::string ref_file =
+            comparing_runs ? run1_full_files[0] : run0_files[0];
+        off_t filesize;
+        get_file_size(ref_file, &filesize);
+        size_t data_size = static_cast<size_t>(filesize);
+        state_diff::client_t<float> client_cur(1, data_size, err_tol, dtype[0],
+                                               chunk_size, level, fuzzy_hash);
+        if (comparing_runs) {
+            off_t filesize;
+            get_file_size(run0_full_files[0], &filesize);
+            base_data_size = static_cast<size_t>(filesize);
+            assert(base_data_size == data_size);
+        }
+        state_diff::client_t<float> client_prev;
+
+        
         MPI_Barrier(MPI_COMM_WORLD);
-
-        // Create views (device and host views) to hold the data from  each run
-        Kokkos::View<uint8_t *> data0_d("Run 0 region", 0),
-            data1_d("Run 1 region", 0);
-        Kokkos::View<uint8_t *>::HostMirror data0_h =
-            Kokkos::create_mirror_view(data0_d);
-        Kokkos::View<uint8_t *>::HostMirror data1_h =
-            Kokkos::create_mirror_view(data1_d);
-
         // Iterate through files
-        for (uint32_t idx = 0; idx < num_diffs; idx++) {
+        for (uint32_t idx = 0; idx < num_file_per_run; idx++) {
             std::cout << "Rank " << world_rank << ": Checkpoint " << idx
                       << std::endl;
-            size_t data_len = 0, base_data_len = 0;
-            
-            // Get length of file
-            off_t filesize;
-            get_file_size(run0_files[idx], &filesize);
-            data_len = static_cast<size_t>(filesize);
 
-            // ========================================================================================
-            //  Setup
-            // ========================================================================================
-            Timer::time_point beg_setup = Timer::now();
-            Kokkos::Profiling::pushRegion("Setup");
-            if (comparing_runs) {
-                comp_deduplicator.setup(data_len, buffer_len / sizeof(float),
-                                        run0_full_files[idx],
-                                        run1_full_files[idx]);
-                if (data0_h.size() < data_len) {
-                    Kokkos::resize(data0_h, data_len);
-                    Kokkos::resize(data1_h, data_len);
-                }
-            } else {
-                comp_deduplicator.setup(data_len);
-                if (data0_h.size() < data_len) {
-                    Kokkos::resize(data0_h, data_len);
-                    Kokkos::resize(data0_d, data_len);
-                }
-            }
-            Kokkos::Profiling::popRegion();
-            Timer::time_point end_setup = Timer::now();
-            double setup_time =
-                std::chrono::duration_cast<Duration>(end_setup - beg_setup)
-                    .count();
-            std::cout << "\tRank " << world_rank << ": Setup: " << setup_time
-                      << std::endl;
-            timers[0] = setup_time;
-
-            // ========================================================================================
-            // Open file and read/calc important values
-            // ========================================================================================
-            Timer::time_point beg_read = Timer::now();
-            Kokkos::Profiling::pushRegion("Read");
-            if (comparing_runs) {
-
-                int fd0 = open(run0_files[idx].c_str(), O_RDONLY, 0644);
-                if (fd0 == -1) {
-                    FATAL("cannot open " << run0_files[idx]
-                                         << ", error = " << strerror(errno));
-                }
-                size_t transferred = 0, remaining = data_len;
-                while (remaining > 0) {
-                    auto ret =
-                        read(fd0, data0_h.data() + transferred, remaining);
-                    if (ret < 0)
-                        FATAL("cannot read "
-                              << data_len << " bytes from " << run0_files[idx]
-                              << " , error = " << std::strerror(errno));
-                    remaining -= ret;
-                    transferred += ret;
-                }
-                fsync(fd0);
-                close(fd0);
-
-                int fd1 = open(run1_files[idx].c_str(), O_RDONLY, 0644);
-                if (fd1 == -1) {
-                    FATAL("cannot open " << run1_files[idx]
-                                         << ", error = " << strerror(errno));
-                }
-                transferred = 0, remaining = data_len;
-                while (remaining > 0) {
-                    auto ret =
-                        read(fd1, data1_h.data() + transferred, remaining);
-                    if (ret < 0)
-                        FATAL("cannot read "
-                              << data_len << " bytes from " << run1_files[idx]
-                              << " , error = " << std::strerror(errno));
-                    remaining -= ret;
-                    transferred += ret;
-                }
-                fsync(fd1);
-                close(fd1);
-            } else {
-
-                int fd0 = open(run0_files[idx].c_str(), O_RDONLY, 0644);
-                if (fd0 == -1) {
-                    FATAL("cannot open " << run0_files[idx]
-                                         << ", error = " << strerror(errno));
-                }
-                size_t transferred = 0, remaining = data_len;
-                while (remaining > 0) {
-                    auto ret =
-                        read(fd0, data0_h.data() + transferred, remaining);
-                    if (ret < 0)
-                        FATAL("cannot read "
-                              << data_len << " bytes from " << run0_files[idx]
-                              << " , error = " << std::strerror(errno));
-                    remaining -= ret;
-                    transferred += ret;
-                }
-                fsync(fd0);
-                close(fd0);
-            }
-            Kokkos::Profiling::popRegion();
-            Timer::time_point end_read = Timer::now();
-            double read_time =
-                std::chrono::duration_cast<Duration>(end_read - beg_read)
-                    .count();
-            std::cout << "\tRank " << world_rank
-                      << ": Read prior run file: " << read_time << std::endl;
-            timers[1] = read_time;
-
-            // ========================================================================================
-            // Deserialize
-            // ========================================================================================
-            Timer::time_point beg_deserialize = Timer::now();
-            Kokkos::Profiling::pushRegion("Deserialize");
-            if (comparing_runs) {
-                comp_deduplicator.deserialize(data0_h.data(), data1_h.data());
-            } else {
-                Kokkos::deep_copy(data0_d, data0_h);
-            }
-            Kokkos::Profiling::popRegion();
-            Timer::time_point end_deserialize = Timer::now();
-            double deserialize_time = std::chrono::duration_cast<Duration>(
-                                          end_deserialize - beg_deserialize)
-                                          .count();
-            std::cout << "\tRank " << world_rank
-                      << ": Deserialize: " << deserialize_time << std::endl;
-            timers[2] = deserialize_time;
-
-            // ========================================================================================
-            // Compare
-            // ========================================================================================
             if (!comparing_runs) {
-                Timer::time_point beg_compare1 = Timer::now();
-                Kokkos::Profiling::pushRegion("Create tree");
-                comp_deduplicator.create_tree((uint8_t *)(data0_d.data()),
-                                              data0_d.size());
+                // ================================================================
+                // Setup
+                // ================================================================
+                Timer::time_point beg_setup = Timer::now();
+                Kokkos::Profiling::pushRegion("Setup");
+                liburing_io_reader_t reader_cur(run0_files[idx]);
                 Kokkos::Profiling::popRegion();
-                Timer::time_point end_compare1 = Timer::now();
-                double compare_time1 = std::chrono::duration_cast<Duration>(
-                                           end_compare1 - beg_compare1)
-                                           .count();
+                Timer::time_point end_setup = Timer::now();
+                setup_time =
+                    std::chrono::duration_cast<Duration>(end_setup - beg_setup)
+                        .count();
                 std::cout << "\tRank " << world_rank
-                          << ": Create Tree: " << compare_time1 << std::endl;
-                timers[3] = compare_time1;
-            } else {
-                Timer::time_point beg_compare1 = Timer::now();
-                Kokkos::Profiling::pushRegion("Compare phase 1");
-                comp_deduplicator.compare_trees_phase1();
+                          << ": Setup: " << setup_time << std::endl;
+
+                // ================================================================
+                // Create tree
+                // ================================================================
+                Timer::time_point beg_create = Timer::now();
+                Kokkos::Profiling::pushRegion("Create tree");
+                client_cur.create(reader_cur);
                 Kokkos::Profiling::popRegion();
-                Timer::time_point end_compare1 = Timer::now();
-                double compare_time1 = std::chrono::duration_cast<Duration>(
-                                           end_compare1 - beg_compare1)
-                                           .count();
+                Timer::time_point end_create = Timer::now();
+                double create_time = std::chrono::duration_cast<Duration>(
+                                         end_create - beg_create)
+                                         .count();
+                std::cout << "\tRank " << world_rank
+                          << ": Create Tree: " << create_time << std::endl;
+                compare_time1 = create_time;
+
+                // ================================================================
+                // Serialize
+                // ================================================================
+                Timer::time_point beg_serialize = Timer::now();
+                Kokkos::Profiling::pushRegion("Serialize");
+                std::string outname = run0_files[idx] + std::string(".") +
+                                      std::to_string(idx) +
+                                      std::string(".compare-tree");
+                {
+                    std::ofstream ofs(outname, std::ios::binary);
+                    cereal::BinaryOutputArchive oa(ofs);
+                    oa(client_cur);
+                    ofs.close();
+                }
+                Kokkos::Profiling::popRegion();
+                Timer::time_point end_serialize = Timer::now();
+                serialize_time = std::chrono::duration_cast<Duration>(
+                                     end_serialize - beg_serialize)
+                                     .count();
+                std::cout << "\tRank " << world_rank
+                          << ": Serialize: " << serialize_time << std::endl;
+            } else {
+                // ================================================================
+                // Setup
+                // ================================================================
+                Timer::time_point beg_setup = Timer::now();
+                Kokkos::Profiling::pushRegion("Setup");
+                liburing_io_reader_t reader_prev(run0_full_files[idx]);
+                liburing_io_reader_t reader_cur(run1_full_files[idx]);
+                Kokkos::Profiling::popRegion();
+                Timer::time_point end_setup = Timer::now();
+                setup_time =
+                    std::chrono::duration_cast<Duration>(end_setup - beg_setup)
+                        .count();
+                std::cout << "\tRank " << world_rank
+                          << ": Setup: " << setup_time << std::endl;
+
+                // ================================================================
+                // Deserialize
+                // ================================================================
+                Timer::time_point beg_deserialize = Timer::now();
+                Kokkos::Profiling::pushRegion("Deserialize");
+                {
+                    std::ifstream ifs(run0_files[idx], std::ios::binary);
+                    cereal::BinaryInputArchive ia(ifs);
+                    ia(client_prev);
+                    ifs.close();
+                }
+                {
+                    std::ifstream ifs(run1_files[idx], std::ios::binary);
+                    cereal::BinaryInputArchive ia(ifs);
+                    ia(client_cur);
+                    ifs.close();
+                }
+                Kokkos::Profiling::popRegion();
+                Timer::time_point end_deserialize = Timer::now();
+                deserialize_time = std::chrono::duration_cast<Duration>(
+                                       end_deserialize - beg_deserialize)
+                                       .count();
+                std::cout << "\tRank " << world_rank
+                          << ": Deserialize: " << deserialize_time << std::endl;
+
+                // ================================================================
+                // Compare
+                // ================================================================
+                Kokkos::Profiling::pushRegion("Compare phase");
+                client_cur.compare_with(-1, reader_cur, client_prev,
+                                        reader_prev);
+                compare_time1 = client_cur.get_tree_comparison_time();
+                compare_time2 = client_cur.get_data_compare_time();
+                Kokkos::Profiling::popRegion();
                 std::cout << "\tRank " << world_rank
                           << ": Compare Tree Phase 1: " << compare_time1
                           << std::endl;
-                timers[3] = compare_time1;
 
-                Timer::time_point beg_compare2 = Timer::now();
-                Kokkos::Profiling::pushRegion("Compare phase 2");
-                if (comp_deduplicator.diff_hash_vec.size() > 0) {
-                    comp_deduplicator.compare_trees_phase2();
-                }
-                Kokkos::Profiling::popRegion();
-                Timer::time_point end_compare2 = Timer::now();
-                double compare_time2 = std::chrono::duration_cast<Duration>(
-                                           end_compare2 - beg_compare2)
-                                           .count();
                 std::cout << "\tRank " << world_rank
                           << ": Compare Tree Phase 2: " << compare_time2
                           << std::endl;
-                timers[4] = compare_time2;
 
-                std::cout << "\t\tRank " << world_rank << ": IO Time (File 0): "
-                          << comp_deduplicator.io_timer0[0] << std::endl;
-                std::cout << "\t\t\tRank " << world_rank
-                          << ": Read Time (File 0): "
-                          << comp_deduplicator.io_timer0[1] << std::endl;
-                std::cout << "\t\t\tRank " << world_rank
-                          << ": cudaMemcpy Time (File 0): "
-                          << comp_deduplicator.io_timer0[2] << std::endl;
-                std::cout << "\t\tRank " << world_rank << ": IO Time (File 1): "
-                          << comp_deduplicator.io_timer1[0] << std::endl;
-                std::cout << "\t\t\tRank " << world_rank
-                          << ": Read Time (File 1): "
-                          << comp_deduplicator.io_timer1[1] << std::endl;
-                std::cout << "\t\t\tRank " << world_rank
-                          << ": cudaMemcpy Time (File 1): "
-                          << comp_deduplicator.io_timer1[2] << std::endl;
+                std::vector<double> compare_time =
+                    client_cur.get_compare_time();
                 std::cout << "\t\tRank " << world_rank << ": Compare Time: "
-                          << comp_deduplicator.get_compare_time() << std::endl;
+                          << std::reduce(compare_time.begin(),
+                                         compare_time.end())
+                          << std::endl;
             }
 
-            // ========================================================================================
-            // Serialize
-            // ========================================================================================
-            std::vector<uint8_t> serialized_buffer;
-            Timer::time_point beg_serialize = Timer::now();
-            Kokkos::Profiling::pushRegion("Serialize");
-            serialized_buffer = comp_deduplicator.serialize();
-            Kokkos::Profiling::popRegion();
-            Timer::time_point end_serialize = Timer::now();
-            double serialize_time = std::chrono::duration_cast<Duration>(
-                                        end_serialize - beg_serialize)
-                                        .count();
-            std::cout << "\tRank " << world_rank
-                      << ": Serialize: " << serialize_time << std::endl;
-            timers[5] = serialize_time;
-
-            // ========================================================================================
-            // Write
-            // ========================================================================================
-            Timer::time_point beg_write_tree = Timer::now();
-            Kokkos::Profiling::pushRegion("Write");
-            std::string outname;
-            if (comparing_runs) {
-                outname = run1_files[idx] + std::string(".") +
-                          std::to_string(idx) + std::string(".compare-tree");
-            } else {
-                outname = run0_files[idx] + std::string(".") +
-                          std::to_string(idx) + std::string(".compare-tree");
-            }
-            if (output_fname.size() > 0) {
-                outname = output_fname;
-            }
-            if (!comparing_runs) {
-                int fd =
-                    open(outname.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
-                if (fd == -1) {
-                    FATAL("cannot open " << outname
-                                         << ", error = " << strerror(errno));
-                }
-                size_t transferred = 0, remaining = serialized_buffer.size();
-                while (remaining > 0) {
-                    auto ret = write(fd, serialized_buffer.data() + transferred,
-                                     remaining);
-                    if (ret < 0)
-                        FATAL("cannot write "
-                              << serialized_buffer.size() << " bytes to "
-                              << outname
-                              << " , error = " << std::strerror(errno));
-                    remaining -= ret;
-                    transferred += ret;
-                }
-                fsync(fd);
-                posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
-                close(fd);
-            }
-            Kokkos::Profiling::popRegion();
-            Timer::time_point end_write_tree = Timer::now();
-            double write_tree_time = std::chrono::duration_cast<Duration>(
-                                         end_write_tree - beg_write_tree)
-                                         .count();
-            std::cout << "\tRank " << world_rank
-                      << ": Write: " << write_tree_time << std::endl;
-            timers[6] = write_tree_time;
             // ========================================================================================
             // Collect stats for logs
             // ========================================================================================
-            n_comparisons = comp_deduplicator.get_num_comparisons();
-            n_hash_comp = comp_deduplicator.get_num_hash_comparisons();
-            elem_changed = comp_deduplicator.get_num_changes();
-            filtered_blocks = comp_deduplicator.diff_hash_vec.size();
-            changed_blocks = comp_deduplicator.changed_chunks.count();
+            timers[0] = setup_time;
+            timers[1] = read_time;
+            timers[2] = deserialize_time;
+            timers[3] = compare_time1;
+            timers[4] = compare_time2;
+            timers[5] = serialize_time;
+            timers[6] = write_time;
+            n_comparisons = client_cur.get_num_comparisons();
+            n_hash_comp = client_cur.get_num_hash_comparisons();
+            elem_changed = client_cur.get_num_changes();
+            filtered_blocks = client_cur.get_filtered_blocks();
+            changed_blocks = client_cur.get_validated_diffs();
             printf("Rank %d: Number of different elements %zu\n", world_rank,
                    elem_changed);
             printf("Rank %d: Number of comparisons %lu\n", world_rank,
@@ -482,69 +365,68 @@ main(int argc, char **argv) {
                    world_rank, filtered_blocks);
             printf("Rank %d: Number of different hashes (Phase 2) %zu\n\n",
                    world_rank, changed_blocks);
-        }
-        Kokkos::fence();
-        // Write log
-        std::ofstream logfile;
-        logfile.open(logname, std::ofstream::out | std::ofstream::app);
-        logfile.precision(10);
-        if (logfile.tellp() == logfile.beg) {
-            logfile << "Rank,File,File size,Baseline file,Baseline file "
-                       "size,Hash function,Chunk size,Algorithm,Data type,";
-            logfile << "Comparison operator,Error tolerance,Start "
-                       "level,Synchronous,Device buffer length,";
-            logfile << "Setup time,Read time,Deserialization time,Construction "
+
+            Kokkos::fence();
+
+            // ========================================================================================
+            // Write log
+            // ========================================================================================
+            std::ofstream logfile;
+            logfile.open(logname, std::ofstream::out | std::ofstream::app);
+            logfile.precision(10);
+            if (logfile.tellp() == logfile.beg) {
+                logfile << "Rank,File,File size,Baseline file,Baseline file "
+                           "size,Hash function,Chunk size,Data type,";
+                logfile
+                    << "Error tolerance,Start level,Host cache,Device cache,";
+                logfile
+                    << "Setup time,Read time,Deserialization time,Construction "
                        "time,Compare tree time,Compare direct "
                        "time,Serialization time,Write time,";
-            logfile << "Elements different,Hashes different,Num "
-                       "comparisons,Num hash comparisons,Filtered hashes\n";
+                logfile << "Elements different,Hashes different,Num "
+                           "comparisons,Num hash comparisons,Filtered hashes\n";
+            }
+            logfile << world_rank << ",";
+            if (comparing_runs) {
+                logfile << run1_files[idx] << ",";
+            } else {
+                logfile << run0_files[idx] << ",";
+            }
+            logfile << data_size << ",";
+            if (comparing_runs) {
+                logfile << run0_files[idx] << ",";
+                logfile << base_data_size << ",";
+            } else {
+                logfile << ",,";
+            }
+            if (fuzzy_hash) {
+                logfile << "Fuzzy hash,";
+            } else {
+                logfile << "Murmur3,";
+            }
+            logfile << chunk_size << ",";
+            logfile << dtype << ",";
+            logfile << err_tol << ",";
+            logfile << level << ",";
+            logfile << host_cache << ",";
+            logfile << dev_cache << ",";
+            logfile << timers[0] << ",";
+            logfile << timers[1] << ",";
+            logfile << timers[2] << ",";
+            if (comparing_runs) {
+                logfile << "0," << timers[3] << "," << timers[4] << ",";
+            } else {
+                logfile << timers[3] << ",0,0,";
+            }
+            logfile << timers[5] << ",";
+            logfile << timers[6] << ",";
+            logfile << elem_changed << ",";
+            logfile << changed_blocks << ",";
+            logfile << n_comparisons << ",";
+            logfile << n_hash_comp << ",";
+            logfile << filtered_blocks << std::endl;
+            logfile.close();
         }
-        logfile << world_rank << ",";
-        if (comparing_runs) {
-            logfile << run1_files[idx] << ",";
-        } else {
-            logfile << run0_files[idx] << ",";
-        }
-        logfile << data_len << ",";
-        if (comparing_runs) {
-            logfile << run0_files[idx] << ",";
-            logfile << base_data_len << ",";
-        } else {
-            logfile << ",,";
-        }
-        if (fuzzy_hash) {
-            logfile << "Fuzzy hash,";
-        } else {
-            logfile << "Murmur3,";
-        }
-        logfile << chunk_size << ",";
-        logfile << alg << ",";
-        logfile << dtype << ",";
-        logfile << comp << ",";
-        logfile << err_tol << ",";
-        logfile << level << ",";
-        if (async_stream) {
-            logfile << "async,";
-        } else {
-            logfile << "sync,";
-        }
-        logfile << buffer_len << ",";
-        logfile << timers[0] << ",";
-        logfile << timers[1] << ",";
-        logfile << timers[2] << ",";
-        if (comparing_runs) {
-            logfile << "0," << timers[3] << "," << timers[4] << ",";
-        } else {
-            logfile << timers[3] << ",0,0,";
-        }
-        logfile << timers[5] << ",";
-        logfile << timers[6] << ",";
-        logfile << elem_changed << ",";
-        logfile << changed_blocks << ",";
-        logfile << n_comparisons << ",";
-        logfile << n_hash_comp << ",";
-        logfile << filtered_blocks << std::endl;
-        logfile.close();
     }
     Kokkos::finalize();
     DEBUG_PRINT("Done finalizing Kokkos\n");

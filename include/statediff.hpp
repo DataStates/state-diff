@@ -43,17 +43,17 @@ template <typename DataType> class client_t {
     int curr_chkpt_id = -1;
 
     // comparison state
-    Queue working_queue;   // device
+    Queue working_queue; 
     // Bitset for tracking which chunks have been changed
     Kokkos::Bitset<> changed_chunks;   // host
     // Vec of idx of chunks that are marked different during the 1st phase
-    Vector<size_t> diff_hash_vec;   // device
+    Vector<size_t> diff_hash_vec;
     Kokkos::View<uint64_t[1]> num_comparisons =
-        Kokkos::View<uint64_t[1]>("Num comparisons");   // host
+        Kokkos::View<uint64_t[1]>("Num comparisons");
     Kokkos::View<uint64_t[1]> num_changed =
-        Kokkos::View<uint64_t[1]>("Num changed");   // host
+        Kokkos::View<uint64_t[1]>("Num changed");
     Kokkos::View<uint64_t[1]> num_hash_comp =
-        Kokkos::View<uint64_t[1]>("Num hash comparisons");   // device
+        Kokkos::View<uint64_t[1]>("Num hash comparisons");
     size_t nchange = 0;
 
     // timers (setup, compare_tree, compare_direct)
@@ -62,8 +62,9 @@ template <typename DataType> class client_t {
     void initialize(size_t n_chunks);
 
   public:
-    client_t(int client_id, size_t host_cache_size = DEFAULT_HOST_CACHE,
-             size_t dev_cache_size = DEFAULT_DEVICE_CACHE);
+    // client_t(int client_id, size_t host_cache_size = DEFAULT_HOST_CACHE,
+    //          size_t dev_cache_size = DEFAULT_DEVICE_CACHE);
+    client_t() {};
     client_t(int client_id, size_t data_size, double error,
              char dtype = DEFAULT_DTYPE, size_t chunk_size = DEFAULT_CHUNK_SIZE,
              size_t start_level = DEFAULT_START_LEVEL,
@@ -102,17 +103,14 @@ template <typename DataType> class client_t {
     size_t get_num_hash_comparisons() const;
     size_t get_num_comparisons() const;
     size_t get_num_changes() const;
+    size_t get_filtered_blocks() const;
+    size_t get_validated_diffs() const;
     double get_tree_comparison_time() const;
     double get_data_compare_time() const;
     std::vector<double> get_create_time() const;
     std::vector<double> get_compare_time() const;
     client_info_t get_client_info() const;
 };
-
-template <typename DataType>
-client_t<DataType>::client_t(int client_id, size_t host_cache_size,
-                             size_t dev_cache_size)
-    : data_loader(host_cache_size, dev_cache_size) {}
 
 template <typename DataType>
 client_t<DataType>::client_t(int client_id, size_t data_size, double error,
@@ -233,7 +231,6 @@ bool
 client_t<DataType>::compare_with(int chkpt_id, Reader &curr_reader,
                                  client_t &prev, Reader &prev_reader,
                                  std::optional<TransferType> cache_tier) {
-    // ASSERT(client_info == prev.client_info && curr_chkpt_id == chkpt_id);
     TIMER_START(client_compare_with);
     ASSERT(client_info == prev.client_info ||
            "Comparing two clients with different metadata characteristics.");
@@ -302,8 +299,8 @@ client_t<DataType>::compare_trees(const client_t &prev, Queue &working_queue,
     Kokkos::Experimental::ScatterView<uint64_t[1]> nhash_comp(num_hash_comp);
     Kokkos::Profiling::popRegion();
     Timer::time_point setup_end = Timer::now();
-    timers[0] +=
-        std::chrono::duration_cast<Duration>(setup_end - setup_beg).count();
+    double setup_time = std::chrono::duration_cast<Duration>(setup_end - setup_beg).count();
+    timers[0] += setup_time;
 
     Timer::time_point compare_beg = Timer::now();
     // Fills up queue with nodes in the stop level or leavs if num_level < 13
@@ -362,7 +359,7 @@ client_t<DataType>::compare_trees(const client_t &prev, Queue &working_queue,
     Kokkos::Profiling::popRegion();
     Timer::time_point compare_end = Timer::now();
     timers[1] +=
-        std::chrono::duration_cast<Duration>(compare_end - compare_beg).count();
+        setup_time + std::chrono::duration_cast<Duration>(compare_end - compare_beg).count() ;
     return diff_hash_vec.size();
 }
 
@@ -393,9 +390,8 @@ client_t<DataType>::compare_data(client_t &prev, int ld_prev, int ld_curr,
     size_t elemPerChunk = client_info.chunk_size / sizeof(DataType);
     Kokkos::Profiling::popRegion();
     Timer::time_point setup_end = Timer::now();
-    timers[0] +=
-        std::chrono::duration_cast<Duration>(setup_end - setup_beg).count();
-
+    double setup_time = std::chrono::duration_cast<Duration>(setup_end - setup_beg).count();
+    timers[0] += setup_time;
     Timer::time_point compare_beg = Timer::now();
     double err_tol = client_info.error_tolerance;
     size_t chunk_size = client_info.chunk_size;
@@ -432,8 +428,8 @@ client_t<DataType>::compare_data(client_t &prev, int ld_prev, int ld_curr,
         Kokkos::Profiling::popRegion();
     }
     Timer::time_point compare_end = Timer::now();
-    timers[1] +=
-        std::chrono::duration_cast<Duration>(compare_end - compare_beg).count();
+    timers[2] +=
+        setup_time + std::chrono::duration_cast<Duration>(compare_end - compare_beg).count();
     Kokkos::Profiling::popRegion();
     return nchange;
 }
@@ -458,6 +454,18 @@ template <typename DataType>
 size_t
 client_t<DataType>::get_num_changes() const {
     return nchange;
+}
+
+template <typename DataType>
+size_t
+client_t<DataType>::get_filtered_blocks() const {
+    return diff_hash_vec.size();;
+}
+
+template <typename DataType>
+size_t
+client_t<DataType>::get_validated_diffs() const {
+    return changed_chunks.count();
 }
 
 template <typename DataType>

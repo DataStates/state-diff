@@ -45,6 +45,7 @@ class data_loader_t {
                           size_t batch_size_, size_t seg_size);
 
   public:
+    data_loader_t() {};
     data_loader_t(size_t host_cache_size, size_t device_cache_size);
 
     ~data_loader_t();
