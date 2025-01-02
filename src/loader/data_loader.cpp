@@ -19,7 +19,8 @@ data_loader_t::~data_loader_t() {
 
 size_t
 data_loader_t::max_batch_size(size_t seg_size, size_t data_size) {
-    size_t max_payload = std::min({data_size, host_cache_size_, device_cache_size_});
+    size_t max_payload =
+        std::min({data_size, host_cache_size_, device_cache_size_});
     size_t n_segs = max_payload / seg_size;
     n_segs = (n_segs * seg_size < max_payload) ? (n_segs + 1) : n_segs;
     return n_segs;
@@ -103,8 +104,9 @@ data_loader_t::file_load(FileReader &io_reader, size_t start_foffset,
     // size_t batch_size_ =
     //     (batch_size < 1) ? max_batch_size(seg_size) : batch_size;
 
-    size_t batch_size_ =
-        (batch_size < 1) ? max_batch_size(seg_size, io_reader.size()) : batch_size;
+    size_t batch_size_ = (batch_size < 1)
+                             ? max_batch_size(seg_size, io_reader.size())
+                             : batch_size;
 
     // create segments
     if (offsets.has_value()) {
@@ -121,8 +123,8 @@ data_loader_t::file_load(FileReader &io_reader, size_t start_foffset,
             for (size_t i = 0; i < n_iter; i++) {
                 batch_t *seg_batch = new batch_t(batch_size_);
                 INFO("Loader (" << loader_id << ")- Staging batch " << i + 1
-                               << " of size " << batch_size_
-                               << " for read from file");
+                                << " of size " << batch_size_
+                                << " for read from file");
                 for (size_t j = 0; j < batch_size_; j++) {
                     size_t index = i * batch_size_ + j;
                     segment_t seg((*offsets)[index], seg_size);
@@ -225,12 +227,16 @@ data_loader_t::next(int id, TransferType trans_type) {
 
 size_t
 data_loader_t::get_chunksize(size_t data_size) {
-    double peak_bw = 25;
-    float rate_of_change = 0.5;
-    size_t opt_chksize =
-        data_size / (exp(data_size / peak_bw * rate_of_change) + 1);
+    double peak_bw = 23.5;
+    // power law model formula is y = a.x^b
+    float power_law_param_a = 0.5;
+    float power_law_param_b = 0.5;
+    // C = (A*W*D^B)^(1/B+1)
+    size_t opt_chksize = std::pow(power_law_param_a * peak_bw *
+                                      std::pow(data_size, power_law_param_b),
+                                  1.0 / (power_law_param_b + 1));
     printf("Optimum chun size is %zu\n", opt_chksize);
-    return 1024;
+    return opt_chksize;
 }
 
 void

@@ -124,8 +124,8 @@ client_t<DataType>::client_t(int client_id, size_t data_size, double error,
                                     std::to_string(client_id) +
                                     std::string(": Setup");
     Kokkos::Profiling::pushRegion(setup_region_name.c_str());
-    // size_t optim_chksize = data_loader.get_chunksize(data_size);
-    size_t optim_chksize = min_chunk_size;
+    size_t optim_chksize = data_loader.get_chunksize(data_size);
+    // size_t optim_chksize = min_chunk_size;
     client_info = client_info_t{client_id,      dtype, data_size,
                                 min_chunk_size, start, error};
     tree = tree_t(data_size, optim_chksize, fuzzyhash);
