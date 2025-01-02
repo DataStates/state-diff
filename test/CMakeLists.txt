@@ -20,6 +20,17 @@ set_target_properties(test_serialize_loader PROPERTIES
    CXX_EXTENSIONS OFF
 )
 
+add_executable(test_serialize_loader_set test_serialize_loader_set.cpp)
+target_include_directories(test_serialize_loader_set PUBLIC ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(test_serialize_loader_set PUBLIC Kokkos::kokkos)
+target_link_libraries(test_serialize_loader_set PRIVATE OpenSSL::SSL)
+target_link_libraries(test_serialize_loader_set PUBLIC statediff)
+set_target_properties(test_serialize_loader_set PROPERTIES
+   CXX_STANDARD 17
+   CXX_STANDARD_REQUIRED YES
+   CXX_EXTENSIONS OFF
+)
+
 add_executable(test_compare test_compare.cpp)
 target_include_directories(test_compare PUBLIC ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(test_compare PUBLIC Kokkos::kokkos)

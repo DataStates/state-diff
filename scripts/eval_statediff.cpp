@@ -207,7 +207,7 @@ main(int argc, char **argv) {
         get_file_size(ref_file, &filesize);
         size_t data_size = static_cast<size_t>(filesize);
         state_diff::client_t<float> client_cur(1, data_size, err_tol, dtype[0],
-                                               chunk_size, level, fuzzy_hash);
+                                               chunk_size, level, fuzzy_hash, host_cache, dev_cache);
         if (comparing_runs) {
             off_t filesize;
             get_file_size(run0_full_files[0], &filesize);

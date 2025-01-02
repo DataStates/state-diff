@@ -33,62 +33,34 @@ main(int argc, char **argv) {
     int test_status = 0;
 
     // Define the parameters
-    // maximum floating-point (FP) value in synthetic data
-    float max_float = 100.0;
-    // minimum FP value in synthetic data
-    float min_float = 0.0;
-    // size in bytes of the synthetic data (1GB)
-    // int data_size = 1024 * 1024 * 1024;
-    int data_size = 16 * 1024 * 1024; // 16MB
-    // Application error tolerance
     float error_tolerance = 1e-4;
-    // Target chunk size. This example uses 16 bytes
     int chunk_size = 512;
     // Use our rounding hash algorithm or exact hash.
     bool fuzzy_hash = true;
     char dtype = 'f';   // float
-    // Random number seed to generate the synthetic data
-    int seed = 0x123;
     // builds the tree from leaves to root level, can be 12 or 13.
     int root_level = 1;
-    std::string fname = "checkpoint.dat";
-    std::string metadata_fn = "checkpoint.tree";
-
+    std::string fname = "/lus/eagle/projects/RECUP/kassogba/veloc-ckpt/haac/sc-experiments/4gpus/np796-500mil/run1/m000p.mpirestart-combined-0-10.dat";
+    std::string metadata_fn = "/lus/eagle/projects/RECUP/kassogba/veloc-ckpt/haac/sc-experiments/4gpus/np796-500mil/run1/m000p.mpirestart-combined-0-10.dat.tree";
+    off_t filesize;
+    get_file_size(fname, &filesize);
+    size_t data_size = static_cast<size_t>(filesize);
     int num_chunks = data_size / chunk_size;
     std::cout << "Nunber of leaf nodes = " << num_chunks << std::endl;
 
     Kokkos::initialize(argc, argv);
     {
-        // Create synthetic datasets
-        int data_len = data_size / sizeof(float);
-        std::vector<float> run_data(data_len);
-#pragma omp parallel
-        {
-            std::mt19937 prng(seed + omp_get_thread_num());
-            std::uniform_real_distribution<float> prng_dist(min_float,
-                                                            max_float);
-#pragma omp for
-            for (int i = 0; i < data_len; ++i) {
-                run_data[i] = prng_dist(prng);
-            }
-        }
-
-        // save checkpoint for offline tree cretion and comparison
-        write_file(fname, (uint8_t *)run_data.data(), data_size);
-        std::cout << "EXEC STATE:: File saved" << std::endl;
-
-	fname = "/lus/eagle/projects/RECUP/kassogba/veloc-ckpt/haac/sc-experiments/4gpus/np796-500mil/run1/m000p.mpirestart-combined-0-10.dat";
-	metadata_fn = "/lus/eagle/projects/RECUP/kassogba/veloc-ckpt/haac/sc-experiments/4gpus/np796-500mil/run1/m000p.mpirestart-combined-0-10.dat.tree";
-	off_t filesize;
-        get_file_size(fname, &filesize);
-        data_size = static_cast<size_t>(filesize);
-
         // read data, build tree and save
+	auto start_create = std::chrono::high_resolution_clock::now();
         liburing_io_reader_t reader(fname);
         state_diff::client_t<float> client(
             1, data_size, error_tolerance, dtype, chunk_size,
-            root_level, fuzzy_hash, 8589934592, 4294967296);
+            root_level, fuzzy_hash, 8589934592, 8589934592); //4294967296);
         client.create(reader);
+	auto end_create = std::chrono::high_resolution_clock::now();
+	std::chrono::duration<double> create_duration =
+            end_create - start_create;
+
         auto start_serialize = std::chrono::high_resolution_clock::now();
         {
             std::ofstream ofs(metadata_fn, std::ios::binary);
@@ -121,6 +93,8 @@ main(int argc, char **argv) {
         if (!(client_info == new_client_info)) {
             test_status = -1;
         }
+	std::cout << "Creation took " << create_duration.count()
+                  << " seconds" << std::endl;
         std::cout << "Serialization took " << serialize_duration.count()
                   << " seconds" << std::endl;
         std::cout << "Deserialization took " << deserialize_duration.count()

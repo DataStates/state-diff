@@ -1,11 +1,11 @@
 #!/bin/bash
 
-BUILD_DIR="$HOME/research/anl/state-diff/build"
-
+BUILD_DIR="$HOME/research/recup/veloc/apps/state-diff/build"
+DATA_DIR="/lus/eagle/projects/RECUP/kassogba/veloc-ckpt/haac/sc-experiments"
 MB=$((1024 * 1024))
 GB=$((1024 * $MB))
 data_size=$((1 * $GB))
-outname="test"
+outname="$DATA_DIR/test"
 num_runs=3
 
 echo "==============================================================================="
@@ -19,8 +19,8 @@ echo " Peak bandwidth verification "
 echo "==============================================================================="
 for test_id in $(seq 1 $num_runs)
 do 
-    /home/kta7930/research/anl/install/vmtouch/usr/local/bin/vmtouch -ve test0.dat
-    $BUILD_DIR/benchmark/benchmark_thrpt test0.dat
+    /home/keveltun/install/vmtouch/bin/vmtouch -ve $DATA_DIR/test0.dat
+    $BUILD_DIR/scripts/benchmark_thrpt $DATA_DIR/test0.dat
 
     # output two numbers (f2h, h2d). read the two numbers, add them to a list and sort to find max of both
 done
@@ -28,13 +28,14 @@ done
 echo "==============================================================================="
 echo " Benchmarking the tree creation time per chunk size  "
 echo "==============================================================================="
-chunk_size=( 16 32 64 128 256 512 1024)
+#chunk_size=( 16 32 64 128 256 512 1024)
+chunk_size=(512)
 for test_id in $(seq 1 $num_runs)
 do 
     for chunk in "${chunk_size[@]}"
     do
-        /home/kta7930/research/anl/install/vmtouch/usr/local/bin/vmtouch -ve test0.dat
-        $BUILD_DIR/benchmark/benchmark_create test0.dat $chunk
+        /home/keveltun/install/vmtouch/bin/vmtouch -ve $DATA_DIR/test0.dat
+        $BUILD_DIR/scripts/benchmark_create $DATA_DIR/test0.dat $chunk
     done
 done
-rm test0.dat
+rm $DATA_DIR/test0.dat
