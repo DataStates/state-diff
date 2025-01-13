@@ -43,7 +43,7 @@ template <typename DataType> class client_t {
     int curr_chkpt_id = -1;
 
     // comparison state
-    Queue working_queue; 
+    Queue working_queue;
     // Bitset for tracking which chunks have been changed
     Kokkos::Bitset<> changed_chunks;   // host
     // Vec of idx of chunks that are marked different during the 1st phase
@@ -126,8 +126,10 @@ client_t<DataType>::client_t(int client_id, size_t data_size, double error,
     Kokkos::Profiling::pushRegion(setup_region_name.c_str());
     size_t optim_chksize = data_loader.get_chunksize(data_size);
     // size_t optim_chksize = min_chunk_size;
-    client_info = client_info_t{client_id,      dtype, data_size,
-                                min_chunk_size, start, error};
+    // client_info = client_info_t{client_id,      dtype, data_size,
+    //                             min_chunk_size, start, error};
+    client_info =
+        client_info_t{client_id, dtype, data_size, optim_chksize, start, error};
     tree = tree_t(data_size, optim_chksize, fuzzyhash);
 
     size_t n_chunks = data_size / optim_chksize;
@@ -245,12 +247,14 @@ client_t<DataType>::compare_with(int chkpt_id, Reader &curr_reader,
         std::vector<size_t> diff_offsets(diff_hash_vec.vector_h.data(),
                                          diff_hash_vec.vector_h.data() +
                                              diff_hash_vec.vector_h.extent(0));
-            TransferType compare_data_tier =
-                cache_tier.value_or(TransferType::FileToHost);
-        int ld_prev = data_loader.file_load(
-            prev_reader, 0, client_info.chunk_size, 0, compare_data_tier, diff_offsets);
-        int ld_curr = data_loader.file_load(
-            curr_reader, 0, client_info.chunk_size, 0, compare_data_tier, diff_offsets);
+        TransferType compare_data_tier =
+            cache_tier.value_or(TransferType::FileToHost);
+        int ld_prev =
+            data_loader.file_load(prev_reader, 0, client_info.chunk_size, 0,
+                                  compare_data_tier, diff_offsets);
+        int ld_curr =
+            data_loader.file_load(curr_reader, 0, client_info.chunk_size, 0,
+                                  compare_data_tier, diff_offsets);
         auto ndifferent =
             compare_data(prev, ld_prev, ld_curr, diff_hash_vec, changed_chunks,
                          num_changed, num_comparisons, compare_data_tier);
@@ -299,7 +303,8 @@ client_t<DataType>::compare_trees(const client_t &prev, Queue &working_queue,
     Kokkos::Experimental::ScatterView<uint64_t[1]> nhash_comp(num_hash_comp);
     Kokkos::Profiling::popRegion();
     Timer::time_point setup_end = Timer::now();
-    double setup_time = std::chrono::duration_cast<Duration>(setup_end - setup_beg).count();
+    double setup_time =
+        std::chrono::duration_cast<Duration>(setup_end - setup_beg).count();
     timers[0] += setup_time;
 
     Timer::time_point compare_beg = Timer::now();
@@ -359,7 +364,8 @@ client_t<DataType>::compare_trees(const client_t &prev, Queue &working_queue,
     Kokkos::Profiling::popRegion();
     Timer::time_point compare_end = Timer::now();
     timers[1] +=
-        setup_time + std::chrono::duration_cast<Duration>(compare_end - compare_beg).count() ;
+        setup_time +
+        std::chrono::duration_cast<Duration>(compare_end - compare_beg).count();
     return diff_hash_vec.size();
 }
 
@@ -390,7 +396,8 @@ client_t<DataType>::compare_data(client_t &prev, int ld_prev, int ld_curr,
     size_t elemPerChunk = client_info.chunk_size / sizeof(DataType);
     Kokkos::Profiling::popRegion();
     Timer::time_point setup_end = Timer::now();
-    double setup_time = std::chrono::duration_cast<Duration>(setup_end - setup_beg).count();
+    double setup_time =
+        std::chrono::duration_cast<Duration>(setup_end - setup_beg).count();
     timers[0] += setup_time;
     Timer::time_point compare_beg = Timer::now();
     double err_tol = client_info.error_tolerance;
@@ -429,7 +436,8 @@ client_t<DataType>::compare_data(client_t &prev, int ld_prev, int ld_curr,
     }
     Timer::time_point compare_end = Timer::now();
     timers[2] +=
-        setup_time + std::chrono::duration_cast<Duration>(compare_end - compare_beg).count();
+        setup_time +
+        std::chrono::duration_cast<Duration>(compare_end - compare_beg).count();
     Kokkos::Profiling::popRegion();
     return nchange;
 }
@@ -459,7 +467,8 @@ client_t<DataType>::get_num_changes() const {
 template <typename DataType>
 size_t
 client_t<DataType>::get_filtered_blocks() const {
-    return diff_hash_vec.size();;
+    return diff_hash_vec.size();
+    ;
 }
 
 template <typename DataType>

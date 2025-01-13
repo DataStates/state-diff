@@ -227,14 +227,26 @@ data_loader_t::next(int id, TransferType trans_type) {
 
 size_t
 data_loader_t::get_chunksize(size_t data_size) {
-    double peak_bw = 23.5;
-    // power law model formula is y = a.x^b
-    float power_law_param_a = 0.5;
-    float power_law_param_b = 0.5;
-    // C = (A*W*D^B)^(1/B+1)
-    size_t opt_chksize = std::pow(power_law_param_a * peak_bw *
-                                      std::pow(data_size, power_law_param_b),
-                                  1.0 / (power_law_param_b + 1));
+    size_t max_payload =
+        std::min({data_size, host_cache_size_, device_cache_size_});
+
+    // Continuous Model for creation time: T(L) = a / (1 + b * L^k) + c
+    float peak_bw = 3; // bounded by F2H transfer
+    float param_a = 187.7616;
+    float param_b = 0.2322;
+    float param_c = 0.0221;
+    float param_k = 0.8904;
+    float denominator = (max_payload / peak_bw) - param_c;
+    float base = (param_b / (param_a / denominator - 1));
+    if (base <= 0) {
+        throw std::domain_error("Invalid parameters leading to a negative or "
+                                "zero base for power calculation.");
+    }
+    float C = max_payload * std::pow(base, 1.0 / param_k);
+    size_t opt_chksize = static_cast<size_t>(C);
+
+    // Making sure it is power of 128 bytes to match the hashing algorithm
+    opt_chksize = opt_chksize + (128 - opt_chksize) % 128;
     printf("Optimum chun size is %zu\n", opt_chksize);
     return opt_chksize;
 }
