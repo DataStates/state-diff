@@ -1,6 +1,6 @@
 #!/bin/bash
 
-BUILD_DIR="$HOME/research/recup/veloc/apps/state-diff/build"
+BUILD_DIR="$HOME/research/recup/veloc/apps/state-diff/buildcpu"
 DATA_DIR="/lus/eagle/projects/RECUP/kassogba/veloc-ckpt/haac/sc-experiments"
 MB=$((1024 * 1024))
 GB=$((1024 * $MB))
@@ -28,8 +28,8 @@ done
 echo "==============================================================================="
 echo " Benchmarking the tree creation time per chunk size  "
 echo "==============================================================================="
-#chunk_size=( 16 32 64 128 256 512 1024)
-chunk_size=(512)
+chunk_size=(1 2 4 8 16 32 64 128 256 512)
+#chunk_size=(512)
 for test_id in $(seq 1 $num_runs)
 do 
     for chunk in "${chunk_size[@]}"

@@ -72,6 +72,8 @@ tree_t::tree_t(const size_t data_size, const size_t c_size, bool fuzzyhash)
         num_leaves += 1;
     num_nodes = 2 * num_leaves - 1;
     tree_d = Kokkos::View<HashDigest *>("Merkle tree", num_nodes);
+    timers[3] = 0;
+    timers[4] = 0;
 }
 
 tree_t::tree_t() {}
@@ -141,9 +143,15 @@ tree_t::create(client_info_t client_info, data_loader_t &data_loader,
     create_timer.reset();
     size_t work_start = 0;
     while (work_start < num_leaves) {
+	auto start_load = std::chrono::high_resolution_clock::now();
         auto next_batch = data_loader.next(ld_idx, cache_tier);
         uint8_t *data_ptr = (uint8_t *)next_batch.first;
         size_t ready_size = next_batch.second;
+	auto end_load = std::chrono::high_resolution_clock::now();
+	std::chrono::duration<double> load_time =  end_load - start_load;
+	timers[3] += load_time.count()*1000;
+
+	auto start_hash = std::chrono::high_resolution_clock::now();
         size_t curr_n_leaves = ready_size / chunk_size;
         if (curr_n_leaves * chunk_size < ready_size)
             curr_n_leaves += 1;
@@ -156,9 +164,13 @@ tree_t::create(client_info_t client_info, data_loader_t &data_loader,
                 curr_tree.hash_leaves_kernel(data_ptr, client_info, left_leaf,
                                              idx);
             });
+	auto end_hash = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> hash_time =  end_hash - start_hash;
+        timers[4] += hash_time.count()*1000;
         // Kokkos::fence();
         work_start = work_end;
     }
+    //Kokkos::fence();
     
     timers[1] = create_timer.seconds() * 1000.0;
     // printf("Leaves Creation: %.3f ms\n", create_timer.seconds() * 1000.0);

@@ -37,8 +37,8 @@ main(int argc, char **argv) {
     // minimum FP value in synthetic data
     float min_float = 0.0;
     // size in bytes of the synthetic data (1GB)
-    // int data_size = 1024 * 1024 * 1024;
-    int data_size = 16 * 1024 * 1024; // 16MB
+    int data_size = 1024 * 1024 * 1024;
+    //int data_size = 16 * 1024 * 1024; // 16MB
     // Application error tolerance
     float error_tolerance = 1e-4;
     // Target chunk size. This example uses 16 bytes

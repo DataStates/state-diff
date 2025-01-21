@@ -231,18 +231,21 @@ data_loader_t::get_chunksize(size_t data_size) {
         std::min({data_size, host_cache_size_, device_cache_size_});
 
     // Continuous Model for creation time: T(L) = a / (1 + b * L^k) + c
-    float peak_bw = 3; // bounded by F2H transfer
+    size_t GB = 1024*1024*1024;
+    float peak_bw = 3*GB; // bounded by F2H transfer
     float param_a = 187.7616;
     float param_b = 0.2322;
     float param_c = 0.0221;
     float param_k = 0.8904;
-    float denominator = (max_payload / peak_bw) - param_c;
-    float base = (param_b / (param_a / denominator - 1));
+    std::cout << "Max payload = " << max_payload << std::endl;
+    double denominator = (max_payload / peak_bw) - param_c;
+    double base = (param_b / (param_a / denominator - 1));
     if (base <= 0) {
         throw std::domain_error("Invalid parameters leading to a negative or "
                                 "zero base for power calculation.");
     }
     float C = max_payload * std::pow(base, 1.0 / param_k);
+    //size_t opt_chksize = static_cast<size_t>(std::floor(C));
     size_t opt_chksize = static_cast<size_t>(C);
 
     // Making sure it is power of 128 bytes to match the hashing algorithm

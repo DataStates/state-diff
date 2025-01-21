@@ -1,5 +1,6 @@
 #include "liburing_reader.hpp"
 #include "statediff.hpp"
+#include "common/direct_io.hpp"
 #include <chrono>
 #include <iostream>
 #include <string>
@@ -8,31 +9,25 @@ int
 main(int argc, char **argv) {
 
     std::string fname = argv[1];
-    //size_t chunk_size = std::stoi(argv[2]) * MB;
-    size_t chunk_size = std::stoi(argv[2]);
+    size_t chunk_size = std::stol(argv[2]);
+    double error_tolerance = std::stod(argv[3]);
 
     // Define the parameters
-    size_t host_cache = 2 * GB, dev_cache = 2 * GB; //, data_size = 1 * GB;
-    size_t data_size = chunk_size;
-    // int min_chunk_size = 16 * MB, max_chunk_size = 1025 * MB;
-    float error_tolerance = 0.01;
+    size_t host_cache = 16 * GB, dev_cache = 16 * GB, data_size = 0;
+    off_t filesize;
+    get_file_size(fname, &filesize);
+    data_size = static_cast<size_t>(filesize);
+    
     bool fuzzy_hash = true;
     char dtype = 'f';
-    int root_level = 1;
+    int root_level = 13;
     
-    TransferType creation_cache_tier = TransferType::FileToHost;
-    int flag = 0;
-#ifdef __NVCC__
-    creation_cache_tier = TransferType::FileToDevice;
-    flag = 1;
-#endif
-
-    liburing_io_reader_t reader(fname);
-
     Kokkos::initialize(argc, argv);
     {
-        // for (int chunk_size = min_chunk_size; chunk_size < max_chunk_size;
-        //      chunk_size *= 2) {
+	TransferType creation_cache_tier = TransferType::FileToHost;
+
+	liburing_io_reader_t reader(fname);
+
         state_diff::client_t<float> client(
             1, data_size, error_tolerance, dtype, chunk_size, root_level,
             fuzzy_hash, host_cache, dev_cache);
@@ -51,7 +46,7 @@ main(int argc, char **argv) {
         std::string log_fname = "create_timings.csv";
         benchmark_stream.open(log_fname, std::fstream::ate | std::fstream::out | std::fstream::app);
         if(benchmark_stream.tellp() == 0) {
-        benchmark_stream << "Create GPU,Chunk Size,Data Size,Number of Leaves,Number of Nodes,"
+        benchmark_stream << "Chunk Size,Error,Data Size,Number of Leaves,Number of Nodes,"
                     << "Setup time,Leaves time,Rest time,Load time,Hashing time"
                     << std::endl;
         }  
@@ -61,7 +56,8 @@ main(int argc, char **argv) {
             num_leaves += 1;
         }
 
-        benchmark_stream << flag << "," << chunk_size << "," // chunk size
+        benchmark_stream << chunk_size << "," // chunk size
+		    << error_tolerance << "," // error tolerance
                     << data_size << "," // data size
                     << num_leaves << "," // number of leaves
                     << 2*num_leaves  + 1 << "," // number of nodes
@@ -72,12 +68,11 @@ main(int argc, char **argv) {
 		    << create_timings[4] << std::endl; // create rest of tree time
         benchmark_stream.close();
 
-        std::cout << "(" << flag << ") Chunk size: " << chunk_size
+        std::cout << "(" << error_tolerance << ") Chunk size: " << chunk_size
                     << ", Creation time: " << create_time.count()
                     << " seconds, throughput: "
                     << (data_size / create_time.count()) / (1024 * MB)
                     << " GB/s" << std::endl;
-        // }
     }
     Kokkos::finalize();
     return 0;

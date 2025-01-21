@@ -124,8 +124,9 @@ client_t<DataType>::client_t(int client_id, size_t data_size, double error,
                                     std::to_string(client_id) +
                                     std::string(": Setup");
     Kokkos::Profiling::pushRegion(setup_region_name.c_str());
-    size_t optim_chksize = data_loader.get_chunksize(data_size);
-    // size_t optim_chksize = min_chunk_size;
+    std::cout << "Data size = " << data_size << "\n";
+    //size_t optim_chksize = data_loader.get_chunksize(data_size);
+    size_t optim_chksize = min_chunk_size;
     // client_info = client_info_t{client_id,      dtype, data_size,
     //                             min_chunk_size, start, error};
     client_info =
@@ -480,9 +481,9 @@ client_t<DataType>::get_validated_diffs() const {
 template <typename DataType>
 std::vector<double>
 client_t<DataType>::get_create_time() const {
-    const double *timers = tree.get_timers();
-    // setup, leaves, rest of tree (their sum gives the total creation time)
-    return {timers[0], timers[1], timers[2]};
+   const double *timers = tree.get_timers();
+    // setup, leaves, rest of tree (their sum gives the total creation time), load, hash
+    return {timers[0], timers[1], timers[2], timers[3], timers[4]};
 }
 
 template <typename DataType>

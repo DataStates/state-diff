@@ -9,6 +9,7 @@
 #include <cereal/archives/binary.hpp>
 #include <cereal/types/vector.hpp>
 #include <fstream>
+#include <chrono>
 
 #ifdef __NVCC__
 #include "cuda.h"
@@ -25,7 +26,7 @@
 class tree_t {
   private:
 
-    double timers[3];
+    double timers[5]; //setup, leaves, rest, loading, hashing
     double create_time;
     void digest_to_hex(const uint8_t *digest, char *output);
     KOKKOS_INLINE_FUNCTION bool calc_hash(uint32_t u) const;

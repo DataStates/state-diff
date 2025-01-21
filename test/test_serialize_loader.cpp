@@ -39,7 +39,7 @@ main(int argc, char **argv) {
     float min_float = 0.0;
     // size in bytes of the synthetic data (1GB)
     // int data_size = 1024 * 1024 * 1024;
-    int data_size = 16 * 1024 * 1024; // 16MB
+    size_t data_size = 16 * 1024 * 1024; // 16MB
     // Application error tolerance
     float error_tolerance = 1e-4;
     // Target chunk size. This example uses 16 bytes
@@ -85,6 +85,7 @@ main(int argc, char **argv) {
 
         // read data, build tree and save
         liburing_io_reader_t reader(fname);
+	std::cout << "Data size = " << data_size << "\n";
         state_diff::client_t<float> client(
             1, data_size, error_tolerance, dtype, chunk_size,
             root_level, fuzzy_hash, 8589934592, 4294967296);
