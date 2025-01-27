@@ -35,6 +35,26 @@ set_target_properties(benchmark_compare PROPERTIES
     CXX_EXTENSIONS OFF
 )
 
+add_executable(benchmark_liburing load_liburing.cpp)
+target_link_libraries(benchmark_liburing PUBLIC Kokkos::kokkos)
+target_link_libraries(benchmark_liburing PRIVATE OpenSSL::SSL)
+target_link_libraries(benchmark_liburing PRIVATE statediff)
+set_target_properties(benchmark_liburing PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS OFF
+)
+
+add_executable(benchmark_posix load_posix.cpp)
+target_link_libraries(benchmark_posix PUBLIC Kokkos::kokkos)
+target_link_libraries(benchmark_posix PRIVATE OpenSSL::SSL)
+target_link_libraries(benchmark_posix PRIVATE statediff)
+set_target_properties(benchmark_posix PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS OFF
+)
+
 find_package(MPI REQUIRED)
 
 add_executable(eval_statediff eval_statediff.cpp)

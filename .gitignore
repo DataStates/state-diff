@@ -6,3 +6,5 @@ extern/
 __pycache__/
 
 *.dat
+*.csv
+*.log
