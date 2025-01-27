@@ -101,21 +101,18 @@ data_loader_t::file_load(FileReader &io_reader, size_t start_foffset,
         host_cache_->set_next_tier(loader_id, device_cache_);
     });
 
-    // size_t batch_size_ =
-    //     (batch_size < 1) ? max_batch_size(seg_size) : batch_size;
-
-    size_t batch_size_ = (batch_size < 1)
-                             ? max_batch_size(seg_size, io_reader.size())
-                             : batch_size;
-
+    size_t batch_size_;
     // create segments
     if (offsets.has_value()) {
         INFO("Loader (" << loader_id
                         << ")- Creating segments given file offsets");
         size_t total_segs = offsets->size();
+        batch_size_ = (batch_size < 1)
+                             ? max_batch_size(seg_size, io_reader.size())
+                             : batch_size;
         if (merge_seg) {
             merge_create_seg(loader_id, *offsets, total_segs, batch_size_,
-                             seg_size);
+                             seg_size); // Currently conbines consecutive offsets. TBD
         } else {
             size_t n_iter = total_segs / batch_size_;
             n_iter =
@@ -137,7 +134,7 @@ data_loader_t::file_load(FileReader &io_reader, size_t start_foffset,
         INFO("Loader (" << loader_id
                         << ")- Creating segments without given file offsets");
         size_t data_size = io_reader.size() - start_foffset;
-        // batch_size_ = 1;
+        batch_size_ = 1;
         // seg_size *= max_batch_size(seg_size);
         size_t total_segs = data_size / seg_size;
         total_segs =
