@@ -38,12 +38,12 @@ main(int argc, char **argv) {
     // minimum FP value in synthetic data
     float min_float = 0.0;
     // size in bytes of the synthetic data (1GB)
-    // int data_size = 1024 * 1024 * 1024;
-    size_t data_size = 16 * 1024 * 1024; // 16MB
+    size_t data_size = 2ULL * 1024 * 1024 * 1024;
+    //size_t data_size = 16 * 1024 * 1024; // 16MB
     // Application error tolerance
     float error_tolerance = 1e-4;
     // Target chunk size. This example uses 16 bytes
-    int chunk_size = 512;
+    int chunk_size = 4096;
     // Use our rounding hash algorithm or exact hash.
     bool fuzzy_hash = true;
     char dtype = 'f';   // float
@@ -54,13 +54,13 @@ main(int argc, char **argv) {
     std::string fname = "checkpoint.dat";
     std::string metadata_fn = "checkpoint.tree";
 
-    int num_chunks = data_size / chunk_size;
+    size_t num_chunks = data_size / chunk_size;
     std::cout << "Nunber of leaf nodes = " << num_chunks << std::endl;
 
     Kokkos::initialize(argc, argv);
     {
         // Create synthetic datasets
-        int data_len = data_size / sizeof(float);
+        size_t data_len = data_size / sizeof(float);
         std::vector<float> run_data(data_len);
 #pragma omp parallel
         {
@@ -68,7 +68,7 @@ main(int argc, char **argv) {
             std::uniform_real_distribution<float> prng_dist(min_float,
                                                             max_float);
 #pragma omp for
-            for (int i = 0; i < data_len; ++i) {
+            for (size_t i = 0; i < data_len; ++i) {
                 run_data[i] = prng_dist(prng);
             }
         }
@@ -88,7 +88,7 @@ main(int argc, char **argv) {
 	std::cout << "Data size = " << data_size << "\n";
         state_diff::client_t<float> client(
             1, data_size, error_tolerance, dtype, chunk_size,
-            root_level, fuzzy_hash, 8589934592, 4294967296);
+            root_level, fuzzy_hash, 8ULL*1024*1024*1024, 8ULL*1024*1024*1024);
         client.create(reader);
         auto start_serialize = std::chrono::high_resolution_clock::now();
         {

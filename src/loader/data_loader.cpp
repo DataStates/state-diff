@@ -18,9 +18,9 @@ data_loader_t::~data_loader_t() {
 };
 
 size_t
-data_loader_t::max_batch_size(size_t seg_size, size_t data_size) {
+data_loader_t::max_batch_size(size_t data_size, size_t batch_size, size_t seg_size) {
     size_t max_payload =
-        std::min({data_size, host_cache_size_, device_cache_size_});
+        std::min({data_size, batch_size, host_cache_size_, device_cache_size_});
     size_t n_segs = max_payload / seg_size;
     n_segs = (n_segs * seg_size < max_payload) ? (n_segs + 1) : n_segs;
     return n_segs;
@@ -106,10 +106,11 @@ data_loader_t::file_load(FileReader &io_reader, size_t start_foffset,
     if (offsets.has_value()) {
         INFO("Loader (" << loader_id
                         << ")- Creating segments given file offsets");
+	size_t data_size = io_reader.size();
         size_t total_segs = offsets->size();
         batch_size_ = (batch_size < 1)
-                             ? max_batch_size(seg_size, io_reader.size())
-                             : batch_size;
+                             ? max_batch_size(data_size, data_size, seg_size)
+                             : max_batch_size(data_size, batch_size, seg_size);
         if (merge_seg) {
             merge_create_seg(loader_id, *offsets, total_segs, batch_size_,
                              seg_size); // Currently conbines consecutive offsets. TBD
@@ -135,7 +136,7 @@ data_loader_t::file_load(FileReader &io_reader, size_t start_foffset,
                         << ")- Creating segments without given file offsets");
         size_t data_size = io_reader.size() - start_foffset;
         batch_size_ = 1;
-        // seg_size *= max_batch_size(seg_size);
+        seg_size = std::min({batch_size, data_size, host_cache_size_, device_cache_size_});
         size_t total_segs = data_size / seg_size;
         total_segs =
             (total_segs * seg_size < data_size) ? (total_segs + 1) : total_segs;

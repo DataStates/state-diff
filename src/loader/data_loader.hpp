@@ -40,7 +40,7 @@ class data_loader_t {
     std::atomic<int> instance_count{0};
     std::unordered_map<int, size_t> ready_count;
 
-    size_t max_batch_size(size_t seg_size, size_t data_size);
+    size_t max_batch_size(size_t data_size, size_t batch_size, size_t seg_size); // All sizes in bytes
     void merge_create_seg(int id, std::vector<size_t> &offsets, size_t total_segs,
                           size_t batch_size_, size_t seg_size);
 

@@ -59,13 +59,27 @@ posix_thrupt_test() {
     $BUILD_DIR/benchmark_posix $source_file $(($chunk_size * 1024)) $type
 }
 
+creation_modeling() {
+	local source_file=$1
+	local chunk_size=$2
+	local error=$3
+	$VMTOUCH_BIN/vmtouch -ve $source_file
+
+	echo "*******************************************************************************"
+	echo " Benchmarking Creation for modeling with chunk size: $(($chunk_size * 1024)) "
+	echo "*******************************************************************************"
+	$BUILD_DIR/benchmark_create_mod $source_file $(($chunk_size * 1024)) $error \
+               --kokkos-num-threads=$nthreads
+}
+
 validate_liburing() {
     echo "==============================================================================="
     echo " Validating Liburing Implementation with variable read sizes "
     echo "==============================================================================="
     local source_file=$1
-    local min_chunk_size=4  # Minimum chunk size in KB (4KB)
-    local max_chunk_size=1048576  # Maximum chunk size in KB (256MB)
+    local min_chunk_size=64  # Minimum chunk size in KB (4KB)
+    local max_chunk_size=128
+    # local max_chunk_size=1048576  # Maximum chunk size in KB (256MB)
     # local max_chunk_size=262144  # Maximum chunk size in KB (256MB)
     local csv_file="dd_throughput_results.csv"
 
@@ -95,13 +109,13 @@ validate_liburing() {
     done
 
     # Test Posix throughput for each chunk size
-    # local size=$min_chunk_size
-    # while [[ $size -le $max_chunk_size ]]; do
-    #     posix_thrupt_test "$source_file" "$size" 0 
-    #     size=$((size * 2))
-    # done
+    local size=$min_chunk_size
+    while [[ $size -le $max_chunk_size ]]; do
+        posix_thrupt_test "$source_file" "$size" 0 
+        size=$((size * 2))
+    done
 
-    # posix_thrupt_test "$source_file" 0 1
+    posix_thrupt_test "$source_file" 0 1
 
     echo "Validation tests (DD + Liburing) for read throughput completed."
 }
@@ -110,7 +124,14 @@ benchmark_creation() {
     echo "==============================================================================="
     echo " Benchmarking tree creation "
     echo "==============================================================================="
-
+    local source_file=$1
+    local min_chunk_size=4  # Minimum chunk size in KB (4KB)
+    local max_chunk_size=131072  # Maximum chunk size in KB (128MB selected as batch size is 128MB)
+    local size=$min_chunk_size
+    while [[ $size -le $max_chunk_size ]]; do
+        creation_modeling "$source_file" "$size" 0.0000001
+        size=$((size * 2))
+    done
 }
 
 benchmark_comparison() {
@@ -148,7 +169,7 @@ case "$1" in
         validate_liburing "$SOURCE_FILE"
         ;;
     create)
-        benchmark_creation
+        benchmark_creation "$SOURCE_FILE"
         ;;
     compare)
         benchmark_comparison

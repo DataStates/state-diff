@@ -69,6 +69,11 @@ liburing_io_reader_t::liburing_io_reader_t(std::string& name, size_t num_rings) 
         if (ret < 0) {
             FATAL("queue_init: " << std::strerror(-ret));
         }
+        uint32_t bounds[2]  = {0, 0};
+        int max_worker = io_uring_register_iowq_max_workers(&ring[i], bounds);
+        if (max_worker == 0) {
+            INFO("IO_URING initialized with " << bounds[0] << " bounded and " << bounds[1] << " unbounded workers");
+        }
         req_submitted[i] = 0;
         req_completed[i] = 0;
     }
@@ -86,21 +91,10 @@ liburing_io_reader_t::liburing_io_reader_t(std::string& name, size_t num_rings) 
 uint32_t liburing_io_reader_t::request_completion() {
     uint32_t tot_ready = 0;
 
-//    std::multimap<uint32_t,size_t> req_ready;
-//    for(size_t i=0; i<nrings; i++) {
-//        req_ready.insert(std::pair{io_uring_cq_ready(&ring[i]), i});
-//    }
-//    
-//    for(const auto& entry : req_ready) {
-//        uint32_t nwait = entry.first;
-//        size_t i = entry.second;
-////printf("%u requests ready for ring %zu\n", nwait, i);
-
     for(size_t i=0; i<nrings; i++) {
         uint32_t nwait = io_uring_cq_ready(&ring[i]);
         if(nwait == 0)
-            nwait = MAX_RING_SIZE/4;
-//        uint32_t nwait = MAX_RING_SIZE/4;
+            nwait = MAX_RING_SIZE/4;;
         if(req_submitted[i] - req_completed[i] < nwait)
             nwait = (req_submitted[i] - req_completed[i]);
 
@@ -140,10 +134,6 @@ uint32_t liburing_io_reader_t::request_submission() {
         uint32_t nincomplete = req_submitted[i] - req_completed[i];
         if(MAX_RING_SIZE - nincomplete < nsubmit)
             nsubmit =  MAX_RING_SIZE - nincomplete;
-//        if(req_submitted[i] < req_completed[i])
-//            nsubmit = req_completed[i] - req_submitted[i];
-//        if(nsubmit > submissions.size())
-//            nsubmit = submissions.size();
     
         if(nsubmit > 0) {
             // Prep reads
@@ -154,8 +144,7 @@ uint32_t liburing_io_reader_t::request_submission() {
                 submitted += 1;
                 // Get segment from queue
                 segment_t seg = submissions.front();
-//                if(seg.size + seg.offset > fsize)
-//                    seg.size = fsize - seg.offset;
+
                 // Prepare submission queue entry
                 auto sqe = io_uring_get_sqe(&ring[i]);
                 if (!sqe) {
@@ -163,7 +152,6 @@ uint32_t liburing_io_reader_t::request_submission() {
                     return -1;
                 }
                 // Save ID
-                // io_uring_sqe_set_data64(sqe, seg.id);
                 io_uring_sqe_set_data64(sqe, seg.offset);
                 io_uring_prep_read(sqe, seg.fd, seg.buffer, seg.size, seg.offset);
                 // Remove segment from queue

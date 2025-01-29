@@ -34,7 +34,7 @@ template <typename DataType> class client_t {
     static const char DEFAULT_DTYPE = 'f';
     static const size_t DEFAULT_HOST_CACHE = 2ULL * GB;
     static const size_t DEFAULT_DEVICE_CACHE = 1ULL * GB;
-    static const TransferType DEFAULT_CACHE_TIER = TransferType::FileToDevice;
+    static const TransferType DEFAULT_CACHE_TIER = TransferType::FileToHost;
 
     // client variables
     client_info_t client_info;
@@ -124,7 +124,7 @@ client_t<DataType>::client_t(int client_id, size_t data_size, double error,
                                     std::to_string(client_id) +
                                     std::string(": Setup");
     Kokkos::Profiling::pushRegion(setup_region_name.c_str());
-    std::cout << "Data size = " << data_size << "\n";
+    //std::cout << "Data size = " << data_size << "\n";
     //size_t optim_chksize = data_loader.get_chunksize(data_size);
     size_t optim_chksize = min_chunk_size;
     // client_info = client_info_t{client_id,      dtype, data_size,
@@ -197,7 +197,10 @@ client_t<DataType>::create(Reader &reader,
                            std::optional<TransferType> cache_tier) {
     TIMER_START(client_create_tree);
     TransferType create_tree_tier = cache_tier.value_or(DEFAULT_CACHE_TIER);
-    int ld = data_loader.file_load(reader, 0, client_info.chunk_size, 0,
+    //int ld = data_loader.file_load(reader, 0, client_info.chunk_size, 0,
+    //                               create_tree_tier);
+    size_t read_bsize = 128 * 1024 * 1024;
+    int ld = data_loader.file_load(reader, 0, client_info.chunk_size, read_bsize,
                                    create_tree_tier);
     tree.create(client_info, data_loader, ld, create_tree_tier);
     TIMER_STOP(client_create_tree,

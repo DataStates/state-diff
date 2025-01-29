@@ -13,7 +13,7 @@ main(int argc, char **argv) {
     double error_tolerance = std::stod(argv[3]);
 
     // Define the parameters
-    size_t host_cache = 16 * GB, dev_cache = 16 * GB, data_size = 0;
+    size_t host_cache = 16ULL * GB, dev_cache = 16ULL * GB, data_size = 0;
     off_t filesize;
     get_file_size(fname, &filesize);
     data_size = static_cast<size_t>(filesize);

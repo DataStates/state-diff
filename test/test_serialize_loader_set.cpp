@@ -34,7 +34,7 @@ main(int argc, char **argv) {
 
     // Define the parameters
     float error_tolerance = 1e-4;
-    int chunk_size = 512;
+    int chunk_size = 4096;
     // Use our rounding hash algorithm or exact hash.
     bool fuzzy_hash = true;
     char dtype = 'f';   // float
@@ -55,7 +55,7 @@ main(int argc, char **argv) {
         liburing_io_reader_t reader(fname);
         state_diff::client_t<float> client(
             1, data_size, error_tolerance, dtype, chunk_size,
-            root_level, fuzzy_hash, 8589934592, 8589934592); //4294967296);
+            root_level, fuzzy_hash, 16ULL*1024*1024*1024, 8ULL*1024*1024*1024);
         client.create(reader);
 	auto end_create = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> create_duration =
