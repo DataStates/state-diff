@@ -1,2 +1,99 @@
 # state-diff
 Compute differences between immutable data states
+
+
+## Overview
+
+state-diff is an innovative method to compute differences between immutable data states, offering scalable capture and comparison of intermediate multi-run results. It follows three key design principles: 
+
+* GPU-optimized hashing technique for groups of floating point values organized into chunks that need to match within a given error bound; 
+* Hierarchic organization of hashes using GPU-optimized data structures (Merkle trees) to accelerate the comparison of identical contiguous regions; 
+* Multi-level I/O pipelining for data transfers and overlapping with GPU computations to maximize parallelization and enable scalability  
+
+By capitalizing on intermediate checkpoints and hash-based techniques with user-defined error bounds, state-diff identifies divergences between data states early in application execution.
+
+For detailed description about design principles, implementation, and performance evaluation against state-of-the-art data states comparison approaches, please refer our Middleware'24 paper.
+> Nigel Tan, Kevin Assogba, Jay Ashworth, Befikir Bogale, Franck Cappello, M. Mustafa Rafique, Michela Taufer, and Bogdan Nicolae. "Towards Affordable Reproducibility Using Scalable Capture and Comparison of Intermediate Multi-Run Results". MIDDLEWARE'24: The 25th ACM/IFIP International Middleware Conference (Hong Kong, China, 2024).
+
+## Building and installing state-diff
+
+### Dependencies
+
+* [CMake](https://cmake.org/)
+* [Kokkos](https://github.com/kokkos/kokkos)
+* [Liburing](https://github.com/axboe/liburing)
+* [Cereal](https://github.com/USCiLab/cereal)
+
+### Building with CMake (Recommended)
+
+In the following example, we first install kokkos (following the [official repository](https://github.com/kokkos/kokkos?tab=readme-ov-file#building-kokkos)) and clone state-diff into the `$HOME` directory. You can adjust the installation instructions based on the location of your Kokkos installation and that of state-diff.
+
+```
+git clone https://github.com/DataStates/state-diff $HOME/state-diff
+cd $HOME/state-diff
+mkdir build
+
+cmake \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_CXX_COMPILER=$HOME/kokkos/bin/nvcc_wrapper \
+    -DCMAKE_CXX_FLAGS="-fPIC" \
+    -DCMAKE_INSTALL_PREFIX=$HOME/state-diff/build \
+    -DENABLE_TESTS=ON \
+    -DKokkos_DIR=$HOME/kokkos/build/install/lib64/cmake/Kokkos \
+    ..
+
+make -j8
+make install
+```
+
+### Automation with Spack
+
+```
+git clone https://github.com/DataStates/state-diff
+cd state-diff
+spack repo add ./spack-repo
+spack install statediff
+```
+
+## Unit testing
+
+This repository contains unit tests located in the `state-diff/test` directory validating our metadata creation and data states comparison approaches.
+
+* `test_serialize.cpp`: Test the metadata creation process and its serialization to an archive using the [Cereal](https://github.com/USCiLab/cereal) library.
+* `test_compare.cpp`: Test the metadata creation and comparison processes. It highlights the complete workflow of state-diff in an offline comparison scenario.
+
+To run both test, execute the `make test` command from the build directory.
+
+## state-diff artifact evaluation
+
+This repository contains recipes to generate random checkpoints and analyze the checkpoints for reproducibility purpose. To evaluate the functionality of stated-diff, execute the following instructions after the building `state-diff`.
+
+
+```
+cd build
+
+src/tools/data_generator --data-len 1000000 -n 2 -e 0.0001 --num-changes 10000 --type float reproducibility_test --kokkos-num-threads=2 --kokkos-map-device-id-by=mpi_rank
+
+src/cli/statediff-cli reproducibility_test0.dat reproducibility_test1.dat --error 0.0001 --type float -c 4096 -s 1 --kokkos-num-threads=8 --kokkos-map-device-id-by=mpi_rank
+```
+
+In the example above, we are generating two checkpoints of 1000000 floating-point numbers such that 1% of the data is perturbed beyond the error tolerance of 1e-4. Given the two checkpoints, we use `statediff-cli` to verify and confirm that our approach can identify the changes within the checkpoints.
+
+## Contacts
+
+In case of questions and comments, please contact the authors on the paper.
+
+**University of Tennessee Knoxville**: Nigel Tan (nphtan2@gmail.com), Walter J. Ashworth, Befikir Bogale, Michela Taufer (taufer@gmail.com)
+
+**Rochester Institute of Technology**: Kevin Assogba and M. Mustafa Rafique
+
+**Argonne National Laboratory**: Bogdan Nicolae (bnicolae@anl.gov) and Franck Cappello
+
+## Citing
+Nigel Tan, Kevin Assogba, Walter J. Ashworth, Befikir Bogale, Franck Cappello, M. Mustafa Rafique, Michela Taufer, and Bogdan Nicolae. 2024. Towards Affordable Reproducibility Using Scalable Capture and Comparison of Intermediate Multi-Run Results. In Proceedings of the 25th International Middleware Conference (MIDDLEWARE '24). Association for Computing Machinery, New York, NY, USA, 392–403. https://doi.org/10.1145/3652892.3700780
+
+## Acknowledgements
+This material is based upon work supported by: the U.S. Department of Energy (DOE), Office of Science, Office of Advanced Scientific Computing Research, under Contract DE-AC02-06CH11357; the National Science Foundation under Grants #1900888, #1900765, #2223704, #2331152, #2411386, #2411387, #2106635.
+
+## Copyright and License
+For release details and restrictions, please read the [LICENSE](https://github.com/DataStates/state-diff/blob/main/LICENSE) file.
