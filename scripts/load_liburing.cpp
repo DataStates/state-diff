@@ -54,18 +54,17 @@ void oneforall(std::string &filename, size_t chunk_size) {
 
     // Writing timing to log file
     std::fstream benchmark_stream;
-    std::string log_fname = "liburing_oneforall.csv";
+    std::string log_fname = "validate_liburing.csv";
     benchmark_stream.open(log_fname, std::fstream::ate | std::fstream::out | std::fstream::app);
     if (!benchmark_stream.is_open()) {
         throw std::runtime_error("Failed to open log file: " + log_fname);
     }
     if (benchmark_stream.tellp() == 0) {
-        benchmark_stream << "Chunk Size,Data Size,Number of Segments,Load time,Load thrupt" << std::endl;
+        benchmark_stream << "API,Chunk Size,Data Size,Load time,Load thrupt" << std::endl;
     }
 
-    benchmark_stream << chunk_size << ","  // chunk size
+    benchmark_stream << "Uring-1xN," << chunk_size << ","  // chunk size
                      << dsize << ","      // data size
-                     << n_segs << ","     // number of segs
                      << total_time << ","  // ld time
                      << total_thrupt << std::endl;  // ld throughput
     benchmark_stream.close();
@@ -109,18 +108,17 @@ void allforone(std::string &filename, size_t chunk_size) {
 
     // Writing timing to log file
     std::fstream benchmark_stream;
-    std::string log_fname = "liburing_allforone.csv";
+    std::string log_fname = "validate_liburing.csv";
     benchmark_stream.open(log_fname, std::fstream::ate | std::fstream::out | std::fstream::app);
     if (!benchmark_stream.is_open()) {
         throw std::runtime_error("Failed to open log file: " + log_fname);
     }
     if (benchmark_stream.tellp() == 0) {
-        benchmark_stream << "Chunk Size,Data Size,Number of Segments,Load time,Load thrupt" << std::endl;
+        benchmark_stream << "API,Chunk Size,Data Size,Load time,Load thrupt" << std::endl;
     }
 
-    benchmark_stream << chunk_size << ","  // chunk size
+    benchmark_stream << "Uring-Nx1," << chunk_size << ","  // chunk size
                      << dsize << ","      // data size
-                     << n_segs << ","     // number of segs
                      << load_time.count() << ","  // ld time
                      << throughput << std::endl;  // ld throughput
     benchmark_stream.close();
