@@ -3,6 +3,7 @@ Makefile.local
 build/
 build*/
 extern/
+*/external/*
 __pycache__/
 
 *.dat

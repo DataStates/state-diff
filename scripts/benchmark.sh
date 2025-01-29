@@ -1,13 +1,15 @@
 #!/bin/bash
 
-# BUILD_DIR="$HOME/research/recup/veloc/apps/state-diff/buildcpu/scripts"
-# VMTOUCH_BIN="$HOME/install/vmtouch/bin/"
-BUILD_DIR="$HOME/research/anl/state-diff/buildcpu/scripts"
-VMTOUCH_BIN="$HOME/research/anl/install/vmtouch/"
+BUILD_DIR="$HOME/research/recup/veloc/apps/state-diff/build/scripts"
+VMTOUCH_BIN="$HOME/install/vmtouch/bin/"
+#BUILD_DIR="$HOME/research/recup/veloc/apps/state-diff/build_sophia/scripts"
+#VMTOUCH_BIN="$HOME/install/sophia/vmtouch/usr/local/bin/"
+#BUILD_DIR="$HOME/research/anl/state-diff/buildcpu/scripts"
+#VMTOUCH_BIN="$HOME/research/anl/install/vmtouch/"
 KB=1024
 MB=$((1024 * $KB))
 GB=$((1024 * $MB))
-NTHREADS=8
+NTHREADS=32
 export OMP_NUM_THREADS=$NTHREADS
 
 rnd_data_gen() {
@@ -93,14 +95,12 @@ validate_liburing() {
     echo " Validating Liburing Implementation with variable read sizes "
     echo "==============================================================================="
     local source_file=$1
-    local min_chunk_size=32  # Minimum chunk size in KB (32KB)
+    local min_chunk_size=4  # Minimum chunk size in KB (4KB)
     local max_chunk_size=32768 # Maximum chunk size in KB (32MB)
     # local csv_file="dd_throughput_results.csv"
     local csv_file="validate_liburing.csv"
 
-    # Generate chunk sizes
     if [[ ! -f "$csv_file" ]]; then
-        echo "Chunk size (KB),throughput (GB/s)" > "$csv_file"
         echo "API,Chunk Size,Data Size,Load time,Load thrupt" > "$csv_file"
     fi
 
@@ -180,9 +180,9 @@ fi
 case "$1" in
     local)
         ckpt_size=$((2 * $GB))
-        ckpt_name="checkpoint"
+        ckpt_name="/local/scratch/checkpoint"
         rnd_data_gen $ckpt_name $ckpt_size
-        SOURCE_FILE="./checkpoint0.dat"
+        SOURCE_FILE="/local/scratch/checkpoint0.dat"
         ;;
     polaris)
         # Ensure the data is on the SSD at the start of the experiments
