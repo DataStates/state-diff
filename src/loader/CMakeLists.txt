@@ -5,13 +5,15 @@ add_library (statediff-loader SHARED
     storage.cpp
 )
 
-target_link_libraries(statediff-loader PUBLIC statediff-io)
+# target_link_libraries(statediff-loader PUBLIC statediff-io)
+target_link_libraries(statediff-loader PUBLIC asyncDataReader)
 
 ##### Add include directories
 target_include_directories (statediff-loader PUBLIC
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/loader>
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/common>
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/extern/liburing-loader/src/readers>
 )
 
 ###### Install libraries

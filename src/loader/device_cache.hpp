@@ -2,7 +2,8 @@
 #define __DEVICE_CACHE_HPP
 
 #include "base_cache.hpp"
-#include "common/io_utils.hpp"
+// #include "common/io_utils.hpp"
+#include "io_utils.hpp"
 #include "cuda_timer.hpp"
 
 class device_cache_t : public base_cache_t {

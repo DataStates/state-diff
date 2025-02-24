@@ -106,7 +106,7 @@ data_loader_t::file_load(FileReader &io_reader, size_t start_foffset,
     if (offsets.has_value()) {
         INFO("Loader (" << loader_id
                         << ")- Creating segments given file offsets");
-	size_t data_size = io_reader.size();
+	    size_t data_size = io_reader.size();
         size_t total_segs = offsets->size();
         batch_size_ = (batch_size < 1)
                              ? max_batch_size(data_size, data_size, seg_size)

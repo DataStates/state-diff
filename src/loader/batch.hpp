@@ -1,24 +1,25 @@
-#ifndef __SEGMENT_BATCH_HPP
-#define __SEGMENT_BATCH_HPP
+#ifndef __BATCH_HPP
+#define __BATCH_HPP
 
-#include "common/debug.hpp"
+#include "debug.hpp"
 #include <cassert>
 #include <iostream>
 #include <vector>
+#include "io_reader.hpp"
 
-struct segment_t {
-    size_t offset;     // Start offset in file
-    size_t size;       // Size of the memory region
-    int fd;            // Descriptor of corresponding file
-    uint8_t *buffer;   // Pointer of this segment's memory region (GPU or CPU)
+// struct segment_t {
+//     size_t offset;     // Start offset in file
+//     size_t size;       // Size of the memory region
+//     int fd;            // Descriptor of corresponding file
+//     uint8_t *buffer;   // Pointer of this segment's memory region (GPU or CPU)
 
-    segment_t() = default;
-    segment_t(size_t offset_, size_t size_)
-        : offset(offset_), size(size_), fd(0), buffer(nullptr){};
-    segment_t(segment_t *other)
-        : offset(other->offset), size(other->size), fd(other->fd),
-          buffer(nullptr){};
-};
+//     segment_t() = default;
+//     segment_t(size_t offset_, size_t size_)
+//         : offset(offset_), size(size_), fd(0), buffer(nullptr){};
+//     segment_t(segment_t *other)
+//         : offset(other->offset), size(other->size), fd(other->fd),
+//           buffer(nullptr){};
+// };
 
 struct batch_t {
     segment_t *data;
@@ -52,4 +53,4 @@ struct batch_t {
     }
 };
 
-#endif   //__SEGMENT_BATCH_HPP
+#endif   //__BATCH_HPP

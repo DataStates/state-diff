@@ -1,7 +1,9 @@
 #ifndef __STORAGE_HPP
 #define __STORAGE_HPP
-#include "common/debug.hpp"
-#include "common/segment.hpp"
+// #include "common/debug.hpp"
+// #include "common/segment.hpp"
+#include "debug.hpp"
+#include "batch.hpp"
 #include <cassert>
 #include <condition_variable>
 #include <iostream>
