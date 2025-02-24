@@ -7,3 +7,6 @@
 [submodule "src/readers/external/liburing"]
 	path = src/readers/external/liburing
 	url = https://github.com/axboe/liburing.git
+[submodule "src/liburing-loader"]
+	path = src/liburing-loader
+	url = git@github.com:DataStates/liburing-loader.git

@@ -1,10 +1,12 @@
 #ifndef __DATA_LOADER_HPP
 #define __DATA_LOADER_HPP
 
-#include "common/debug.hpp"
+// #include "common/debug.hpp"
+#include "debug.hpp"
 #include "cuda_timer.hpp"
 #include "host_cache.hpp"
 #include "io_reader.hpp"
+// #include "async_data_reader.hpp"
 #include <cassert>
 #include <optional>
 #include <cmath>

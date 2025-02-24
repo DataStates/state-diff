@@ -4,7 +4,8 @@
 #include <thread>
 #include <condition_variable>
 #include <deque>
-#include "common/segment.hpp"
+// #include "common/segment.hpp"
+#include "batch.hpp"
 
 class metadata_queue {
 
