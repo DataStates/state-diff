@@ -53,7 +53,8 @@ class tree_t {
     bool use_fuzzyhash;
     Kokkos::View<HashDigest *> tree_d;
 
-    tree_t(const size_t data_size, const size_t chunk_size, bool fuzzyhash);
+    // tree_t(const size_t data_size, const size_t chunk_size, bool fuzzyhash);
+    tree_t(const size_t num_chunks, const size_t chunk_size, bool fuzzyhash);
     tree_t();
 
     void create(client_info_t client_info, data_loader_t &data_loader,
@@ -63,9 +64,14 @@ class tree_t {
     void save(Archive &ar, const unsigned int version) const;
     template <class Archive> void load(Archive &ar, const unsigned int version);
 
-    KOKKOS_INLINE_FUNCTION HashDigest &operator[](uint32_t i) const;
+    // KOKKOS_INLINE_FUNCTION HashDigest &operator[](uint32_t i) const;
+    KOKKOS_INLINE_FUNCTION
+    HashDigest &operator[](uint32_t i) const {
+        return tree_d(i);
+    }
 
     void print_leaves();
+    void write_leaves_tofile();
     const double *get_timers() const;
 };
 #endif   //  __KOKKOS_MERKLE_TREE_HPP

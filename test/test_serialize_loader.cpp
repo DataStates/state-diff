@@ -1,5 +1,5 @@
-#include "liburing_reader.hpp"
 #include "common/direct_io.hpp"
+#include "liburing_reader.hpp"
 #include "statediff.hpp"
 #include <cereal/archives/binary.hpp>
 #include <chrono>
@@ -39,8 +39,8 @@ main(int argc, char **argv) {
     float min_float = 0.0;
     // size in bytes of the synthetic data (1GB)
     size_t data_size = 2ULL * 1024 * 1024 * 1024;
-    //size_t data_size = 16 * 1024 * 1024; // 16MB
-    // Application error tolerance
+    // size_t data_size = 16 * 1024 * 1024; // 16MB
+    //  Application error tolerance
     float error_tolerance = 1e-4;
     // Target chunk size. This example uses 16 bytes
     int chunk_size = 4096;
@@ -77,18 +77,12 @@ main(int argc, char **argv) {
         write_file(fname, (uint8_t *)run_data.data(), data_size);
         std::cout << "EXEC STATE:: File saved" << std::endl;
 
-	fname = "/lus/eagle/projects/RECUP/kassogba/veloc-ckpt/haac/sc-experiments/4gpus/np796-500mil/run1/m000p.mpirestart-combined-0-10.dat";
-	metadata_fn = "/lus/eagle/projects/RECUP/kassogba/veloc-ckpt/haac/sc-experiments/4gpus/np796-500mil/run1/m000p.mpirestart-combined-0-10.dat.tree";
-	off_t filesize;
-        get_file_size(fname, &filesize);
-        data_size = static_cast<size_t>(filesize);
-
         // read data, build tree and save
         liburing_io_reader_t reader(fname);
-	std::cout << "Data size = " << data_size << "\n";
+        std::cout << "Data size = " << data_size << "\n";
         state_diff::client_t<float> client(
-            1, data_size, error_tolerance, dtype, chunk_size,
-            root_level, fuzzy_hash, 8ULL*1024*1024*1024, 8ULL*1024*1024*1024);
+            1, data_size, error_tolerance, dtype, chunk_size, root_level,
+            fuzzy_hash, 8ULL * 1024 * 1024 * 1024, 8ULL * 1024 * 1024 * 1024);
         client.create(reader);
         auto start_serialize = std::chrono::high_resolution_clock::now();
         {

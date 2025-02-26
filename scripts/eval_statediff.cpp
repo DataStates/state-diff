@@ -210,9 +210,9 @@ main(int argc, char **argv) {
                                                chunk_size, level, fuzzy_hash, host_cache, dev_cache);
         if (comparing_runs) {
             off_t filesize;
-            get_file_size(run0_full_files[0], &filesize);
-            base_data_size = static_cast<size_t>(filesize);
-            assert(base_data_size == data_size);
+            get_file_size(run0_files[0], &filesize);
+            data_size = static_cast<size_t>(filesize);
+            // assert(base_data_size == data_size);
         }
         state_diff::client_t<float> client_prev;
 
@@ -319,7 +319,7 @@ main(int argc, char **argv) {
                 // Compare
                 // ================================================================
                 Kokkos::Profiling::pushRegion("Compare phase");
-                client_cur.compare_with(-1, reader_cur, client_prev,
+                client_cur.compare_with(0, reader_cur, client_prev,
                                         reader_prev);
                 compare_time1 = client_cur.get_tree_comparison_time();
                 compare_time2 = client_cur.get_data_compare_time();

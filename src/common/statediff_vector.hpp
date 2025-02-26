@@ -1,6 +1,7 @@
 #ifndef KOKKOS_VECTOR_HPP
 #define KOKKOS_VECTOR_HPP
 #include <Kokkos_Core.hpp>
+#include <vector>
 
 /**
  * Vector class
@@ -102,5 +103,15 @@ template <typename StoreType> class Vector {
 
     // Copy the content of the device vector to the host vector
     void to_host() const { Kokkos::deep_copy(vector_h, vector_d); }
+
+    // copy host vector content to std::vector
+    // void to_stdvec(std::vector<size_t> &vector) {
+    //     to_host();
+    //     int size = vector_h.extent(0);
+    //     vector.resize(size);
+    //     Kokkos::parallel_for(size, KOKKOS_LAMBDA(int i) {
+    //       vector(i) = vector_h(i);
+    //     });
+    // }
 };
 #endif   // KOKKOS_VECTOR_HPP

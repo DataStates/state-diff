@@ -1,5 +1,6 @@
 #include "merkle_tree.hpp"
-#include "common/debug.hpp"
+// #include "common/debug.hpp"
+#include "debug.hpp"
 
 using ExecSpace = Kokkos::DefaultExecutionSpace;
 
@@ -65,11 +66,12 @@ tree_t::calc_leaf_fuzzy_hash(const void *data, uint64_t size, float errorValue,
  *
  * \param num_leaves Number of leaves in the tree
  */
-tree_t::tree_t(const size_t data_size, const size_t c_size, bool fuzzyhash)
+tree_t::tree_t(const size_t n_chunks, const size_t c_size, bool fuzzyhash)
     : chunk_size(c_size), use_fuzzyhash(fuzzyhash) {
-    num_leaves = data_size / c_size;
-    if (num_leaves * c_size < data_size)
-        num_leaves += 1;
+    // num_leaves = data_size / c_size;
+    // if (num_leaves * c_size < data_size)
+    //     num_leaves += 1;
+    num_leaves = n_chunks;
     num_nodes = 2 * num_leaves - 1;
     tree_d = Kokkos::View<HashDigest *>("Merkle tree", num_nodes);
     timers[3] = 0;
@@ -117,8 +119,8 @@ void
 tree_t::create(client_info_t client_info, data_loader_t &data_loader,
                int ld_idx, TransferType cache_tier) {
     Kokkos::Timer create_timer;
-    STDOUT_PRINT("Num chunks: %zu\n", num_leaves);
-    STDOUT_PRINT("Num nodes: %zu\n", num_nodes);
+    DBG("Num chunks: " << num_leaves);
+    DBG("Num nodes: " << num_nodes);
 
     // Setup markers for beginning and end of tree level
     uint32_t level_beg = 0, level_end = 0;
@@ -143,20 +145,22 @@ tree_t::create(client_info_t client_info, data_loader_t &data_loader,
     create_timer.reset();
     size_t work_start = 0;
     while (work_start < num_leaves) {
-	auto start_load = std::chrono::high_resolution_clock::now();
+        auto start_load = std::chrono::high_resolution_clock::now();
         auto next_batch = data_loader.next(ld_idx, cache_tier);
         uint8_t *data_ptr = (uint8_t *)next_batch.first;
         size_t ready_size = next_batch.second;
-	auto end_load = std::chrono::high_resolution_clock::now();
-	std::chrono::duration<double> load_time =  end_load - start_load;
-	timers[3] += load_time.count()*1000;
+        auto end_load = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> load_time = end_load - start_load;
+        timers[3] += load_time.count() * 1000;
 
-	auto start_hash = std::chrono::high_resolution_clock::now();
+        auto start_hash = std::chrono::high_resolution_clock::now();
         size_t curr_n_leaves = ready_size / chunk_size;
+        // ASSERT(curr_n_leaves * chunk_size == ready_size);
         if (curr_n_leaves * chunk_size < ready_size)
             curr_n_leaves += 1;
         size_t work_end = work_start + curr_n_leaves;
-        // printf("Work start = %zu; Work end = %zu; Ready size = %zu; curr_n_leaves = %zu\n", work_start, work_end, ready_size, curr_n_leaves);
+        printf("Work start = %zu; Work end = %zu; Ready size = %zu; curr_n_leaves = %zu\n", 
+                work_start, work_end, ready_size, curr_n_leaves);
         Kokkos::parallel_for(
             diff_label + std::string("Hash leaves"),
             Kokkos::RangePolicy<>(work_start, work_end),
@@ -164,14 +168,14 @@ tree_t::create(client_info_t client_info, data_loader_t &data_loader,
                 curr_tree.hash_leaves_kernel(data_ptr, client_info, left_leaf,
                                              idx);
             });
-	auto end_hash = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> hash_time =  end_hash - start_hash;
-        timers[4] += hash_time.count()*1000;
-        // Kokkos::fence();
+        auto end_hash = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> hash_time = end_hash - start_hash;
+        timers[4] += hash_time.count() * 1000;
+        Kokkos::fence();
         work_start = work_end;
     }
-    //Kokkos::fence();
-    
+    // Kokkos::fence();
+
     timers[1] = create_timer.seconds() * 1000.0;
     // printf("Leaves Creation: %.3f ms\n", create_timer.seconds() * 1000.0);
 
@@ -194,16 +198,18 @@ tree_t::create(client_info_t client_info, data_loader_t &data_loader,
         level_end = (level_end - 2) / 2;
     }
     timers[2] = create_timer.seconds() * 1000.0;
-    // printf("Rest of Tree Creation: %.3f ms\n", create_timer.seconds() * 1000.0);
+    // printf("Rest of Tree Creation: %.3f ms\n", create_timer.seconds() *
+    // 1000.0);
     Kokkos::Profiling::popRegion();
+    write_leaves_tofile();
 }
 
 void
 tree_t::create(uint8_t *data_ptr, client_info_t client_info) {
 
     // Get number of chunks and nodes
-    STDOUT_PRINT("Num chunks: %zu\n", num_leaves);
-    STDOUT_PRINT("Num nodes: %zu\n", num_nodes);
+    DBG("Num chunks: " << num_leaves);
+    DBG("Num nodes: " << num_nodes);
     Kokkos::Timer create_timer;
 
     // Setup markers for beginning and end of tree level
@@ -263,7 +269,8 @@ tree_t::create(uint8_t *data_ptr, client_info_t client_info) {
         level_end = (level_end - 2) / 2;
     }
     timers[2] = create_timer.seconds() * 1000.0;
-    // printf("Rest of Tree Creation: %.3f ms\n", create_timer.seconds() * 1000.0);
+    // printf("Rest of Tree Creation: %.3f ms\n", create_timer.seconds() *
+    // 1000.0);
     Kokkos::Profiling::popRegion();
 }
 
@@ -274,11 +281,11 @@ tree_t::create(uint8_t *data_ptr, client_info_t client_info) {
  *
  * \return Reference to hash digest at node i
  */
-KOKKOS_INLINE_FUNCTION
-HashDigest &
-tree_t::operator[](uint32_t i) const {
-    return tree_d(i);
-}
+// KOKKOS_INLINE_FUNCTION
+// HashDigest &
+// tree_t::operator[](uint32_t i) const {
+//     return tree_d(i);
+// }
 
 /**
  * Implementation of Cereal's main Serialize function
@@ -395,6 +402,29 @@ tree_t::print_leaves() {
         }
     }
     printf("============================================================\n");
+}
+
+/**
+ * Print leaves of tree in hex
+ */
+void
+tree_t::write_leaves_tofile() {
+    Kokkos::View<HashDigest *>::HostMirror tree_h =
+        Kokkos::View<HashDigest *>::HostMirror("tree_h", 2 * num_leaves - 1);
+    Kokkos::deep_copy(tree_h, tree_d);
+    uint32_t num_leaves = (tree_h.extent(0) + 1) / 2;
+    char buffer[64];
+    unsigned int counter = 2;
+    std::ofstream myFile("sdiff_leaves.txt");
+    for (unsigned int i = num_leaves - 1; i < tree_h.extent(0); i++) {
+        digest_to_hex((uint8_t *)(tree_h(i).digest), buffer);
+        myFile << buffer << std::endl;
+        if (i == counter) {
+            myFile << std::endl;
+            counter += 2 * counter;
+        }
+    }
+    printf("====================== Sdiff tree written to file ========================\n");
 }
 
 const double *

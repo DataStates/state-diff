@@ -1,15 +1,15 @@
 #!/bin/bash
 
-BUILD_DIR="$HOME/research/recup/veloc/apps/state-diff/build/scripts"
-VMTOUCH_BIN="$HOME/install/vmtouch/bin/"
+# BUILD_DIR="$HOME/research/recup/veloc/apps/state-diff/build/scripts"
+# VMTOUCH_BIN="$HOME/install/vmtouch/bin/"
 #BUILD_DIR="$HOME/research/recup/veloc/apps/state-diff/build_sophia/scripts"
 #VMTOUCH_BIN="$HOME/install/sophia/vmtouch/usr/local/bin/"
-#BUILD_DIR="$HOME/research/anl/state-diff/buildcpu/scripts"
-#VMTOUCH_BIN="$HOME/research/anl/install/vmtouch/"
+BUILD_DIR="$HOME/research/anl/state-diff/build/scripts"
+VMTOUCH_BIN="$HOME/research/anl/install/vmtouch/"
 KB=1024
 MB=$((1024 * $KB))
 GB=$((1024 * $MB))
-NTHREADS=32
+NTHREADS=8
 export OMP_NUM_THREADS=$NTHREADS
 
 rnd_data_gen() {
@@ -179,10 +179,10 @@ fi
 
 case "$1" in
     local)
-        ckpt_size=$((2 * $GB))
-        ckpt_name="/local/scratch/checkpoint"
+        ckpt_size=$((1 * $GB))
+        ckpt_name="/data/checkpoint"
         rnd_data_gen $ckpt_name $ckpt_size
-        SOURCE_FILE="/local/scratch/checkpoint0.dat"
+        SOURCE_FILE="/data/checkpoint0.dat"
         ;;
     polaris)
         # Ensure the data is on the SSD at the start of the experiments

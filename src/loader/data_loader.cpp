@@ -26,26 +26,81 @@ data_loader_t::max_batch_size(size_t data_size, size_t batch_size, size_t seg_si
     return n_segs;
 }
 
-std::vector<std::pair<size_t, int>>
-coalesce(std::vector<size_t> offsets) {
-    // std::sort(offsets.begin(), offsets.end());
-    std::vector<std::pair<size_t, int>> new_offsets;
-    for (size_t offset : offsets) {
-        if (new_offsets.empty()) {
-            new_offsets.emplace_back(offset, 1);
+// std::vector<std::pair<size_t, int>>
+// coalesce(std::vector<size_t> offsets) {
+//     // std::sort(offsets.begin(), offsets.end());
+//     std::vector<std::pair<size_t, int>> new_offsets;
+//     for (size_t offset : offsets) {
+//         if (new_offsets.empty()) {
+//             new_offsets.emplace_back(offset, 1);
+//         } else {
+//             auto &lastPair = new_offsets.back();
+//             size_t lastKey = lastPair.first;
+//             int lastValue = lastPair.second;
+//             if (lastKey + lastValue == offset) {
+//                 ++lastPair.second;
+//             } else {
+//                 new_offsets.emplace_back(offset, 1);
+//             }
+//         }
+//     }
+//     return new_offsets;
+// }
+
+std::vector<std::pair<size_t, size_t>> 
+coalesce(std::vector<size_t> offsets, size_t k) {
+    std::vector<std::pair<size_t, size_t>> new_offsets;
+    if (offsets.empty()) return new_offsets;
+    size_t start = offsets[0];
+    size_t lastOffset = start;
+    for (size_t i = 1; i < offsets.size(); ++i) {
+        if (offsets[i] - lastOffset - 1 <= k) {
+            lastOffset = offsets[i];
         } else {
-            auto &lastPair = new_offsets.back();
-            size_t lastKey = lastPair.first;
-            int lastValue = lastPair.second;
-            if (lastKey + lastValue == offset) {
-                ++lastPair.second;
-            } else {
-                new_offsets.emplace_back(offset, 1);
-            }
+            new_offsets.emplace_back(start, lastOffset - start + 1);
+            start = offsets[i];
+            lastOffset = offsets[i];
         }
     }
+    new_offsets.emplace_back(start, lastOffset - start + 1);
+
     return new_offsets;
 }
+
+// void
+// data_loader_t::merge_create_seg(int id, std::vector<size_t> &offsets,
+//                                 size_t total_segs, size_t batch_size_,
+//                                 size_t seg_size, size_t gap) {
+//     INFO("Loader - Merging contiguous segments for file reading");
+//     // std::sort(offsets.begin(), offsets.end());
+//     std::vector<std::pair<size_t, int>> new_offsets;
+//     size_t i = 0;
+//     batch_t *seg_batch = new batch_t(batch_size_);
+
+//     while (i < total_segs) {
+//         if (i == batch_size_) {
+//             host_cache_->stage_in(id, seg_batch);
+//             seg_batch = new batch_t(batch_size_);
+//         }
+//         if (i == 0) {
+//             new_offsets.emplace_back(offsets[i], 1);
+//             segment_t seg(offsets[i], seg_size);
+//             seg_batch->push(seg);
+//         } else {
+//             auto &lastPair = new_offsets.back();
+//             size_t lastKey = lastPair.first;
+//             int lastValue = lastPair.second;
+//             if (lastKey + lastValue == offsets[i]) {
+//                 ++lastPair.second;
+//                 seg_batch->inc_last(seg_size);
+//             } else {
+//                 new_offsets.emplace_back(offsets[i], 1);
+//                 segment_t seg(offsets[i], seg_size);
+//                 seg_batch->push(seg);
+//             }
+//         }
+//     }
+// }
 
 void
 data_loader_t::merge_create_seg(int id, std::vector<size_t> &offsets,
@@ -82,6 +137,21 @@ data_loader_t::merge_create_seg(int id, std::vector<size_t> &offsets,
     }
 }
 
+/**
+ * @brief Load data from a file
+ *
+ * This function takes a liburing reader and a destination of the data
+ * as input (trans_type) and loads data from a file to the destination.
+ *
+ * @param io_reader The reference of the liburing reader for file IO.
+ * @param start_foffset Offset of the file from which the reader starts reading from.
+ * @param seg_size  Size of each segment enqueued for read operations
+ * @param batch_size Number of segments to submit at a time to the liburing reader
+ * @param trans_type Definition of the source and destination of the data
+ * @param offsets Optional list of file offsets to read data from. If empty, all data are read.
+ * @param merge_seg Temporary boolean parameter used to define if non-contiguous offsets should be merged.
+ * @return ID of the file loading request. It is used to coordinate multiple concurrent file loading requests.
+ */
 int
 data_loader_t::file_load(FileReader &io_reader, size_t start_foffset,
                          size_t seg_size, size_t batch_size,
@@ -108,40 +178,54 @@ data_loader_t::file_load(FileReader &io_reader, size_t start_foffset,
                         << ")- Creating segments given file offsets");
 	    size_t data_size = io_reader.size();
         size_t total_segs = offsets->size();
-        batch_size_ = (batch_size < 1)
-                             ? max_batch_size(data_size, data_size, seg_size)
-                             : max_batch_size(data_size, batch_size, seg_size);
+        // batch_size_ = (batch_size < 1)
+        //                      ? max_batch_size(data_size, data_size, seg_size)
+        //                      : max_batch_size(data_size, batch_size, seg_size);
+        batch_size_ = 1;
         if (merge_seg) {
             merge_create_seg(loader_id, *offsets, total_segs, batch_size_,
-                             seg_size); // Currently conbines consecutive offsets. TBD
+                             seg_size); // Currently combines consecutive offsets. TBD
         } else {
             size_t n_iter = total_segs / batch_size_;
             n_iter =
                 (n_iter * batch_size_ < total_segs) ? (n_iter + 1) : n_iter;
-            for (size_t i = 0; i < n_iter; i++) {
-                batch_t *seg_batch = new batch_t(batch_size_);
-                INFO("Loader (" << loader_id << ")- Staging batch " << i + 1
-                                << " of size " << batch_size_
-                                << " for read from file");
-                for (size_t j = 0; j < batch_size_; j++) {
-                    size_t index = i * batch_size_ + j;
-                    segment_t seg((*offsets)[index], seg_size);
-                    seg_batch->push(seg);
-                }
-                host_cache_->stage_in(loader_id, seg_batch);
+            // std::cout << "Tot: " << total_segs << " / batch: " << batch_size_ << "\n";
+            // std::cout << "N iter = " << n_iter << "\n";
+            batch_t *seg_batch = new batch_t(total_segs);
+            INFO("Loader (" << loader_id << ")- Staging batch of size " << total_segs
+                            << " for read from file");
+            for (size_t j = 0; j < total_segs; j++) {
+                segment_t seg((*offsets)[j], seg_size);
+                seg_batch->push(seg);
             }
+            host_cache_->stage_in(loader_id, seg_batch);
+
+            // for (size_t i = 0; i < n_iter; i++) {
+            //     batch_t *seg_batch = new batch_t(batch_size_);
+            //     INFO("Loader (" << loader_id << ")- Staging batch " << i + 1
+            //                     << " of size " << batch_size_
+            //                     << " for read from file");
+            //     for (size_t j = 0; j < batch_size_; j++) {
+            //         size_t index = i * batch_size_ + j;
+            //         segment_t seg((*offsets)[index], seg_size);
+            //         seg_batch->push(seg);
+            //     }
+            //     host_cache_->stage_in(loader_id, seg_batch);
+            // }
         }
     } else {
         INFO("Loader (" << loader_id
                         << ")- Creating segments without given file offsets");
         size_t data_size = io_reader.size() - start_foffset;
         batch_size_ = 1;
-        seg_size = std::min({batch_size, data_size, host_cache_size_, device_cache_size_});
-        size_t total_segs = data_size / seg_size;
-        total_segs =
-            (total_segs * seg_size < data_size) ? (total_segs + 1) : total_segs;
-        size_t n_iter = total_segs / batch_size_;
-        n_iter = (n_iter * batch_size_ < total_segs) ? (n_iter + 1) : n_iter;
+        size_t n_iter = 1;
+        seg_size = data_size;
+        // seg_size = std::min({batch_size, data_size, host_cache_size_, device_cache_size_});
+        // size_t total_segs = data_size / seg_size;
+        // total_segs =
+        //     (total_segs * seg_size < data_size) ? (total_segs + 1) : total_segs;
+        // size_t n_iter = total_segs / batch_size_;
+        // n_iter = (n_iter * batch_size_ < total_segs) ? (n_iter + 1) : n_iter;
 
         for (size_t i = 0; i < n_iter; i++) {
             batch_t *seg_batch = new batch_t(batch_size_);
@@ -189,11 +273,14 @@ data_loader_t::next(int id, void *ptr) {
 
 // This implementation of next works because the memory for the segments in a
 // batch point are allocated contiguously from the data_store. However, once the
-// pointer to the ready batch is returned to the user, we can load new data
+// pointer to the ready batch is returned to the user, new data may be loaded
 // inplace because the loader does not know when the kernel completed
-// computation. To address that issue, we implement an approach that keeps track
-// of the number of batches returned to deallocate the previous batch before
+// computation, affecting accuracy. To address that issue, we implement an approach
+// that keeps track of the number of batches returned to deallocate the previous batch before
 // returning a pointer to the next batch.
+// The reason why we are returning a pointer to the user instead of receiving a pointer from
+// the user (and copying data to the user pointer) is because computation is faster than
+// data movement, i.e., the time it would take to copy the data is higher than the time to process it.
 
 batch_t *
 get_next(int id, base_cache_t *cache_tier, bool should_release) {

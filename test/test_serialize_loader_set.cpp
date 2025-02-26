@@ -40,8 +40,8 @@ main(int argc, char **argv) {
     char dtype = 'f';   // float
     // builds the tree from leaves to root level, can be 12 or 13.
     int root_level = 1;
-    std::string fname = "/lus/eagle/projects/RECUP/kassogba/veloc-ckpt/haac/sc-experiments/4gpus/np796-500mil/run1/m000p.mpirestart-combined-0-10.dat";
-    std::string metadata_fn = "/lus/eagle/projects/RECUP/kassogba/veloc-ckpt/haac/sc-experiments/4gpus/np796-500mil/run1/m000p.mpirestart-combined-0-10.dat.tree";
+    std::string fname = "/data/8gpus/np796-500mil/run1/m000p.mpirestart-combined-0-10.dat";
+    std::string metadata_fn = "/data/8gpus/np796-500mil/run1/m000p.mpirestart-combined-0-10.dat.tree";
     off_t filesize;
     get_file_size(fname, &filesize);
     size_t data_size = static_cast<size_t>(filesize);
