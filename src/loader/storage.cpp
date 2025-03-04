@@ -17,14 +17,16 @@ storage_t::can_allocate(size_t req_size) {
         << req_size / 1024 << " KB given current size of "
         << curr_size_ / (1024 * 1024) << " MB and total size of "
         << total_size_ / (1024 * 1024) << " MB when storage state is "
-        << storage_ful_);
-    // return !storage_ful_ && curr_size_ + req_size <= total_size_;
-    return !storage_ful_ && get_free_size() >= req_size;
+        << (curr_size_ == total_size_ ? "full" : "not full"));
+    if (req_size > get_free_size()) {
+        return false;
+    }
+    size_t next_head = (head_ + req_size) % total_size_;
+    return next_head != tail_;
 }
 
 size_t
 storage_t::get_free_size() {
-    // std::unique_lock<std::mutex> lck(mtx_);
     return total_size_ - curr_size_;
 }
 
@@ -48,37 +50,40 @@ storage_t::allocate(batch_t *seg_batch) {
         head_ = (head_ + seg.size) % total_size_;
         curr_size_ += seg.size;
         stored_segs_.push_back(&seg_batch->data[i]);
-        storage_ful_ = (head_ == tail_);
-        if (storage_ful_)
+        bool was_full = (head_ == tail_);
+        if (was_full) {
             head_ = 0;
+        }
     }
     lck.unlock();
-    cv_.notify_one();
+    // cv_.notify_one();
+    cv_.notify_all();
 }
 
 void
 storage_t::deallocate(batch_t *seg_batch) {
     std::unique_lock<std::mutex> lck(mtx_);
     if (stored_segs_.empty()) {
-        FATAL("Invalid request to deallocate non-existing segment");
+        FATAL("Deallocate called with no stored segments in storage.");
         return;
     }
     for (size_t i = 0; i < seg_batch->batch_size; i++) {
         segment_t &curr_seg = seg_batch->data[i];
-        segment_t *front = stored_segs_.front();
-        if (front->offset != curr_seg.offset) {
-            FATAL("Should deallocate the oldest segment first. FIFO enforced!");
+        segment_t *oldest = stored_segs_.front();
+        if (oldest->offset != curr_seg.offset) {
+            FATAL("FIFO violation: Attempted to deallocate out of order. "
+                << "Expected offset: " << oldest->offset
+                << ", but got: " << curr_seg.offset);
             return;
         }
         tail_ = (tail_ + curr_seg.size) % total_size_;
         curr_size_ -= curr_seg.size;
-        storage_ful_ = false;
-        if (head_ == tail_)
-            tail_ = 0;
         stored_segs_.pop_front();
-        DBG("Store - Deallocated resources for batch item "
-            << i << "/" << seg_batch->batch_size);
+        DBG("Store - Deallocated batch item " << i 
+            << "/" << seg_batch->batch_size 
+            << ", new tail: " << tail_ 
+            << ", free space: " << get_free_size());
     }
     lck.unlock();
-    cv_.notify_one();
+    cv_.notify_all();
 }

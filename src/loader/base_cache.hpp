@@ -20,7 +20,8 @@ class base_cache_t {
     std::unordered_map<int, metadata_queue> ready_q_;
     // metadata_queue fetch_q_;
     // metadata_queue ready_q_;
-    bool is_active_ = true;
+    // bool is_active_ = true;
+    std::atomic<bool> is_active_ = true;
     base_cache_t *next_cache_tier_ = nullptr;
     // std::condition_variable cv;
     // std::mutex mtx;

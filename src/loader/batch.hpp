@@ -30,18 +30,30 @@ struct batch_t {
         data = new segment_t[batch_size];
     }
     batch_t &operator=(const batch_t &) = delete;
-    batch_t(batch_t *other) : batch_size(other->batch_size), count(0) {
+    // batch_t(batch_t *other) : batch_size(other->batch_size), count(0) {
+    //     data = new segment_t[batch_size];
+    //     for (size_t i = 0; i < other->batch_size; i++) {
+    //         DBG("Building batch of size "
+    //             << other->batch_size
+    //             << " with items at offset = " << other->data[i].offset
+    //             << ", size = " << other->data[i].size / 1024 << "KB");
+    //         data[i] = segment_t(other->data[i]);
+    //         data[i].buffer = nullptr;
+    //         count++;
+    //     }
+    // }
+    batch_t(const batch_t &other) : batch_size(other.batch_size), count(0) {
         data = new segment_t[batch_size];
-        for (size_t i = 0; i < other->batch_size; i++) {
-            DBG("Building batch of size "
-                << other->batch_size
-                << " with items at offset = " << other->data[i].offset
-                << ", size = " << other->data[i].size / 1024 << "KB");
-            data[i] = segment_t(other->data[i]);
-            data[i].buffer = nullptr;
+        for (size_t i = 0; i < other.batch_size; i++) {
+            DBG("Building batch of size " << other.batch_size
+                << " with items at offset = " << other.data[i].offset
+                << ", size = " << other.data[i].size / 1024 << "KB");
+            data[i] = other.data[i];
+            data[i].buffer = nullptr;  // Buffer not allocated yet
             count++;
         }
     }
+    batch_t(batch_t *other) : batch_t(*other) {}
     ~batch_t() { delete[] data; }
     void push(segment_t item) {
         assert(count < batch_size);

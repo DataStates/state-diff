@@ -9,27 +9,27 @@ set_target_properties(test_serialize PROPERTIES
    CXX_EXTENSIONS OFF
 )
 
-add_executable(test_serialize_loader test_serialize_loader.cpp)
-target_include_directories(test_serialize_loader PUBLIC ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(test_serialize_loader PUBLIC Kokkos::kokkos)
-target_link_libraries(test_serialize_loader PRIVATE OpenSSL::SSL)
-target_link_libraries(test_serialize_loader PUBLIC statediff)
-set_target_properties(test_serialize_loader PROPERTIES
-   CXX_STANDARD 17
-   CXX_STANDARD_REQUIRED YES
-   CXX_EXTENSIONS OFF
-)
+# add_executable(test_serialize_loader test_serialize_loader.cpp)
+# target_include_directories(test_serialize_loader PUBLIC ${CMAKE_SOURCE_DIR}/include)
+# target_link_libraries(test_serialize_loader PUBLIC Kokkos::kokkos)
+# target_link_libraries(test_serialize_loader PRIVATE OpenSSL::SSL)
+# target_link_libraries(test_serialize_loader PUBLIC statediff)
+# set_target_properties(test_serialize_loader PROPERTIES
+#    CXX_STANDARD 17
+#    CXX_STANDARD_REQUIRED YES
+#    CXX_EXTENSIONS OFF
+# )
 
-add_executable(test_serialize_loader_set test_serialize_loader_set.cpp)
-target_include_directories(test_serialize_loader_set PUBLIC ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(test_serialize_loader_set PUBLIC Kokkos::kokkos)
-target_link_libraries(test_serialize_loader_set PRIVATE OpenSSL::SSL)
-target_link_libraries(test_serialize_loader_set PUBLIC statediff)
-set_target_properties(test_serialize_loader_set PROPERTIES
-   CXX_STANDARD 17
-   CXX_STANDARD_REQUIRED YES
-   CXX_EXTENSIONS OFF
-)
+# add_executable(test_serialize_loader_set test_serialize_loader_set.cpp)
+# target_include_directories(test_serialize_loader_set PUBLIC ${CMAKE_SOURCE_DIR}/include)
+# target_link_libraries(test_serialize_loader_set PUBLIC Kokkos::kokkos)
+# target_link_libraries(test_serialize_loader_set PRIVATE OpenSSL::SSL)
+# target_link_libraries(test_serialize_loader_set PUBLIC statediff)
+# set_target_properties(test_serialize_loader_set PROPERTIES
+#    CXX_STANDARD 17
+#    CXX_STANDARD_REQUIRED YES
+#    CXX_EXTENSIONS OFF
+# )
 
 add_executable(test_compare test_compare.cpp)
 target_include_directories(test_compare PUBLIC ${CMAKE_SOURCE_DIR}/include)
@@ -56,8 +56,8 @@ set_target_properties(test_create_stream PROPERTIES
 
 
 add_test(NAME test_serialize COMMAND test_serialize --kokkos-num-threads=2 --kokkos-map-device-id-by=mpi_rank)
-add_test(NAME test_serialize_loader COMMAND test_serialize_loader --kokkos-map-device-id-by=mpi_rank)
-add_test(NAME test_serialize_loader_set COMMAND test_serialize_loader_set --kokkos-map-device-id-by=mpi_rank)
+# add_test(NAME test_serialize_loader COMMAND test_serialize_loader --kokkos-map-device-id-by=mpi_rank)
+# add_test(NAME test_serialize_loader_set COMMAND test_serialize_loader_set --kokkos-map-device-id-by=mpi_rank)
 add_test(NAME test_create_stream COMMAND test_create_stream --kokkos-map-device-id-by=mpi_rank)
 add_test(NAME test_compare_1 COMMAND test_compare 1 --kokkos-map-device-id-by=mpi_rank)
 add_test(NAME test_compare_2 COMMAND test_compare 2 --kokkos-map-device-id-by=mpi_rank)

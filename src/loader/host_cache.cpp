@@ -6,7 +6,7 @@ host_cache_t::host_cache_t(int gpu_id, size_t tot_cache_size)
     gpuErrchk(cudaSetDevice(gpu_id_));
     gpuErrchk(cudaMallocHost((void **)&start_ptr_, tot_cache_size_));
 #else
-    start_ptr_ = (uint8_t *) malloc(tot_cache_size_);
+    start_ptr_ = (uint8_t *)malloc(tot_cache_size_);
 #endif
     INFO("Host - Creating a cache of size " << tot_cache_size / (1024 * 1024)
                                             << " MB");
@@ -22,6 +22,18 @@ host_cache_t::~host_cache_t() {
     for (auto &rqueue : ready_q_)
         rqueue.second.set_inactive();
 
+    for (auto &thread : fetch_thread_) {
+        if (thread.second.joinable()) {
+            thread.second.join();   // Join thread if it is joinable
+        }
+    }
+
+    for (auto &thread : flush_thread_) {
+        if (thread.second.joinable()) {
+            thread.second.join();   // Join thread if it is joinable
+        }
+    }
+
     DBG("Host - Cache destroyed");
 };
 
@@ -34,9 +46,17 @@ host_cache_t::activate(int id) {
 
 void
 host_cache_t::stage_in(int id, batch_t *seg_batch) {
+    bool singlereader = std::holds_alternative<FileReader *>(freader_[id]);
     fetch_q_[id].push(seg_batch);
+    int count = 1;
+    if (!singlereader) {
+        batch_t *seg_batch_cpy = new batch_t(seg_batch);
+        // batch_t seg_batch_cpy = seg_batch;
+        fetch_q_[id].push(seg_batch_cpy);
+        count++;
+    }
     DBG("Host (" << id << ")- Staged batch of size " << seg_batch->batch_size
-                 << " for f2h copy");
+                 << " (" << count << " readers) for f2h copy");
 }
 
 void
@@ -54,6 +74,15 @@ host_cache_t::set_reader(int id, FileReader *io_reader) {
 }
 
 void
+host_cache_t::set_reader(int id, FileReader *io_reader0,
+                         FileReader *io_reader1) {
+    DBG("Host (" << id << ")- Setting reader to read from file");
+    assert(io_reader0 != nullptr && io_reader1 != nullptr);
+    freader_[id] = std::make_pair(io_reader0, io_reader1);
+    activate(id);
+}
+
+void
 host_cache_t::set_next_tier(int id, base_cache_t *cache_tier) {
     DBG("Host (" << id << ")- Setting next tier for outgoing transfers");
     if (next_cache_tier_ == nullptr)
@@ -61,11 +90,13 @@ host_cache_t::set_next_tier(int id, base_cache_t *cache_tier) {
     next_cache_tier_->activate(id);
     flush_thread_[id] = std::thread([this, id] { flush_(id); });
     flush_thread_[id].detach();
-    INFO("Host (" << id << ")- Started flush threads on host cache");
+    DBG("Host (" << id << ")- Started flush threads on host cache");
 }
 
 void
 host_cache_t::fetch_(int id) {
+    bool use_reader0 = true;
+
     while (is_active_) {
         // wait for item
         DBG("Host (" << id
@@ -74,8 +105,10 @@ host_cache_t::fetch_(int id) {
         bool res = fetch_q_[id].wait_any();
         TIMER_STOP(hst_waitfetch,
                    "Host (" << id << ")- Waited any batch for host fetch");
-        if (!res)
-            FATAL("Undefined behavior in fetch metadata queue of host cache");
+        if (!res) {
+            DBG("Error in fetch metadata queue of host cache, retrying...");
+            continue;
+        }
         TIMER_START(hst_fetch);
         size_t curr_capacity = fetch_q_[id].size();
         for (size_t i = 0; i < curr_capacity; i++) {
@@ -83,9 +116,28 @@ host_cache_t::fetch_(int id) {
             DBG("Host (" << id << ")- Allocating memory to front batch of size "
                          << item->batch_size);
             data_store_->allocate(item);
-            DBG("Host (" << id << ")- Enqueuing for read from file");
-            freader_[id]->enqueue_reads(item->to_vec());
-            freader_[id]->wait_all();
+
+            if (auto *reader_pair =
+                    std::get_if<std::pair<FileReader *, FileReader *>>(
+                        &freader_[id])) {
+                FileReader *selected_reader =
+                    use_reader0 ? reader_pair->first : reader_pair->second;
+                // switch to use the other reader for next batch
+                use_reader0 = !use_reader0;
+                DBG("Host (" << id << ")- Enqueuing for read from "
+                             << (use_reader0 ? "reader0" : "reader1"));
+                selected_reader->enqueue_reads(item->to_vec());
+                selected_reader->wait_n(item->batch_size);
+            } else if (auto *single_reader =
+                           std::get_if<FileReader *>(&freader_[id])) {
+                DBG("Host (" << id << ")- Enqueuing for read from file");
+                (*single_reader)->enqueue_reads(item->to_vec());
+                (*single_reader)->wait_n(item->batch_size);
+            } else {
+                DBG("Error: No valid reader found!");
+                continue;
+            }
+
             DBG("Host (" << id << ")- Adding item to host ready queue");
             stage_out(id, item);
             fetch_q_[id].pop();
@@ -93,7 +145,7 @@ host_cache_t::fetch_(int id) {
         TIMER_STOP(hst_fetch, "Host (" << id << ")- Fetched " << curr_capacity
                                        << " batches to host cache");
     }
-    INFO("Host (" << id << ")- Fetch thread exiting");
+    DBG("Host (" << id << ")- Fetch thread exiting");
 }
 
 void
@@ -119,12 +171,12 @@ host_cache_t::flush_(int id) {
                                        << curr_capacity
                                        << " batches from host cache");
     }
-    INFO("Host (" << id << ")- Flush thread exiting\n");
+    DBG("Host (" << id << ")- Flush thread exiting\n");
 }
 
 bool
 host_cache_t::wait_for_completion() {
-    INFO("Host - Waiting for all jobs on fetch_q to be completed");
+    DBG("Host - Waiting for all jobs on fetch_q to be completed");
     for (auto &fqueue : fetch_q_)
         fqueue.second.wait_for_completion();
 
@@ -135,21 +187,27 @@ host_cache_t::wait_for_completion() {
 
 batch_t *
 host_cache_t::get_completed(int id) {
-    INFO("Host (" << id << ")- Getting completed jobs from ready_q");
-    ready_q_[id].wait_any();
-    // batch_t *front_batch = ready_q_[id].front();
-    // ready_q_[id].pop();
-    // return front_batch;
+    DBG("Host (" << id << ")- Getting completed jobs from ready_q");
+    bool singlereader = std::holds_alternative<FileReader *>(freader_[id]);
+    if(singlereader){
+        ready_q_[id].wait_any();
+    } else {
+        ready_q_[id].wait_for(2); // 2 for two readers (one batch per reader)
+    }
     return ready_q_[id].front();
 }
 
 bool
 host_cache_t::release(int id) {
-    INFO("Host (" << id
+    DBG("Host (" << id
                   << ")- Releasing memory used by previous processed batch");
-    batch_t *consumed_item = ready_q_[id].front();
-    data_store_->deallocate(consumed_item);
-    ready_q_[id].pop();
+    int nreaders = std::holds_alternative<FileReader *>(freader_[id]) ? 1 : 2;
+    for(int i = 0; i < nreaders; i++) {
+        batch_t *consumed_item = ready_q_[id].front();
+        data_store_->deallocate(consumed_item);
+        ready_q_[id].pop();
+        delete consumed_item; // Prevent memory leak
+    }
     return true;
 }
 

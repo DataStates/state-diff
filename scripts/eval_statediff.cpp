@@ -1,5 +1,6 @@
-#include "common/direct_io.hpp"
+// #include "common/direct_io.hpp"
 #include "liburing_reader.hpp"
+#include "direct_io.hpp"
 #include "mpi.h"
 #include "statediff.hpp"
 #include "stdio.h"
@@ -39,6 +40,14 @@ main(int argc, char **argv) {
             .help("Data type")
             .default_value(std::string("float"))
             .choices("byte", "float", "double");
+        program.add_argument("-b", "--create_blksize")
+            .help("Block size in bytes for reads during tree creation")
+            .default_value(static_cast<size_t>(134217728))
+            .scan<'u', size_t>();
+        program.add_argument("-g", "--merge_gap")
+            .help("Gap tolerance to merge non-contiguous offsets")
+            .default_value(static_cast<uint32_t>(0))
+            .scan<'u', uint32_t>();
         program.add_argument("-e", "--error")
             .help("Error tolerance for comparing floating-point data")
             .default_value(static_cast<double>(0.0f))
@@ -93,6 +102,8 @@ main(int argc, char **argv) {
         uint32_t level = program.get<uint32_t>("-l");
         size_t host_cache = program.get<size_t>("--host-cache");
         size_t dev_cache = program.get<size_t>("--dev-cache");
+        size_t create_blksize = program.get<size_t>("-b");
+        uint32_t offt_gap = program.get<uint32_t>("-g");
         auto run0_all_files = program.get<std::vector<std::string>>("--run0");
         auto run1_all_files = program.get<std::vector<std::string>>("--run1");
         auto run0_all_full_files =
@@ -197,6 +208,7 @@ main(int argc, char **argv) {
         double compare_time2 = 0;
         double serialize_time = 0;
         double write_time = 0;
+        std::vector<double> ld_cmp_timings = {0,0};
 
         // Create statediff clients
         bool fuzzy_hash = true;
@@ -206,13 +218,12 @@ main(int argc, char **argv) {
         off_t filesize;
         get_file_size(ref_file, &filesize);
         size_t data_size = static_cast<size_t>(filesize);
-        state_diff::client_t<float> client_cur(1, data_size, err_tol, dtype[0],
+        state_diff::client_t<float> client_cur(0, data_size, err_tol, dtype[0],
                                                chunk_size, level, fuzzy_hash, host_cache, dev_cache);
         if (comparing_runs) {
             off_t filesize;
             get_file_size(run0_files[0], &filesize);
             data_size = static_cast<size_t>(filesize);
-            // assert(base_data_size == data_size);
         }
         state_diff::client_t<float> client_prev;
 
@@ -243,7 +254,58 @@ main(int argc, char **argv) {
                 // ================================================================
                 Timer::time_point beg_create = Timer::now();
                 Kokkos::Profiling::pushRegion("Create tree");
-                client_cur.create(reader_cur);
+                client_cur.create(reader_cur, create_blksize);
+
+                // Kokkos::View<uint8_t *> data0_d("Run 0 region", 0);
+                // Kokkos::View<uint8_t *>::HostMirror data0_h = Kokkos::create_mirror_view(data0_d);
+                // size_t data_len = 0;
+                // off_t filesize;
+                // get_file_size(run0_files[idx], &filesize);
+                // data_len = static_cast<size_t>(filesize);
+                // if(data0_h.size() < data_len) {
+                //     Kokkos::resize(data0_h, data_len);
+                //     Kokkos::resize(data0_d, data_len);
+                // }
+
+                // int fd0 = open(run0_files[idx].c_str(), O_RDONLY, 0644);
+                // if (fd0 == -1) {
+                //     FATAL("cannot open " << run0_files[idx] << ", error = " << strerror(errno));
+                // }
+                // size_t transferred = 0, remaining = data_len;
+                // while (remaining > 0) {
+                //     auto ret = read(fd0, data0_h.data() + transferred, remaining);
+                //     if (ret < 0)
+                //         FATAL("cannot read " << data_len << " bytes from " << run0_files[idx]
+                //                             << " , error = " << std::strerror(errno));
+                //     remaining -= ret;
+                //     transferred += ret;
+                // }
+                // fsync(fd0);
+                // close(fd0);
+                // uint8_t* run0_buffer = data0_h.data();
+
+                // std::vector<uint8_t> buffer(data_size, 0);
+                // size_t buffer_size = 128*1024*1024;
+                // size_t n_iter = data_size/buffer_size;
+                // if(n_iter * buffer_size < data_size)
+                //     n_iter += 1;
+                // std::vector<segment_t> segments(n_iter);
+
+                // for(size_t i = 0; i < n_iter; i++) {
+                //     segment_t seg;
+                //     seg.buffer = buffer.data()+(buffer_size*i);
+                //     seg.offset = buffer_size*i;
+                //     seg.size = buffer_size;
+                //     if(seg.offset+seg.size > data_size)
+                //         seg.size = data_size - seg.offset;
+                //     segments[i] = seg;
+                // }
+                // reader_cur.enqueue_reads(segments);
+                // reader_cur.wait_all();
+                // uint8_t *run0_buffer = (uint8_t*)segments[0].buffer;
+
+                // client_cur.create(run0_buffer);
+
                 Kokkos::Profiling::popRegion();
                 Timer::time_point end_create = Timer::now();
                 double create_time = std::chrono::duration_cast<Duration>(
@@ -252,6 +314,9 @@ main(int argc, char **argv) {
                 std::cout << "\tRank " << world_rank
                           << ": Create Tree: " << create_time << std::endl;
                 compare_time1 = create_time;
+                std::vector<double> create_timings = client_cur.get_create_time();
+                ld_cmp_timings[0] = create_timings[3];
+                ld_cmp_timings[1] = create_timings[4];
 
                 // ================================================================
                 // Serialize
@@ -320,7 +385,7 @@ main(int argc, char **argv) {
                 // ================================================================
                 Kokkos::Profiling::pushRegion("Compare phase");
                 client_cur.compare_with(0, reader_cur, client_prev,
-                                        reader_prev);
+                                        reader_prev, offt_gap);
                 compare_time1 = client_cur.get_tree_comparison_time();
                 compare_time2 = client_cur.get_data_compare_time();
                 Kokkos::Profiling::popRegion();
@@ -338,6 +403,7 @@ main(int argc, char **argv) {
                           << std::reduce(compare_time.begin(),
                                          compare_time.end())
                           << std::endl;
+                ld_cmp_timings = client_cur.get_direct_compare_time();
             }
 
             // ========================================================================================
@@ -378,13 +444,14 @@ main(int argc, char **argv) {
                 logfile << "Rank,File,File size,Baseline file,Baseline file "
                            "size,Hash function,Chunk size,Data type,";
                 logfile
-                    << "Error tolerance,Start level,Host cache,Device cache,";
+                    << "Error tolerance,Start level,Host cache,Device cache,Create blksize,Offset gap,";
                 logfile
                     << "Setup time,Read time,Deserialization time,Construction "
                        "time,Compare tree time,Compare direct "
                        "time,Serialization time,Write time,";
                 logfile << "Elements different,Hashes different,Num "
-                           "comparisons,Num hash comparisons,Filtered hashes\n";
+                           "comparisons,Num hash comparisons,Filtered hashes,";
+                logfile << "Load time,Compute time\n";
             }
             logfile << world_rank << ",";
             if (comparing_runs) {
@@ -410,6 +477,8 @@ main(int argc, char **argv) {
             logfile << level << ",";
             logfile << host_cache << ",";
             logfile << dev_cache << ",";
+            logfile << create_blksize << ",";
+            logfile << offt_gap << ",";
             logfile << timers[0] << ",";
             logfile << timers[1] << ",";
             logfile << timers[2] << ",";
@@ -424,7 +493,9 @@ main(int argc, char **argv) {
             logfile << changed_blocks << ",";
             logfile << n_comparisons << ",";
             logfile << n_hash_comp << ",";
-            logfile << filtered_blocks << std::endl;
+            logfile << filtered_blocks << ",";
+            logfile << ld_cmp_timings[0] << ",";
+            logfile << ld_cmp_timings[1] << std::endl;
             logfile.close();
         }
     }

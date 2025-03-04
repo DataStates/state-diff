@@ -5,7 +5,7 @@ add_library (statediff-loader SHARED
     storage.cpp
 )
 
-add_dependencies(statediff-loader asyncDataReader)
+# add_dependencies(statediff-loader asyncDataReader)
 
 # target_link_libraries(statediff-loader PUBLIC statediff-io)
 target_link_libraries(statediff-loader PUBLIC asyncDataReader)
@@ -26,4 +26,4 @@ install (TARGETS statediff-loader EXPORT statediffTargets
 )
 
 ###### Unit tests
-# add_subdirectory(test)
+add_subdirectory(test)
