@@ -63,6 +63,14 @@ struct batch_t {
     std::vector<segment_t> to_vec() {
         return std::vector<segment_t>(data, data + count);
     }
+    std::vector<segment_t> left_vec() {
+        size_t half_count = count / 2;
+        return std::vector<segment_t>(data, data + half_count);
+    }
+    std::vector<segment_t> right_vec() {
+        size_t half_count = count / 2;
+        return std::vector<segment_t>(data + half_count, data + count);
+    }
 };
 
 #endif   //__BATCH_HPP

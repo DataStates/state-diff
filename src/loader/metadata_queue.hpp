@@ -4,7 +4,6 @@
 #include <thread>
 #include <condition_variable>
 #include <deque>
-// #include "common/segment.hpp"
 #include "batch.hpp"
 
 class metadata_queue {
@@ -22,14 +21,15 @@ class metadata_queue {
     void push(batch_t *seg) {
         std::unique_lock<std::mutex> lock(mtx_);
         meta_q_.push_back(seg);
-        cv_.notify_all();
+        cv_.notify_one();
     }
 
     void pop() {
         std::unique_lock<std::mutex> lock(mtx_);
+        cv_.wait(lock, [this] { return !meta_q_.empty() || !is_active_; });
         if(!meta_q_.empty()) {
             meta_q_.pop_front();
-            cv_.notify_all();
+            cv_.notify_one();
         }
     }
 
@@ -39,7 +39,7 @@ class metadata_queue {
         return meta_q_.front();
     }
 
-    bool wait_for_completion() {
+    bool wait_until_empty() {
         std::unique_lock<std::mutex> lock(mtx_);
         cv_.wait(lock, [this] { return meta_q_.empty() || !is_active_; });
         return true;
@@ -53,9 +53,7 @@ class metadata_queue {
 
     bool wait_for(size_t count) {
         std::unique_lock<std::mutex> lock(mtx_);
-        while (meta_q_.size() < count && is_active_) {  // Use a while loop
-            cv_.wait(lock);
-        }
+        cv_.wait(lock, [this, count] { return meta_q_.size() >= count || !is_active_; });
         return true;
     }
 

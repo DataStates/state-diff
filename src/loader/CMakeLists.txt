@@ -1,7 +1,6 @@
 add_library (statediff-loader SHARED
     data_loader.cpp
     host_cache.cpp
-    device_cache.cpp
     storage.cpp
 )
 

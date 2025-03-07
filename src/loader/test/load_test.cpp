@@ -64,7 +64,6 @@ main(int argc, char **argv) {
     
     int MB = 1024 * 1024;
     size_t read_size = 128*MB;
-    size_t start_foffset = 0;
     TransferType trans_type = TransferType::FileToHost;
 
     // Create reader
@@ -76,29 +75,21 @@ main(int argc, char **argv) {
 
     // create loader
     data_loader_t data_loader(host_cache_size, dev_cache_size);
-    int ld = data_loader.file_load(uring_reader, start_foffset, read_size, trans_type);
-    auto nd_init = std::chrono::high_resolution_clock::now();
+    int ld = data_loader.file_load(uring_reader, read_size, trans_type);
 
-    // start computation
-    double load_time = 0;
-    double proc_time = 0;
-    size_t proc_elements = 0;
+    // start loading
+    size_t read_bytes = 0;
     size_t i = 0;
 
-    while (proc_elements < data_size) {
-        printf("Client - Processing batch %zu\n", ++i);
+    while (read_bytes < data_size) {
         auto next_batch = data_loader.next(ld, trans_type);
         uint8_t *data_ptr = next_batch.first;
         size_t ready_size = next_batch.second;
-        // std::vector<uint8_t> ptr(data_size);
-        // uint8_t *data_ptr = ptr.data();
-        // data_loader.next(ld, data_ptr);
-        // size_t ready_size = data_size;
-        std::memcpy(data_h.data()+proc_elements, data_ptr, ready_size);
-        proc_elements += ready_size;
+        printf("Client - Loaded batch %zu of size %zu bytes\n", ++i, next_batch.second);
+        std::memcpy(data_h.data()+read_bytes, data_ptr, ready_size);
+        read_bytes += ready_size;
     }
-    printf("Client - Processed all batches\n");
-    auto end = std::chrono::high_resolution_clock::now();
+    printf("Client - Loaded %zu batches (%zu bytes) out of %zu bytes of data\n", i, read_bytes, data_size);
 
     printf("Validating the results for correctness\n");
     try {

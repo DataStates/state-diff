@@ -4,6 +4,7 @@
 #include "metadata_queue.hpp"
 #include "storage.hpp"
 #include <unordered_map>
+#include <shared_mutex>
 
 class base_cache_t {
   protected:
@@ -15,16 +16,15 @@ class base_cache_t {
     // std::thread fetch_thread_;
     // std::thread flush_thread_;
     std::unordered_map<int, std::thread> fetch_thread_;
-    std::unordered_map<int, std::thread> flush_thread_;
     std::unordered_map<int, metadata_queue> fetch_q_;
     std::unordered_map<int, metadata_queue> ready_q_;
     // metadata_queue fetch_q_;
     // metadata_queue ready_q_;
     // bool is_active_ = true;
     std::atomic<bool> is_active_ = true;
-    base_cache_t *next_cache_tier_ = nullptr;
     // std::condition_variable cv;
-    // std::mutex mtx;
+    std::unordered_map<int, std::shared_mutex> fetch_q_mutex_;
+    std::unordered_map<int, std::shared_mutex> ready_q_mutex_;
 
   public:
     storage_t *data_store_ = nullptr;
@@ -35,8 +35,6 @@ class base_cache_t {
     virtual void stage_in(int id, batch_t *seg_batch) = 0;
     virtual void stage_out(int id, batch_t *seg_batch) = 0;
     virtual void fetch_(int id) = 0;
-    virtual void flush_(int id) = 0;
-    virtual void set_next_tier(int id, base_cache_t *cache_tier) = 0;
     virtual bool wait_for_completion() = 0;
     virtual batch_t* get_completed(int id) = 0;
     virtual bool release(int id) = 0;

@@ -192,7 +192,7 @@ client_t<DataType>::create(Reader &reader, size_t read_blk_size,
                            std::optional<TransferType> cache_tier) {
     TIMER_START(client_create_tree);
     TransferType create_tree_tier = cache_tier.value_or(DEFAULT_CACHE_TIER);
-    int ld = data_loader.file_load(reader, 0, read_blk_size, create_tree_tier);
+    int ld = data_loader.file_load(reader, read_blk_size, create_tree_tier);
     tree.create(client_info, data_loader, ld, create_tree_tier);
     TIMER_STOP(client_create_tree,
                "State-diff tree " << curr_chkpt_id << " created from reader");
@@ -256,9 +256,9 @@ client_t<DataType>::compare_with(int chkpt_id, Reader &curr_reader,
         Kokkos::Profiling::popRegion();
 
         TransferType compare_tier = cache_tier.value_or(DEFAULT_CACHE_TIER);
-        int ld_id = data_loader.file_load(prev_reader, curr_reader, 0,
-                                          client_info.chunk_size, compare_tier,
-                                          diff_offsets, offt_gap);
+        int ld_id = data_loader.file_load(prev_reader, curr_reader,
+                                          diff_offsets, client_info.chunk_size,
+                                          compare_tier, offt_gap);
         Timer::time_point setup_end = Timer::now();
         double setup_time =
             std::chrono::duration_cast<Duration>(setup_end - setup_beg).count();
@@ -471,14 +471,14 @@ client_t<DataType>::compare_data(client_t &prev, int ld_id,
     AbsoluteComp<DataType> abs_comp;
     auto &changed_blocks = changed_chunks;
     size_t *offsets = diff_hash_vec.vector_d.data();
+    int n_files = 2;
     size_t work_start = 0;
     while (work_start < num_diff_hash) {
         Timer::time_point read_beg = Timer::now();
         auto front_batch = data_loader.next(ld_id, compare_tier);
         DataType *prev_ptr = (DataType *)front_batch.first;
-        DataType *curr_ptr =
-            (DataType *)(front_batch.first + front_batch.second);
-        size_t ready_size = front_batch.second;
+        size_t ready_size = front_batch.second / n_files;
+        DataType *curr_ptr = (DataType *)(front_batch.first + ready_size);
         Timer::time_point read_end = Timer::now();
         timers[3] +=
             std::chrono::duration_cast<Duration>(read_end - read_beg).count();
