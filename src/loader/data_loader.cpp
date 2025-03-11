@@ -23,33 +23,33 @@ data_loader_t::coalesce(int id, std::vector<size_t> offsets, size_t seg_size,
         return;
     size_t start = offsets[0];
     size_t lastOffset = start;
+    size_t in_group_offt = 1;
     for (size_t i = 1; i < offsets.size(); ++i) {
-        if (offsets[i] - lastOffset <= gap) {
-            printf("Found one\n");
+        if (offsets[i] - lastOffset <= gap) {   // include new offset
             lastOffset = offsets[i];
-        } else {
-            batch_t *seg_batch = new batch_t(n_readers);
+            in_group_offt += 1;
+        } else {   // create batch and start a new group
+            batch_t *seg_batch = new batch_t(n_readers, in_group_offt);
             size_t combined_size = (lastOffset - start + 1) * seg_size;
             for (int j = 0; j < n_readers; j++) {
                 segment_t seg(start, combined_size);
                 seg_batch->push(seg);
             }
             host_cache_->stage_in(id, seg_batch);
-            test_cnt += 1;
             start = offsets[i];
             lastOffset = offsets[i];
+            in_group_offt = 1;
         }
     }
     // Account for the last group
     // what if the size of the last chunk was not seg_size?
-    batch_t *seg_batch = new batch_t(n_readers);
+    batch_t *seg_batch = new batch_t(n_readers, in_group_offt);
     size_t combined_size = (lastOffset - start + 1) * seg_size;
     for (int i = 0; i < n_readers; i++) {
         segment_t seg(start, combined_size);
         seg_batch->push(seg);
     }
     host_cache_->stage_in(id, seg_batch);
-    test_cnt += 1;
 }
 
 void
@@ -77,7 +77,11 @@ data_loader_t::enqueue_reads(int id, size_t seg_size, size_t n_segs_per_read,
         segment_t seg(offset, seg_size);
         seg_batch->push(seg);
     }
-    host_cache_->stage_in(id, seg_batch);   // stage last batch
+    // stage last batch
+    DBG("Loader (" << id << ")- Staging batch "
+                           << (total_n_segs / n_segs_per_read) - 1 << " of size "
+                           << n_segs_per_read << " for read from file");
+    host_cache_->stage_in(id, seg_batch);
 }
 
 /**
@@ -93,7 +97,7 @@ data_loader_t::enqueue_reads(int id, size_t seg_size, size_t n_segs_per_read,
  * @param batch_size Number of segments to submit at a time to the liburing
  * reader
  * @param trans_type Definition of the source and destination of the data
- * @param offsets Optional list of file offsets to read data from. If empty, all
+ * @param offsets List of file offsets to read data from. If empty, all
  * data are read.
  * @param merge_seg Temporary boolean parameter used to define if non-contiguous
  * offsets should be merged.
@@ -102,7 +106,7 @@ data_loader_t::enqueue_reads(int id, size_t seg_size, size_t n_segs_per_read,
  */
 int
 data_loader_t::file_load(FileReader &io_reader, size_t seg_size,
-                         TransferType trans_type, uint32_t gap) {
+                         TransferType trans_type) {
     TIMER_START(file_load);
     assert((trans_type == TransferType::FileToHost ||
             trans_type == TransferType::FileToDevice) &&
@@ -111,7 +115,6 @@ data_loader_t::file_load(FileReader &io_reader, size_t seg_size,
     // Assign an ID to this loader call
     int loader_id = instance_count++;
     ready_count[loader_id] = 0;
-    // host_cache_->set_reader(loader_id, &io_reader);
 
     INFO("Loader (" << loader_id
                     << ")- Creating segments without given file offsets");
@@ -130,8 +133,8 @@ data_loader_t::file_load(FileReader &io_reader, size_t seg_size,
     INFO("Loader (" << loader_id
                     << ")- All batches staged in for read from file");
     TIMER_STOP(file_load, "Created segments and staged for file read");
-    
-    // // Set the reader to use for file IO. 
+
+    // // Set the reader to use for file IO.
     // // Making sure metadata are enqueue before setting the reader to avoid
     // // having the thread wait and constantly pool for enqueue metadata.
     host_cache_->set_reader(loader_id, &io_reader);
@@ -144,8 +147,8 @@ data_loader_t::file_load(FileReader &io_reader0, FileReader &io_reader1,
                          TransferType trans_type, uint32_t gap) {
     TIMER_START(file_load);
     assert((trans_type == TransferType::FileToHost ||
-           trans_type == TransferType::FileToDevice) &&
-               "Invalid TransferType: Must be FileToHost or FileToDevice");
+            trans_type == TransferType::FileToDevice) &&
+           "Invalid TransferType: Must be FileToHost or FileToDevice");
     // Assign an ID to this loader call
     int loader_id = instance_count++;
     ready_count[loader_id] = 0;
@@ -183,17 +186,17 @@ get_next(int id, base_cache_t *cache_tier, bool should_release) {
     return cache_tier->get_completed(id);
 }
 
-std::pair<uint8_t *, size_t>
+next_batch_t
 data_loader_t::next(int id, TransferType trans_type) {
     size_t call_count = ready_count[id]++;
     TIMER_START(next);
     assert((trans_type == TransferType::HostToDevice ||
-           trans_type == TransferType::HostPinned ||
-           trans_type == TransferType::FileToHost ||
-           trans_type == TransferType::FileToDevice) && "Invalid TransferType!");
+            trans_type == TransferType::HostPinned ||
+            trans_type == TransferType::FileToHost ||
+            trans_type == TransferType::FileToDevice) &&
+           "Invalid TransferType!");
 
     base_cache_t *cache_tier = host_cache_;
-    batch_t *front_batch;
     // Because of the FIFO queue implementation, we need to make sure the first
     // retrieved batch of the next ID is not the last batch the previous
     // retrieving ID had read.
@@ -204,11 +207,14 @@ data_loader_t::next(int id, TransferType trans_type) {
         last_retrieving_id = id;
     }
     // Retrieve the next batch for the current ID
-    front_batch = get_next(id, cache_tier, call_count > 0);
+    batch_t *front_batch = get_next(id, cache_tier, call_count > 0);
     TIMER_STOP(next, "Retrieved pointer to next batch of data for computation");
-    size_t front_size = front_batch->data->size * front_batch->batch_size;
+    size_t front_size = front_batch->size;
+    assert(front_batch->data[0].buffer != nullptr && front_size > 0);
+    // assert(front_size == front_batch->data[0].size*2);
     DBG("Retrieved pointer to offset " << front_batch->data[0].offset << " for "
                                        << front_size << " bytes");
-    assert(front_batch->data[0].buffer != nullptr);
-    return {front_batch->data[0].buffer, front_size};
+    next_batch_t batch = {front_batch->data[0].buffer, front_size,
+                          front_batch->proc_offt};
+    return batch;
 }

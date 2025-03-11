@@ -266,7 +266,6 @@ main(int argc, char **argv) {
                 //     Kokkos::resize(data0_h, data_len);
                 //     Kokkos::resize(data0_d, data_len);
                 // }
-
                 // int fd0 = open(run0_files[idx].c_str(), O_RDONLY, 0644);
                 // if (fd0 == -1) {
                 //     FATAL("cannot open " << run0_files[idx] << ", error = " << strerror(errno));
@@ -290,7 +289,6 @@ main(int argc, char **argv) {
                 // if(n_iter * buffer_size < data_size)
                 //     n_iter += 1;
                 // std::vector<segment_t> segments(n_iter);
-
                 // for(size_t i = 0; i < n_iter; i++) {
                 //     segment_t seg;
                 //     seg.buffer = buffer.data()+(buffer_size*i);

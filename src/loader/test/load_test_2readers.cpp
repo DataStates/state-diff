@@ -81,25 +81,29 @@ main(int argc, char **argv) {
     size_t read_bytes = 0;
     size_t i = 0;
     while (read_bytes < total_read_size) {
-        auto next_batch = data_loader.next(ld, trans_type);
-        if (next_batch.first == nullptr) {
+        next_batch_t batch = data_loader.next(ld, trans_type);
+        uint8_t *data_ptr0 = batch.ptr;
+        size_t ready_size = batch.size / 2;
+
+        // auto next_batch = data_loader.next(ld, trans_type);
+        if (data_ptr0 == nullptr) {
             printf("Client - Received a null pointer. Exiting loop.\n");
             break;
         }
-        if (next_batch.second == 0) {
+        if (ready_size == 0) {
             printf("Client - Received an empty batch. Exiting loop.\n");
             break;
         }
-        uint8_t *data_ptr0 = next_batch.first;
+        // uint8_t *data_ptr0 = next_batch.first;
         // a batch for the two file loader has a batch size of 2, i.e., two
         // segments per batch each corresponding to a file
-        size_t ready_size = next_batch.second / 2;
-        uint8_t *data_ptr1 = next_batch.first + ready_size;
+        // size_t ready_size = next_batch.second / 2;
+        uint8_t *data_ptr1 = data_ptr0 + ready_size;
         // copy loaded data into a buffer reserved for comparison of the files
         std::memcpy(data_0.data() + read_bytes, data_ptr0, ready_size);
         std::memcpy(data_1.data() + read_bytes, data_ptr1, ready_size);
         read_bytes += ready_size;
-        printf("Client - Loaded batch %zu of size %zu bytes\n", ++i, next_batch.second);
+        printf("Client - Loaded batch %zu of size %zu bytes\n", ++i, batch.size);
     }
     printf("Client - Loaded %zu batches (%zu bytes) out of %zu bytes of data\n", i, read_bytes, data_size);
 

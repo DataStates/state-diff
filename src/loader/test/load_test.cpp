@@ -14,9 +14,7 @@ using Duration = std::chrono::duration<double>;
 template <typename DataType>
 int
 validate(DataType *data, DataType *loader_out, size_t data_len) {
-
     auto start = std::chrono::high_resolution_clock::now();
-    assert(data_len == loader_out.size());
     for (size_t i = 0; i < data_len; i++) {
         // std::cout << "Loader at index " << i << " = " << loader_out[i] << " vs real val = " << data[i] << "\n";
         if (data[i] != loader_out[i]) {
@@ -82,10 +80,13 @@ main(int argc, char **argv) {
     size_t i = 0;
 
     while (read_bytes < data_size) {
-        auto next_batch = data_loader.next(ld, trans_type);
-        uint8_t *data_ptr = next_batch.first;
-        size_t ready_size = next_batch.second;
-        printf("Client - Loaded batch %zu of size %zu bytes\n", ++i, next_batch.second);
+        // auto next_batch = data_loader.next(ld, trans_type);
+        // uint8_t *data_ptr = next_batch.first;
+        // size_t ready_size = next_batch.second;
+        next_batch_t batch = data_loader.next(ld, trans_type);
+        uint8_t *data_ptr = batch.ptr;
+        size_t ready_size = batch.size;
+        printf("Client - Loaded batch %zu of size %zu bytes\n", ++i, ready_size);
         std::memcpy(data_h.data()+read_bytes, data_ptr, ready_size);
         read_bytes += ready_size;
     }

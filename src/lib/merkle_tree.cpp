@@ -142,7 +142,6 @@ tree_t::create(client_info_t client_info, data_loader_t &data_loader,
 
     std::string diff_label = std::string("Diff: ");
     Kokkos::Profiling::pushRegion(diff_label + std::string("Construct Tree"));
-    // timers[0] = create_timer.seconds() * 1000.0;
     timers[0] = create_timer.seconds();
     // printf("Create Params Init: %.3f ms\n", create_timer.seconds() * 1000.0);
 
@@ -153,12 +152,11 @@ tree_t::create(client_info_t client_info, data_loader_t &data_loader,
 
     while (bytes_read < data_size) {
         auto start_load = std::chrono::high_resolution_clock::now();
-        auto next_batch = data_loader.next(ld_idx, cache_tier);
-        uint8_t *data_ptr = next_batch.first;
-        size_t ready_size = next_batch.second;
+        next_batch_t batch = data_loader.next(ld_idx, cache_tier);
+        uint8_t *data_ptr = batch.ptr;
+        size_t ready_size = batch.size;
         auto end_load = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> load_time = end_load - start_load;
-        // timers[3] += load_time.count() * 1000;
         timers[3] += load_time.count();
 
         auto start_hash = std::chrono::high_resolution_clock::now();
@@ -169,10 +167,6 @@ tree_t::create(client_info_t client_info, data_loader_t &data_loader,
                             << "; Work end = " << work_start + curr_n_leaves
                             << "; Ready size = " << ready_size
                             << "; curr_n_leaves = " << curr_n_leaves);
-        // printf("Work start = %zu; Work end = %zu; Ready size = %zu;
-        // curr_n_leaves = %zu\n",
-        //         work_start, work_start + curr_n_leaves, ready_size,
-        //         curr_n_leaves);
         Kokkos::parallel_for(
             diff_label + std::string("Hash leaves"),
             Kokkos::RangePolicy<>(0, curr_n_leaves),
@@ -201,14 +195,10 @@ tree_t::create(client_info_t client_info, data_loader_t &data_loader,
             });
         auto end_hash = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> hash_time = end_hash - start_hash;
-        // timers[4] += hash_time.count() * 1000;
         timers[4] += hash_time.count();
         bytes_read += ready_size;
         work_start += curr_n_leaves;
     }
-    // Kokkos::fence();
-
-    // timers[1] = create_timer.seconds() * 1000.0;
     timers[1] = create_timer.seconds();
     // printf("Leaves Creation: %.3f ms\n", create_timer.seconds() * 1000.0);
 
@@ -230,7 +220,6 @@ tree_t::create(client_info_t client_info, data_loader_t &data_loader,
         level_beg = (level_beg - 1) / 2;
         level_end = (level_end - 2) / 2;
     }
-    // timers[2] = create_timer.seconds() * 1000.0;
     timers[2] = create_timer.seconds();
     Kokkos::Profiling::popRegion();
     // write_leaves_tofile();
@@ -261,7 +250,6 @@ tree_t::create(uint8_t *data_ptr, client_info_t client_info) {
 
     std::string diff_label = std::string("Diff: ");
     Kokkos::Profiling::pushRegion(diff_label + std::string("Construct Tree"));
-    // timers[0] = create_timer.seconds() * 1000.0;
     timers[0] = create_timer.seconds();
     printf("Create Params Init: %.3f ms\n", create_timer.seconds() * 1000.0);
 
@@ -272,7 +260,6 @@ tree_t::create(uint8_t *data_ptr, client_info_t client_info) {
         Kokkos::RangePolicy<>(0, num_leaves), KOKKOS_LAMBDA(uint32_t idx) {
             curr_tree.hash_leaves_kernel(data_ptr, client_info, left_leaf, idx);
         });
-    // timers[1] = create_timer.seconds() * 1000.0;
     timers[1] = create_timer.seconds();
     printf("Leaves Creation: %.3f ms\n", create_timer.seconds() * 1000.0);
 
@@ -294,7 +281,6 @@ tree_t::create(uint8_t *data_ptr, client_info_t client_info) {
         level_beg = (level_beg - 1) / 2;
         level_end = (level_end - 2) / 2;
     }
-    // timers[2] = create_timer.seconds() * 1000.0;
     timers[2] = create_timer.seconds();
     // printf("Rest of Tree Creation: %.3f ms\n", create_timer.seconds() *
     // 1000.0);

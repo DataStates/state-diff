@@ -38,7 +38,7 @@ storage_t::get_capacity() {
 void
 storage_t::allocate(batch_t *seg_batch) {
     std::unique_lock<std::mutex> lck(mtx_);
-    for (size_t i = 0; i < seg_batch->batch_size; i++) {
+    for (size_t i = 0; i < seg_batch->batch_len; i++) {
         segment_t &seg = seg_batch->data[i];
         assert(seg.size < total_size_);
         DBG("Store - Waiting for resources to allocate batch item "
@@ -67,7 +67,7 @@ storage_t::deallocate(batch_t *seg_batch) {
         FATAL("Deallocate called with no stored segments in storage.");
         return;
     }
-    for (size_t i = 0; i < seg_batch->batch_size; i++) {
+    for (size_t i = 0; i < seg_batch->batch_len; i++) {
         segment_t &curr_seg = seg_batch->data[i];
         segment_t *oldest = stored_segs_.front();
         if (oldest->offset != curr_seg.offset) {

@@ -4,16 +4,22 @@
 #include "debug.hpp"
 #include "host_cache.hpp"
 #include "io_reader.hpp"
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <optional>
-#include <algorithm>
 
 enum TransferType : int {
     FileToHost = 0,
     FileToDevice = 1,
     HostToDevice = 2,
     HostPinned = 3,
+};
+
+struct next_batch_t {
+    uint8_t *ptr;        // Pointer to start offset
+    size_t size;         // Size of the batch in bytes
+    size_t offt_count;   // Number of offsets to process
 };
 
 class data_loader_t {
@@ -26,7 +32,6 @@ class data_loader_t {
     host_cache_t *host_cache_;
     int gpu_id = 0;
     int last_retrieving_id = 0;
-    size_t test_cnt = 0;
     std::atomic<int> instance_count{0};
     std::unordered_map<int, size_t> ready_count;
 
@@ -36,18 +41,19 @@ class data_loader_t {
                        size_t total_n_segs, size_t total_read_size);
 
   public:
-    data_loader_t(){};
+    data_loader_t() {};
     data_loader_t(size_t host_cache_size, size_t device_cache_size);
 
     ~data_loader_t();
 
     int file_load(FileReader &io_reader, size_t seg_size,
-                  TransferType trans_type, uint32_t gap = 0);
+                  TransferType trans_type);
     int file_load(FileReader &io_reader0, FileReader &io_reader1,
                   std::vector<size_t> offsets, size_t seg_size,
                   TransferType trans_type, uint32_t gap = 0);
-    size_t next(int loader_id, void *ptr);
-    std::pair<uint8_t *, size_t> next(int loader_id, TransferType trans_type);
+    // std::pair<uint8_t *, size_t> next(int loader_id, TransferType
+    // trans_type);
+    next_batch_t next(int loader_id, TransferType trans_type);
     size_t get_chunksize(size_t data_size);
 };
 #endif   // __DATA_LOADER_HPP
