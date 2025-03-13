@@ -32,7 +32,7 @@ data_loader_t::coalesce(int id, std::vector<size_t> offsets, size_t seg_size,
             batch_t *seg_batch = new batch_t(n_readers, in_group_offt);
             size_t combined_size = (lastOffset - start + 1) * seg_size;
             for (int j = 0; j < n_readers; j++) {
-                segment_t seg(start, combined_size);
+                segment_t seg(start * seg_size, combined_size);
                 seg_batch->push(seg);
             }
             host_cache_->stage_in(id, seg_batch);
@@ -46,7 +46,7 @@ data_loader_t::coalesce(int id, std::vector<size_t> offsets, size_t seg_size,
     batch_t *seg_batch = new batch_t(n_readers, in_group_offt);
     size_t combined_size = (lastOffset - start + 1) * seg_size;
     for (int i = 0; i < n_readers; i++) {
-        segment_t seg(start, combined_size);
+        segment_t seg(start * seg_size, combined_size);
         seg_batch->push(seg);
     }
     host_cache_->stage_in(id, seg_batch);

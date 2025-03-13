@@ -77,7 +77,11 @@ storage_t::deallocate(batch_t *seg_batch) {
             return;
         }
         tail_ = (tail_ + curr_seg.size) % total_size_;
+        if (tail_ > total_size_)
+            tail_ = 0;
         curr_size_ -= curr_seg.size;
+        if (curr_size_ == 0)
+            head_ = tail_ = 0;
         stored_segs_.pop_front();
         DBG("Store - Deallocated batch item " << i 
             << "/" << seg_batch->batch_size 
