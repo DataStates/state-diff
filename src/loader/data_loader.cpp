@@ -24,30 +24,31 @@ data_loader_t::coalesce(int id, std::vector<size_t> offsets, size_t seg_size,
     size_t start = offsets[0];
     size_t lastOffset = start;
     size_t in_group_offt = 1;
-    for (size_t i = 1; i < offsets.size(); ++i) {
-        if (offsets[i] - lastOffset <= gap) {   // include new offset
-            lastOffset = offsets[i];
-            in_group_offt += 1;
+    for (size_t i = 1; i < offsets.size(); i++) {
+        size_t curr_offset = offsets[i];
+        if (curr_offset - lastOffset <= gap) {   // include new offset
+            lastOffset = curr_offset;
+            in_group_offt++;
         } else {   // create batch and start a new group
             batch_t *seg_batch = new batch_t(n_readers, in_group_offt);
+            size_t segment_start = start * seg_size;
             size_t combined_size = (lastOffset - start + 1) * seg_size;
             for (int j = 0; j < n_readers; j++) {
-                segment_t seg(start * seg_size, combined_size);
-                seg_batch->push(seg);
+                seg_batch->push(segment_t(segment_start, combined_size));
             }
             host_cache_->stage_in(id, seg_batch);
-            start = offsets[i];
-            lastOffset = offsets[i];
+            start = curr_offset;
+            lastOffset = curr_offset;
             in_group_offt = 1;
         }
     }
     // Account for the last group
     // what if the size of the last chunk was not seg_size?
     batch_t *seg_batch = new batch_t(n_readers, in_group_offt);
+    size_t segment_start = start * seg_size;
     size_t combined_size = (lastOffset - start + 1) * seg_size;
-    for (int i = 0; i < n_readers; i++) {
-        segment_t seg(start * seg_size, combined_size);
-        seg_batch->push(seg);
+    for (int j = 0; j < n_readers; j++) {
+        seg_batch->push(segment_t(segment_start, combined_size));
     }
     host_cache_->stage_in(id, seg_batch);
 }
@@ -55,32 +56,33 @@ data_loader_t::coalesce(int id, std::vector<size_t> offsets, size_t seg_size,
 void
 data_loader_t::enqueue_reads(int id, size_t seg_size, size_t n_segs_per_read,
                              size_t total_n_segs, size_t total_read_size) {
-    size_t n_read_call = total_n_segs / n_segs_per_read;
-    n_read_call = (n_read_call * n_segs_per_read < total_n_segs)
-                      ? (n_read_call + 1)
-                      : n_read_call;
+
+    size_t n_read_call = (total_n_segs + n_segs_per_read - 1) / n_segs_per_read;
     batch_t *seg_batch = new batch_t(n_segs_per_read);
     for (size_t i = 0; i < total_n_segs; i++) {
-        if (i > 0 && i % n_segs_per_read == 0) {
+        if (i % n_segs_per_read == 0 && i > 0) {
+
             DBG("Loader (" << id << ")- Staging batch "
                            << (i / n_segs_per_read) - 1 << " of size "
                            << n_segs_per_read << " for read from file");
             host_cache_->stage_in(id, seg_batch);
-            n_read_call -= 1;
-            if (n_read_call == 1)
-                n_segs_per_read = total_n_segs - i;
-            seg_batch = new batch_t(n_segs_per_read);
+            n_read_call--;
+            // Adjust the segment count for the last batch
+            size_t remaining = total_n_segs - i;
+            size_t new_n_segs =
+                (n_read_call == 1) ? remaining : n_segs_per_read;
+            seg_batch = new batch_t(new_n_segs);
         }
         size_t offset = i * seg_size;
-        if (i == total_n_segs - 1)
-            seg_size = total_read_size - i * seg_size;
-        segment_t seg(offset, seg_size);
+        size_t current_seg_size =
+            (i == total_n_segs - 1) ? total_read_size - offset : seg_size;
+        segment_t seg(offset, current_seg_size);
         seg_batch->push(seg);
     }
     // stage last batch
     DBG("Loader (" << id << ")- Staging batch "
-                           << (total_n_segs / n_segs_per_read) - 1 << " of size "
-                           << n_segs_per_read << " for read from file");
+                   << (total_n_segs / n_segs_per_read) - 1 << " of size "
+                   << n_segs_per_read << " for read from file");
     host_cache_->stage_in(id, seg_batch);
 }
 
@@ -122,10 +124,7 @@ data_loader_t::file_load(FileReader &io_reader, size_t seg_size,
     // Create segments to read
     size_t total_read_size = io_reader.size();
     assert(seg_size > 0 && total_read_size > 0);
-    size_t total_n_segs = total_read_size / seg_size;
-    total_n_segs = (total_n_segs * seg_size < total_read_size)
-                       ? (total_n_segs + 1)
-                       : total_n_segs;
+    size_t total_n_segs = (total_read_size + seg_size - 1) / seg_size;
     size_t base_segcnt = 2;
     size_t n_segs_per_read = std::min({base_segcnt, total_n_segs});
     enqueue_reads(loader_id, seg_size, n_segs_per_read, total_n_segs,
@@ -152,6 +151,9 @@ data_loader_t::file_load(FileReader &io_reader0, FileReader &io_reader1,
     // Assign an ID to this loader call
     int loader_id = instance_count++;
     ready_count[loader_id] = 0;
+    // Set two reader to use for file IO
+    host_cache_->set_reader(loader_id, &io_reader0, &io_reader1);
+    
     int n_readers = 2;
 
     INFO("Loader ("
@@ -162,8 +164,6 @@ data_loader_t::file_load(FileReader &io_reader0, FileReader &io_reader1,
                     << ")- All batches staged in for read with two readers");
     TIMER_STOP(file_load, "Created segments and staged for file read");
 
-    // Set two reader to use for file IO
-    host_cache_->set_reader(loader_id, &io_reader0, &io_reader1);
     return loader_id;
 }
 
@@ -209,12 +209,10 @@ data_loader_t::next(int id, TransferType trans_type) {
     // Retrieve the next batch for the current ID
     batch_t *front_batch = get_next(id, cache_tier, call_count > 0);
     TIMER_STOP(next, "Retrieved pointer to next batch of data for computation");
-    size_t front_size = front_batch->size;
-    assert(front_batch->data[0].buffer != nullptr && front_size > 0);
-    // assert(front_size == front_batch->data[0].size*2);
+    assert(front_batch->data[0].buffer != nullptr && front_batch->size > 0);
     DBG("Retrieved pointer to offset " << front_batch->data[0].offset << " for "
-                                       << front_size << " bytes");
-    next_batch_t batch = {front_batch->data[0].buffer, front_size,
+                                       << front_batch->size << " bytes");
+    next_batch_t batch = {front_batch->data[0].buffer, front_batch->size,
                           front_batch->proc_offt};
     return batch;
 }

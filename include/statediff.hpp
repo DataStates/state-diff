@@ -48,12 +48,12 @@ template <typename DataType> class client_t {
     Kokkos::Bitset<> changed_chunks;   // host
     // Vec of idx of chunks that are marked different during the 1st phase
     Vector<size_t> diff_hash_vec;
-    Kokkos::View<uint64_t[1]> num_comparisons =
-        Kokkos::View<uint64_t[1]>("Num comparisons");
-    Kokkos::View<uint64_t[1]> num_changed =
-        Kokkos::View<uint64_t[1]>("Num changed");
-    Kokkos::View<uint64_t[1]> num_hash_comp =
-        Kokkos::View<uint64_t[1]>("Num hash comparisons");
+    Kokkos::View<size_t[1]> num_comparisons =
+        Kokkos::View<size_t[1]>("Num comparisons");
+    Kokkos::View<size_t[1]> num_changed =
+        Kokkos::View<size_t[1]>("Num changed");
+    Kokkos::View<size_t[1]> num_hash_comp =
+        Kokkos::View<size_t[1]>("Num hash comparisons");
     size_t nchange = 0;
 
     // timers (setup, compare_tree, compare_direct, load_direct,
@@ -90,12 +90,12 @@ template <typename DataType> class client_t {
     // Internal implementations
     size_t compare_trees(const client_t &prev, Queue &working_queue,
                          Vector<size_t> &diff_hash_vec,
-                         Kokkos::View<uint64_t[1]> &num_hash_comp);
+                         Kokkos::View<size_t[1]> &num_hash_comp);
     size_t compare_data(client_t &prev, int ld_id,
                         Vector<size_t> &diff_hash_vec,
                         Kokkos::Bitset<> &changed_chunks,
-                        Kokkos::View<uint64_t[1]> &num_changed,
-                        Kokkos::View<uint64_t[1]> &num_comparisons,
+                        Kokkos::View<size_t[1]> &num_changed,
+                        Kokkos::View<size_t[1]> &num_comparisons,
                         TransferType cache_tier);
 
     // Stats getters
@@ -226,8 +226,7 @@ template <typename Reader>
 bool
 client_t<DataType>::compare_with(int chkpt_id, Reader &curr_reader,
                                  client_t &prev, Reader &prev_reader,
-                                 uint32_t offt_gap,
-                                 TransferType compare_tier) {
+                                 uint32_t offt_gap, TransferType compare_tier) {
     TIMER_START(client_compare_with);
     ASSERT(client_info == prev.client_info ||
            "Comparing two clients with different metadata characteristics.");
@@ -240,7 +239,8 @@ client_t<DataType>::compare_with(int chkpt_id, Reader &curr_reader,
     DBG("Number of different hashes after phase 1: " << diff_hash_vec.size());
     if (diff_hash_vec.size() > 0) {
         Timer::time_point setup_beg = Timer::now();
-        // Sort indices for better performance
+
+        // Sort indices for coalescing and better performance
         std::string diff_label = std::string("Chkpt ") +
                                  std::to_string(client_info.id) +
                                  std::string(": ");
@@ -260,14 +260,9 @@ client_t<DataType>::compare_with(int chkpt_id, Reader &curr_reader,
             std::chrono::duration_cast<Duration>(setup_end - setup_beg).count();
         timers[0] += setup_time;   // total setup time
         timers[2] += setup_time;   // total compare time
-        auto ndifferent =
-            compare_data(prev, ld_id, diff_hash_vec, changed_chunks,
-                         num_changed, num_comparisons, compare_tier);
-        DBG("Number of different hashes after phase 2: " << ndifferent);
-        // std::cout << "Number of different hashes after phase 2: "
-        //           << get_validated_diffs() << "\n";
-        // std::cout << "Number of different elements after phase 2: "
-        //           << ndifferent << " vs access: " << num_changed(0) << "\n";
+        compare_data(prev, ld_id, diff_hash_vec, changed_chunks, num_changed,
+                     num_comparisons, compare_tier);
+        DBG("Number of different hashes after phase 2: " << nchange);
     }
     TIMER_STOP(client_compare_with, "State-diff tree and data for chkpt "
                                         << curr_chkpt_id << " compared");
@@ -278,7 +273,7 @@ template <typename DataType>
 size_t
 client_t<DataType>::compare_trees(const client_t &prev, Queue &working_queue,
                                   Vector<size_t> &diff_hash_vec,
-                                  Kokkos::View<uint64_t[1]> &num_hash_comp) {
+                                  Kokkos::View<size_t[1]> &num_hash_comp) {
 
     Timer::time_point setup_beg = Timer::now();
     std::string diff_label = std::string("Chkpt ") +
@@ -309,7 +304,7 @@ client_t<DataType>::compare_trees(const client_t &prev, Queue &working_queue,
         last_lvl_end = right_leaf;
     DBG("Leaf range [" << left_leaf << "," << right_leaf << "]");
     DBG("Start level [" << last_lvl_beg << "," << last_lvl_end << "]");
-    Kokkos::Experimental::ScatterView<uint64_t[1]> nhash_comp(num_hash_comp);
+    Kokkos::Experimental::ScatterView<size_t[1]> nhash_comp(num_hash_comp);
     Kokkos::Profiling::popRegion();
     Timer::time_point setup_end = Timer::now();
     double setup_time =
@@ -384,8 +379,8 @@ size_t
 client_t<DataType>::compare_data(client_t &prev, int ld_id,
                                  Vector<size_t> &diff_hash_vec,
                                  Kokkos::Bitset<> &changed_chunks,
-                                 Kokkos::View<uint64_t[1]> &num_changed,
-                                 Kokkos::View<uint64_t[1]> &num_comparisons,
+                                 Kokkos::View<size_t[1]> &num_changed,
+                                 Kokkos::View<size_t[1]> &num_comparisons,
                                  TransferType compare_tier) {
     std::string diff_label = std::string("Chkpt ") +
                              std::to_string(client_info.id) + std::string(": ");
@@ -394,12 +389,12 @@ client_t<DataType>::compare_data(client_t &prev, int ld_id,
 
     size_t num_diff_hash = static_cast<size_t>(diff_hash_vec.size());
     size_t elemPerChunk = client_info.chunk_size / sizeof(DataType);
-    INFO("Phase 1 filtered hashes: " << num_diff_hash << "; Element per chunk: "
-                                     << elemPerChunk);
+    DBG("Phase 1 filtered hashes: " << num_diff_hash
+                                    << "; Element per chunk: " << elemPerChunk);
     Timer::time_point compare_beg = Timer::now();
     double err_tol = client_info.error_tolerance;
     AbsoluteComp<DataType> abs_comp;
-    Kokkos::Experimental::ScatterView<uint64_t[1]> num_comp(num_comparisons);
+    Kokkos::Experimental::ScatterView<size_t[1]> num_comp(num_comparisons);
     auto &changed_blocks = changed_chunks;
     int n_files = 2;
     size_t work_done = 0;
@@ -411,20 +406,9 @@ client_t<DataType>::compare_data(client_t &prev, int ld_id,
         size_t ready_size = front_batch.size / n_files;
         curr_ptr = prev_ptr + ready_size / sizeof(DataType);
         size_t proc_offt = front_batch.offt_count;
-        DBG("Work Done : " << work_done
-                            << "; Offsets to process: " << proc_offt
-                            << "; offsets read: " << ready_size /
-                            chunk_size);
-        std::ostringstream oss;
-        oss << "Prev vs Curr data: [";
-        for (size_t i = 0; i < 5; ++i) {
-            oss << prev_ptr[i] << " vs " << curr_ptr[i];
-            if (i < 4) {
-                oss << ", ";
-            }
-        }
-        oss << "]";
-        DBG(oss.str());
+        DBG("Work Done : " << work_done << "; Offsets to process: " << proc_offt
+                           << "; offsets read: "
+                           << ready_size / client_info.chunk_size);
         Timer::time_point read_end = Timer::now();
         timers[3] +=
             std::chrono::duration_cast<Duration>(read_end - read_beg).count();
@@ -441,13 +425,13 @@ client_t<DataType>::compare_data(client_t &prev, int ld_id,
 
         Kokkos::Profiling::pushRegion(
             diff_label + std::string("Statediff direct compare iter"));
-        uint64_t ndiff = 0;
+        size_t ndiff = 0;
         // Parallel comparison
         auto range_policy =
             Kokkos::RangePolicy<size_t>(0, proc_offt * elemPerChunk);
         Kokkos::parallel_reduce(
             "Count differences", range_policy,
-            KOKKOS_LAMBDA(const size_t idx, uint64_t &update) {
+            KOKKOS_LAMBDA(const size_t idx, size_t &update) {
                 auto ncomp_access = num_comp.access();
                 size_t blk_idx = idx / elemPerChunk;   // Block idx
                 size_t gap = diff_hash_subview[blk_idx] - diff_hash_subview[0];
@@ -458,16 +442,10 @@ client_t<DataType>::compare_data(client_t &prev, int ld_id,
                 if (!abs_comp(prev_ptr[elm_idx], curr_ptr[elm_idx], err_tol)) {
                     update += 1;
                     changed_blocks.set(diff_hash_subview[blk_idx]);
-                    DBG("Blk: " << blk_idx
-                                 << "; Curr: " << diff_hash_subview[blk_idx]
-                                 << "; First: " << diff_hash_subview[0]
-                                 << "; Elm: " << elm_idx
-                                 << "; Prev: " << prev_ptr[elm_idx]
-                                 << "; Cur: " << curr_ptr[elm_idx]);
                 }
                 ncomp_access(0) += 1;
             },
-            Kokkos::Sum<uint64_t>(ndiff));
+            Kokkos::Sum<size_t>(ndiff));
         nchange += ndiff;
         work_done += proc_offt;
         Timer::time_point cmp_end = Timer::now();
@@ -502,9 +480,6 @@ template <typename DataType>
 size_t
 client_t<DataType>::get_num_changes() const {
     return nchange;
-    // auto num_diff_h = Kokkos::create_mirror_view(num_changed);
-    // Kokkos::deep_copy(num_diff_h, num_changed);
-    // return num_diff_h(0);
 }
 
 template <typename DataType>

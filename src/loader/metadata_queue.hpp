@@ -1,10 +1,10 @@
 #ifndef __META_QUEUE_HPP
 #define __META_QUEUE_HPP
 
-#include <thread>
+#include "batch.hpp"
 #include <condition_variable>
 #include <deque>
-#include "batch.hpp"
+#include <thread>
 
 class metadata_queue {
 
@@ -27,7 +27,7 @@ class metadata_queue {
     void pop() {
         std::unique_lock<std::mutex> lock(mtx_);
         cv_.wait(lock, [this] { return !meta_q_.empty() || !is_active_; });
-        if(!meta_q_.empty()) {
+        if (!meta_q_.empty()) {
             meta_q_.pop_front();
             cv_.notify_one();
         }
@@ -35,8 +35,21 @@ class metadata_queue {
 
     batch_t *front() {
         std::unique_lock<std::mutex> lock(mtx_);
-        if (meta_q_.empty()) return nullptr;
+        if (meta_q_.empty())
+            return nullptr;
         return meta_q_.front();
+    }
+
+    // Method to swap the internal queue and return the batches
+    bool swap_batches(std::deque<batch_t *> &batches) {
+        std::unique_lock<std::mutex> lock(mtx_);
+        if (meta_q_.empty()) {
+            return false;
+        }
+        // Swap to avoid acquiring and releasing lock multiple time during
+        // processing
+        batches.swap(meta_q_);
+        return true;
     }
 
     bool wait_until_empty() {
@@ -53,7 +66,9 @@ class metadata_queue {
 
     bool wait_for(size_t count) {
         std::unique_lock<std::mutex> lock(mtx_);
-        cv_.wait(lock, [this, count] { return meta_q_.size() >= count || !is_active_; });
+        cv_.wait(lock, [this, count] {
+            return meta_q_.size() >= count || !is_active_;
+        });
         return true;
     }
 

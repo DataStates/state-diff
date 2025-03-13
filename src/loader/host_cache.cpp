@@ -77,46 +77,44 @@ host_cache_t::fetch_(int id) {
             DBG("Error in fetch metadata queue of host cache, retrying...");
             continue;
         }
+
         TIMER_START(hst_fetch);
-        size_t curr_capacity = fetch_q_[id].size();
+        std::deque<batch_t *> batches;
+        // Swap batches from the queue (without acquiring and releasing lock
+        // multiple times in the for loop)
+        if (!fetch_q_[id].swap_batches(batches)) {
+            DBG("Error: No batches to fetch.");
+            continue;
+        }
+
+        size_t curr_capacity = batches.size();
         for (size_t i = 0; i < curr_capacity; i++) {
-            batch_t *item = fetch_q_[id].front();
+            batch_t *item = batches[i];
             DBG("Host (" << id << ")- Allocating memory to front batch of size "
                          << item->batch_size);
             data_store_->allocate(item);
 
-            if (auto *reader_pair =
-                    std::get_if<std::pair<FileReader *, FileReader *>>(
-                        &freader_[id])) {
+            if (auto *single_reader =
+                    std::get_if<FileReader *>(&freader_[id])) {
+                DBG("Host (" << id << ")- Enqueuing for read from file");
+                (*single_reader)->enqueue_reads(item->to_vec());
+                (*single_reader)->wait_n(item->batch_len);
+            } else if (auto *reader_pair =
+                           std::get_if<std::pair<FileReader *, FileReader *>>(
+                               &freader_[id])) {
                 std::vector<segment_t> left = item->left_vec();
                 std::vector<segment_t> right = item->right_vec();
                 reader_pair->first->enqueue_reads(left);
                 reader_pair->second->enqueue_reads(right);
-                assert(left[0].offset == right[0].offset);
-                assert(left[0].buffer + left[0].size == right[0].buffer);
-                DBG("Host (" << id << ")- Enqueuing for read to "
-                             << (void *)left[0].buffer << " and "
-                             << (void *)right[0].buffer
-                             << " from both readers");
-
+                DBG("Host (" << id << ")- Enqueuing for read from two files");
                 reader_pair->first->wait_n(item->batch_len / 2);
                 reader_pair->second->wait_n(item->batch_len / 2);
-                assert(left[0].offset == right[0].offset);
-                assert(left[0].buffer + left[0].size == right[0].buffer);
-
-            } else if (auto *single_reader =
-                           std::get_if<FileReader *>(&freader_[id])) {
-                DBG("Host (" << id << ")- Enqueuing for read from file");
-                (*single_reader)->enqueue_reads(item->to_vec());
-                (*single_reader)->wait_n(item->batch_len);
             } else {
                 DBG("Error: No valid reader found!");
                 continue;
             }
-
             DBG("Host (" << id << ")- Adding item to host ready queue");
             stage_out(id, item);
-            fetch_q_[id].pop();
         }
         TIMER_STOP(hst_fetch, "Host (" << id << ")- Fetched " << curr_capacity
                                        << " batches to host cache");
