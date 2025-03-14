@@ -6,7 +6,6 @@ MB=$((1024 * 1024))
 GB=$((1024 * $MB))
 data_size=$((4 * $GB))
 host_cache=$((8 * $GB))
-dev_cache=$((4 * $GB))
 seg_size=$((128 * $MB))
 
 outname="test"
@@ -32,9 +31,9 @@ flags="-u"
 
 pct=10
 
-# cmd="$BUILD_DIR/src/loader/test/test_loader $host_cache $dev_cache $run1_file $flags"
+# cmd="$BUILD_DIR/src/loader/test/test_loader $host_cache $run1_file $flags"
 
-cmd="$BUILD_DIR/src/loader/test/test_loader_2files $host_cache $dev_cache $run1_file $run2_file $flags $pct"
+cmd="$BUILD_DIR/src/loader/test/test_loader_2files $host_cache $run1_file $run2_file $flags $pct"
 
 echo $cmd
 eval $cmd

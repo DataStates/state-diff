@@ -16,7 +16,7 @@ class host_cache_t : public base_cache_t {
     uint8_t *start_ptr_ = nullptr;
 
   public:
-    host_cache_t(int gpu_id, size_t tot_cache_size);
+    host_cache_t(size_t tot_cache_size);
     ~host_cache_t();
     void set_reader(int id, FileReader *io_reader);
     void set_reader(int id, FileReader *io_reader0, FileReader *io_reader1);

@@ -30,11 +30,10 @@ validate(DataType *data0, DataType *data1, size_t data_len) {
 int
 main(int argc, char **argv) {
     size_t host_cache_size = std::stol(argv[1]);
-    size_t dev_cache_size = std::stol(argv[2]);
-    std::string filename0 = argv[3];
-    std::string filename1 = argv[4];
-    std::string dtype = argv[5];
-    int offset_pct = std::stoi(argv[6]);
+    std::string filename0 = argv[2];
+    std::string filename1 = argv[3];
+    std::string dtype = argv[4];
+    int offset_pct = std::stoi(argv[5]);
 
     using DataType = uint32_t;
     if (dtype.compare("-f") == 0) {
@@ -69,7 +68,7 @@ main(int argc, char **argv) {
     printf("Generated %zu offsets (%d percent of %zu)\n", num_offsets, offset_pct, num_chunks);
 
     // create loader
-    data_loader_t data_loader(host_cache_size, dev_cache_size);
+    data_loader_t data_loader(host_cache_size);
     int ld = data_loader.file_load(uring_reader0, uring_reader1, chunk_offsets,
                                    chunk_size, trans_type, 2);
 

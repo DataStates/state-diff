@@ -51,9 +51,8 @@ read_ifstream(std::string filename, DataType *data_veri_h,
 int
 main(int argc, char **argv) {
     size_t host_cache_size = std::stol(argv[1]);
-    size_t dev_cache_size = std::stol(argv[2]);
-    std::string filename = argv[3];
-    std::string dtype = argv[4];
+    std::string filename = argv[2];
+    std::string dtype = argv[3];
 
     using DataType = uint32_t;  // Default type
     if (dtype.compare("-f") == 0) {
@@ -72,7 +71,7 @@ main(int argc, char **argv) {
     std::vector<uint8_t> data_veri_h(data_size);
 
     // create loader
-    data_loader_t data_loader(host_cache_size, dev_cache_size);
+    data_loader_t data_loader(host_cache_size);
     int ld = data_loader.file_load(uring_reader, read_size, trans_type);
 
     // start loading

@@ -42,10 +42,10 @@ storage_t::allocate(batch_t *seg_batch) {
         segment_t &seg = seg_batch->data[i];
         assert(seg.size < total_size_);
         DBG("Store - Waiting for resources to allocate batch item "
-            << i << "/" << seg_batch->batch_size);
+            << i << "/" << seg_batch->batch_len);
         cv_.wait(lck, [this, &seg] { return can_allocate(seg.size); });
         DBG("Store - Resources are now available for batch item "
-            << i << "/" << seg_batch->batch_size);
+            << i << "/" << seg_batch->batch_len);
         seg.buffer = start_ + head_;
         head_ = (head_ + seg.size) % total_size_;
         curr_size_ += seg.size;
@@ -56,8 +56,7 @@ storage_t::allocate(batch_t *seg_batch) {
         }
     }
     lck.unlock();
-    // cv_.notify_one();
-    cv_.notify_all();
+    cv_.notify_one();
 }
 
 void
@@ -84,10 +83,10 @@ storage_t::deallocate(batch_t *seg_batch) {
             head_ = tail_ = 0;
         stored_segs_.pop_front();
         DBG("Store - Deallocated batch item " << i 
-            << "/" << seg_batch->batch_size 
+            << "/" << seg_batch->batch_len 
             << ", new tail: " << tail_ 
             << ", free space: " << get_free_size());
     }
     lck.unlock();
-    cv_.notify_all();
+    cv_.notify_one();
 }

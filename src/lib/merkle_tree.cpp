@@ -425,8 +425,7 @@ tree_t::write_leaves_tofile() {
             counter += 2 * counter;
         }
     }
-    printf("====================== Sdiff tree written to file "
-           "========================\n");
+    printf("============== Sdiff tree written to file =================\n");
 }
 
 const double *

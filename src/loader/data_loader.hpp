@@ -26,9 +26,6 @@ class data_loader_t {
 
     using FileReader = base_io_reader_t;
 
-    uint8_t *data_ptr_;
-    size_t host_cache_size_;
-    size_t device_cache_size_;
     host_cache_t *host_cache_;
     int gpu_id = 0;
     int last_retrieving_id = 0;
@@ -42,7 +39,7 @@ class data_loader_t {
 
   public:
     data_loader_t() {};
-    data_loader_t(size_t host_cache_size, size_t device_cache_size);
+    data_loader_t(size_t host_cache_size);
 
     ~data_loader_t();
 

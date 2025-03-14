@@ -31,8 +31,7 @@ template <typename DataType> class client_t {
     static const bool DEFAULT_FUZZY_HASH = true;
     static const size_t DEFAULT_START_LEVEL = 13;
     static const size_t DEFAULT_CHUNK_SIZE = 4 * KB;
-    static const size_t DEFAULT_HOST_CACHE = 2ULL * GB;
-    static const size_t DEFAULT_DEVICE_CACHE = 1ULL * GB;
+    static const size_t DEFAULT_CACHE_SIZE = 2ULL * GB;
     static const size_t DEFAULT_CREATE_READ_SIZE = 128 * MB;
     static const TransferType DEFAULT_CACHE_TIER = TransferType::FileToHost;
 
@@ -68,8 +67,7 @@ template <typename DataType> class client_t {
              char dtype = DEFAULT_DTYPE, size_t chunk_size = DEFAULT_CHUNK_SIZE,
              size_t start_level = DEFAULT_START_LEVEL,
              bool fuzzyhash = DEFAULT_FUZZY_HASH,
-             size_t host_cache_size = DEFAULT_HOST_CACHE,
-             size_t dev_cache_size = DEFAULT_DEVICE_CACHE);
+             size_t cache_size = DEFAULT_CACHE_SIZE);
     ~client_t();
 
     void create(std::vector<DataType> &data);
@@ -115,9 +113,8 @@ template <typename DataType> class client_t {
 template <typename DataType>
 client_t<DataType>::client_t(int client_id, size_t data_size, double error,
                              char dtype, size_t chunk_size, size_t start,
-                             bool fuzzyhash, size_t host_cache_size,
-                             size_t dev_cache_size)
-    : data_loader(host_cache_size, dev_cache_size) {
+                             bool fuzzyhash, size_t cache_size)
+    : data_loader(cache_size) {
     TIMER_START(client_init);
     DBG("Begin client setup");
     std::string setup_region_name = std::string("StateDiff:: Checkpoint ") +

@@ -1,7 +1,7 @@
 #include "host_cache.hpp"
 
-host_cache_t::host_cache_t(int gpu_id, size_t tot_cache_size)
-    : base_cache_t(gpu_id, tot_cache_size) {
+host_cache_t::host_cache_t(size_t tot_cache_size)
+    : base_cache_t(tot_cache_size) {
     start_ptr_ = (uint8_t *)malloc(tot_cache_size_);
     INFO("Host - Creating a cache of size " << tot_cache_size / (1024 * 1024)
                                             << " MB");
@@ -34,10 +34,43 @@ host_cache_t::activate(int id) {
     INFO("Host (" << id << ")- Started fetch thread on host cache");
 }
 
+// void
+// host_cache_t::stage_in(int id, batch_t *seg_batch) {
+//     DBG("Host (" << id << ")- Allocating memory to front batch of size "
+//                  << item->batch_size);
+//     data_store_->allocate(seg_batch);
+//     if (auto *single_reader =
+//             std::get_if<FileReader *>(&freader_[id])) {
+//         DBG("Host (" << id << ")- Enqueuing for read from file");
+//         (*single_reader)->enqueue_reads(seg_batch->to_vec());
+//     } else if (auto *reader_pair =
+//                     std::get_if<std::pair<FileReader *, FileReader *>>(
+//                         &freader_[id])) {
+//         DBG("Host (" << id << ")- Enqueuing for read from two files");
+//         reader_pair->first->enqueue_reads(seg_batch->left_vec());
+//         reader_pair->second->enqueue_reads(seg_batch->right_vec());
+//     } else {
+//         FATAL("Error: No valid reader found!");
+//     }
+//     fetch_q_[id].push(seg_batch);
+//     DBG("Host (" << id << ")- Staged batch of size " << seg_batch->batch_size
+//                  << " for f2h copy");
+// }
+
 void
 host_cache_t::stage_in(int id, batch_t *seg_batch) {
+    DBG("Host (" << id << ")- Allocating memory to front batch of size "
+                 << seg_batch->batch_len);
+
+    if (auto *reader_pair =
+            std::get_if<std::pair<FileReader *, FileReader *>>(&freader_[id])) {
+        DBG("Host (" << id << ")- Enqueuing for read from two files");
+        data_store_->allocate(seg_batch);
+        reader_pair->first->enqueue_reads(seg_batch->left_vec());
+        reader_pair->second->enqueue_reads(seg_batch->right_vec());
+    }
     fetch_q_[id].push(seg_batch);
-    DBG("Host (" << id << ")- Staged batch of size " << seg_batch->batch_size
+    DBG("Host (" << id << ")- Staged batch of size " << seg_batch->batch_len
                  << " for f2h copy");
 }
 
@@ -66,17 +99,31 @@ host_cache_t::set_reader(int id, FileReader *io_reader0,
 
 void
 host_cache_t::fetch_(int id) {
+
+    FileReader *single_reader = nullptr;
+    std::pair<FileReader *, FileReader *> *reader_pair = nullptr;
+
+    if (auto *reader = std::get_if<FileReader *>(&freader_[id])) {
+        single_reader = *reader;
+    } else if (auto *pair_reader =
+                   std::get_if<std::pair<FileReader *, FileReader *>>(
+                       &freader_[id])) {
+        reader_pair = pair_reader;
+    } else {
+        DBG("Error: No valid reader found!");
+        return;
+    }
+
     while (is_active_) {
         DBG("Host (" << id
                      << ")- Waiting for items to be pushed onto the fetch_q");
         TIMER_START(hst_waitfetch);
-        bool res = fetch_q_[id].wait_any();
-        TIMER_STOP(hst_waitfetch,
-                   "Host (" << id << ")- Waited any batch for host fetch");
-        if (!res) {
+        if (!fetch_q_[id].wait_any()) {
             DBG("Error in fetch metadata queue of host cache, retrying...");
             continue;
         }
+        TIMER_STOP(hst_waitfetch,
+                   "Host (" << id << ")- Waited any batch for host fetch");
 
         TIMER_START(hst_fetch);
         std::deque<batch_t *> batches;
@@ -86,32 +133,22 @@ host_cache_t::fetch_(int id) {
             DBG("Error: No batches to fetch.");
             continue;
         }
-
         size_t curr_capacity = batches.size();
+        size_t nsegs_inbatch;
         for (size_t i = 0; i < curr_capacity; i++) {
             batch_t *item = batches[i];
-            DBG("Host (" << id << ")- Allocating memory to front batch of size "
-                         << item->batch_size);
-            data_store_->allocate(item);
-
-            if (auto *single_reader =
-                    std::get_if<FileReader *>(&freader_[id])) {
+            if (single_reader) {
+                data_store_->allocate(item);
                 DBG("Host (" << id << ")- Enqueuing for read from file");
-                (*single_reader)->enqueue_reads(item->to_vec());
-                (*single_reader)->wait_n(item->batch_len);
-            } else if (auto *reader_pair =
-                           std::get_if<std::pair<FileReader *, FileReader *>>(
-                               &freader_[id])) {
-                std::vector<segment_t> left = item->left_vec();
-                std::vector<segment_t> right = item->right_vec();
-                reader_pair->first->enqueue_reads(left);
-                reader_pair->second->enqueue_reads(right);
-                DBG("Host (" << id << ")- Enqueuing for read from two files");
-                reader_pair->first->wait_n(item->batch_len / 2);
-                reader_pair->second->wait_n(item->batch_len / 2);
-            } else {
-                DBG("Error: No valid reader found!");
-                continue;
+                single_reader->enqueue_reads(item->to_vec());
+                DBG("Host (" << id << ")- Waiting for batch read from file");
+                nsegs_inbatch = item->batch_len;
+                single_reader->wait_n(nsegs_inbatch);
+            } else if (reader_pair) {
+                DBG("Host (" << id << ")- Waiting for batch read from files");
+                nsegs_inbatch = item->batch_len / 2;
+                reader_pair->first->wait_n(nsegs_inbatch);
+                reader_pair->second->wait_n(nsegs_inbatch);
             }
             DBG("Host (" << id << ")- Adding item to host ready queue");
             stage_out(id, item);
@@ -121,6 +158,67 @@ host_cache_t::fetch_(int id) {
     }
     DBG("Host (" << id << ")- Fetch thread exiting");
 }
+
+// void
+// host_cache_t::fetch_(int id) {
+
+//     FileReader *single_reader = nullptr;
+//     std::pair<FileReader *, FileReader *> *reader_pair = nullptr;
+
+//     if (auto *reader = std::get_if<FileReader *>(&freader_[id])) {
+//         single_reader = *reader;
+//     } else if (auto *pair_reader =
+//                    std::get_if<std::pair<FileReader *, FileReader *>>(
+//                        &freader_[id])) {
+//         reader_pair = pair_reader;
+//     } else {
+//         DBG("Error: No valid reader found!");
+//         return;
+//     }
+
+//     while (is_active_) {
+//         DBG("Host (" << id
+//                      << ")- Waiting for items to be pushed onto the
+//                      fetch_q");
+//         TIMER_START(hst_waitfetch);
+//         if (!fetch_q_[id].wait_any()) {
+//             DBG("Error in fetch metadata queue of host cache, retrying...");
+//             continue;
+//         }
+//         TIMER_STOP(hst_waitfetch,
+//                    "Host (" << id << ")- Waited any batch for host fetch");
+
+//         TIMER_START(hst_fetch);
+//         std::deque<batch_t *> batches;
+//         // Swap batches from the queue (without acquiring and releasing lock
+//         // multiple times in the for loop)
+//         if (!fetch_q_[id].swap_batches(batches)) {
+//             DBG("Error: No batches to fetch.");
+//             continue;
+//         }
+//         size_t curr_capacity = batches.size();
+//         size_t nsegs_inbatch;
+//         for (size_t i = 0; i < curr_capacity; i++) {
+//             batch_t *item = batches[i];
+//             if (single_reader) {
+//                 DBG("Host (" << id << ")- Waiting for batch read from file");
+//                 nsegs_inbatch = item->batch_len;
+//                 single_reader->wait_n(nsegs_inbatch);
+//             } else if (reader_pair) {
+//                 DBG("Host (" << id << ")- Waiting for batch read from
+//                 files"); nsegs_inbatch = item->batch_len / 2;
+//                 reader_pair->first->wait_n(nsegs_inbatch);
+//                 reader_pair->second->wait_n(nsegs_inbatch);
+//             }
+//             DBG("Host (" << id << ")- Adding item to host ready queue");
+//             stage_out(id, item);
+//         }
+//         TIMER_STOP(hst_fetch, "Host (" << id << ")- Fetched " <<
+//         curr_capacity
+//                                        << " batches to host cache");
+//     }
+//     DBG("Host (" << id << ")- Fetch thread exiting");
+// }
 
 bool
 host_cache_t::wait_for_completion() {
@@ -136,7 +234,7 @@ host_cache_t::wait_for_completion() {
 batch_t *
 host_cache_t::get_completed(int id) {
     DBG("Host (" << id << ")- Getting completed jobs from ready_q");
-    ready_q_[id].wait_any();
+    // ready_q_[id].wait_any();
     return ready_q_[id].front();
 }
 
@@ -155,7 +253,7 @@ host_cache_t::coalesce_and_copy(batch_t *consumed_item, void *ptr) {
     uint8_t *destination = static_cast<uint8_t *>(ptr);
     for (size_t i = 0; i < consumed_item->batch_len; i++) {
         DBG("Host - Coalescing batch item "
-            << i << "/" << consumed_item->batch_size << " on host");
+            << i << "/" << consumed_item->batch_len << " on host");
         segment_t &segment = consumed_item->data[i];
         std::memcpy(destination, segment.buffer, segment.size);
         destination += segment.size;

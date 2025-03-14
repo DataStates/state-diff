@@ -1,10 +1,8 @@
 #include "data_loader.hpp"
 
-data_loader_t::data_loader_t(size_t host_cache_size, size_t device_cache_size)
-    : data_ptr_(nullptr), host_cache_size_(host_cache_size),
-      device_cache_size_(device_cache_size) {
+data_loader_t::data_loader_t(size_t cache_size) {
     TIMER_START(init_loader);
-    host_cache_ = new host_cache_t(gpu_id, host_cache_size_);
+    host_cache_ = new host_cache_t(cache_size);
     INFO("Loader - host caches initialized");
     TIMER_STOP(init_loader, "Initialized data loader");
 }
