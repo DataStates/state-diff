@@ -29,11 +29,11 @@ class metadata_queue {
         // For our implementation, there is no need to wait because
         // there is always an element in the queue whenever pop is called.
         // This also helps avoid poping a new push if pop is called after swap.
-        // cv_.wait(lock, [this] { return !meta_q_.empty() || !is_active_; });
-        if (!meta_q_.empty()) {
+        cv_.wait(lock, [this] { return !meta_q_.empty() || !is_active_; });
+        // if (!meta_q_.empty()) {
             meta_q_.pop_front();
-            // cv_.notify_one();
-        }
+            cv_.notify_one();
+        // }
     }
 
     batch_t *front() {

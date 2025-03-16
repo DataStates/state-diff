@@ -23,8 +23,9 @@ class base_cache_t {
     std::unordered_map<int, std::shared_mutex> ready_q_mutex_;
 
   public:
-    storage_t *data_store_ = nullptr;
-    base_cache_t(size_t total_size) : tot_cache_size_(total_size) {};
+    // storage_t *data_store_ = nullptr;
+    // base_cache_t(size_t total_size) : tot_cache_size_(total_size) {};
+    base_cache_t() {};
     virtual ~base_cache_t() {};
     virtual void activate(int id) = 0;
     virtual void stage_in(int id, batch_t *seg_batch) = 0;

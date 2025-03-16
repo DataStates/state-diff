@@ -18,6 +18,7 @@ struct batch_t {
     // batch_size)
     size_t count;
     size_t size;
+    uint8_t * start_ptr = NULL;
 
     batch_t(size_t size_, size_t offt_count = 0)
         : batch_len(size_), proc_offt(offt_count), count(0), size(0) {
@@ -39,11 +40,22 @@ struct batch_t {
         }
     }
     batch_t(batch_t *other) : batch_t(*other) {}
-    ~batch_t() { delete[] data; }
+    ~batch_t() { start_ptr = NULL; delete[] data;}
     void push(segment_t item) {
         assert(count < batch_len);
         data[count++] = item;
         size += item.size;
+    }
+    void allocate() {
+        DBG("Batch - Allocating memory resources to " << batch_len
+                                                      << " segments in batch");
+        start_ptr = (uint8_t *)malloc(batch_len * data[0].size);
+        size_t cur_alloc = 0;
+        for (size_t i = 0; i < batch_len; i++) {
+            segment_t &seg = data[i];
+            seg.buffer = start_ptr + cur_alloc;
+            cur_alloc += seg.size;
+        }
     }
     void inc_last(size_t inc_size) { data[count - 1].size += inc_size; }
     std::vector<segment_t> to_vec() {

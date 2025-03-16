@@ -68,7 +68,8 @@ main(int argc, char **argv) {
     printf("Generated %zu offsets (%d percent of %zu)\n", num_offsets, offset_pct, num_chunks);
 
     // create loader
-    data_loader_t data_loader(host_cache_size);
+    // data_loader_t data_loader(host_cache_size);
+    data_loader_t data_loader;
     int ld = data_loader.file_load(uring_reader0, uring_reader1, chunk_offsets,
                                    chunk_size, trans_type, 2);
 

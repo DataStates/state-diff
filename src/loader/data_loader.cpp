@@ -1,8 +1,14 @@
 #include "data_loader.hpp"
 
-data_loader_t::data_loader_t(size_t cache_size) {
+// data_loader_t::data_loader_t(size_t cache_size) {
+//     TIMER_START(init_loader);
+//     host_cache_ = new host_cache_t(cache_size);
+//     INFO("Loader - host caches initialized");
+//     TIMER_STOP(init_loader, "Initialized data loader");
+// }
+data_loader_t::data_loader_t() {
     TIMER_START(init_loader);
-    host_cache_ = new host_cache_t(cache_size);
+    host_cache_ = new host_cache_t();
     INFO("Loader - host caches initialized");
     TIMER_STOP(init_loader, "Initialized data loader");
 }
@@ -161,6 +167,9 @@ data_loader_t::file_load(FileReader &io_reader0, FileReader &io_reader1,
     INFO("Loader (" << loader_id
                     << ")- All batches staged in for read with two readers");
     TIMER_STOP(file_load, "Created segments and staged for file read");
+
+    // host_cache_->set_reader(loader_id, &io_reader0, &io_reader1);
+    host_cache_->activate(loader_id);
 
     return loader_id;
 }

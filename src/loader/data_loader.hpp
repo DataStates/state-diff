@@ -38,8 +38,9 @@ class data_loader_t {
                        size_t total_n_segs, size_t total_read_size);
 
   public:
-    data_loader_t() {};
-    data_loader_t(size_t host_cache_size);
+    // data_loader_t() {};
+    // data_loader_t(size_t host_cache_size);
+    data_loader_t();
 
     ~data_loader_t();
 

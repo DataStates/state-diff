@@ -1,12 +1,12 @@
 #include "host_cache.hpp"
 
-host_cache_t::host_cache_t(size_t tot_cache_size)
-    : base_cache_t(tot_cache_size) {
-    start_ptr_ = (uint8_t *)malloc(tot_cache_size_);
-    INFO("Host - Creating a cache of size " << tot_cache_size / (1024 * 1024)
-                                            << " MB");
-    data_store_ = new storage_t(start_ptr_, tot_cache_size_);
-}
+// host_cache_t::host_cache_t(size_t tot_cache_size)
+//     : base_cache_t(tot_cache_size) {
+//     // start_ptr_ = (uint8_t *)malloc(tot_cache_size_);
+//     INFO("Host - Creating a cache of size " << tot_cache_size / (1024 * 1024)
+//                                             << " MB");
+//     // data_store_ = new storage_t(start_ptr_, tot_cache_size_);
+// }
 
 host_cache_t::~host_cache_t() {
     wait_for_completion();
@@ -22,8 +22,8 @@ host_cache_t::~host_cache_t() {
             thread.second.join();   // Join thread if it is joinable
         }
     }
-    delete start_ptr_;
-    delete data_store_;
+    // delete start_ptr_;
+    // delete data_store_;
     DBG("Host - Cache destroyed");
 };
 
@@ -65,7 +65,8 @@ host_cache_t::stage_in(int id, batch_t *seg_batch) {
     if (auto *reader_pair =
             std::get_if<std::pair<FileReader *, FileReader *>>(&freader_[id])) {
         DBG("Host (" << id << ")- Enqueuing for read from two files");
-        data_store_->allocate(seg_batch);
+        // data_store_->allocate(seg_batch);
+        seg_batch->allocate();
         reader_pair->first->enqueue_reads(seg_batch->left_vec());
         reader_pair->second->enqueue_reads(seg_batch->right_vec());
     }
@@ -94,7 +95,7 @@ host_cache_t::set_reader(int id, FileReader *io_reader0,
     DBG("Host (" << id << ")- Setting reader to read from file");
     assert(io_reader0 != nullptr && io_reader1 != nullptr);
     freader_[id] = std::make_pair(io_reader0, io_reader1);
-    activate(id);
+    // activate(id);
 }
 
 void
@@ -138,7 +139,8 @@ host_cache_t::fetch_(int id) {
         for (size_t i = 0; i < curr_capacity; i++) {
             batch_t *item = batches[i];
             if (single_reader) {
-                data_store_->allocate(item);
+                // data_store_->allocate(item);
+                item->allocate();
                 DBG("Host (" << id << ")- Enqueuing for read from file");
                 single_reader->enqueue_reads(item->to_vec());
                 DBG("Host (" << id << ")- Waiting for batch read from file");
@@ -147,8 +149,10 @@ host_cache_t::fetch_(int id) {
             } else if (reader_pair) {
                 DBG("Host (" << id << ")- Waiting for batch read from files");
                 nsegs_inbatch = item->batch_len / 2;
-                reader_pair->first->wait_n(nsegs_inbatch);
-                reader_pair->second->wait_n(nsegs_inbatch);
+                // reader_pair->first->wait_n(nsegs_inbatch);
+                // reader_pair->second->wait_n(nsegs_inbatch)
+                reader_pair->first->wait(item->data[0].offset);
+                reader_pair->second->wait(item->data[0].offset);;
             }
             DBG("Host (" << id << ")- Adding item to host ready queue");
             stage_out(id, item);
@@ -243,7 +247,8 @@ host_cache_t::release(int id) {
     DBG("Host (" << id
                  << ")- Releasing memory used by previous processed batch");
     batch_t *consumed_item = ready_q_[id].front();
-    data_store_->deallocate(consumed_item);
+    // data_store_->deallocate(consumed_item);
+    free(consumed_item->start_ptr);
     ready_q_[id].pop();
     return true;
 }
@@ -258,5 +263,6 @@ host_cache_t::coalesce_and_copy(batch_t *consumed_item, void *ptr) {
         std::memcpy(destination, segment.buffer, segment.size);
         destination += segment.size;
     }
-    data_store_->deallocate(consumed_item);
+    // data_store_->deallocate(consumed_item);
+    free(consumed_item->start_ptr);
 }

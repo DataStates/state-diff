@@ -113,8 +113,8 @@ template <typename DataType> class client_t {
 template <typename DataType>
 client_t<DataType>::client_t(int client_id, size_t data_size, double error,
                              char dtype, size_t chunk_size, size_t start,
-                             bool fuzzyhash, size_t cache_size)
-    : data_loader(cache_size) {
+                             bool fuzzyhash, size_t cache_size) {
+    // : data_loader(cache_size) {
     TIMER_START(client_init);
     DBG("Begin client setup");
     std::string setup_region_name = std::string("StateDiff:: Checkpoint ") +
@@ -393,6 +393,8 @@ client_t<DataType>::compare_data(client_t &prev, int ld_id,
     AbsoluteComp<DataType> abs_comp;
     Kokkos::Experimental::ScatterView<size_t[1]> num_comp(num_comparisons);
     auto &changed_blocks = changed_chunks;
+    auto data_size = client_info.data_size;
+    auto chunk_size = client_info.chunk_size;
     int n_files = 2;
     size_t work_done = 0;
     DataType *prev_ptr = NULL, *curr_ptr = NULL;
@@ -435,10 +437,14 @@ client_t<DataType>::compare_data(client_t &prev, int ld_id,
                 size_t blk_start = gap * elemPerChunk;   // Block start
                 size_t elm_idx =
                     blk_start + (idx % elemPerChunk);   // Element in block
-
-                if (!abs_comp(prev_ptr[elm_idx], curr_ptr[elm_idx], err_tol)) {
-                    update += 1;
-                    changed_blocks.set(diff_hash_subview[blk_idx]);
+                size_t data_idx =
+                    (diff_hash_subview[blk_idx] * chunk_size) +
+                    (elm_idx * sizeof(DataType));   // Element in file
+                if (data_idx < data_size) {
+                    if (!abs_comp(prev_ptr[elm_idx], curr_ptr[elm_idx], err_tol)) {
+                        update += 1;
+                        changed_blocks.set(diff_hash_subview[blk_idx]);
+                    }
                 }
                 ncomp_access(0) += 1;
             },

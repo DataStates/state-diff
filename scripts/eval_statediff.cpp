@@ -223,7 +223,8 @@ main(int argc, char **argv) {
             off_t meta_filesize;
             get_file_size(run0_files[0], &meta_filesize);
             base_data_size = static_cast<size_t>(meta_filesize);
-            cache_size = data_size * 2 + (1024 * 1024 * 1024);
+            // cache_size = data_size * 2 + (1024 * 1024 * 1024);
+            cache_size = 16ULL * (1024 * 1024 * 1024);
         } else {
             cache_size = data_size + (1024 * 1024 * 1024);
         }

@@ -71,7 +71,8 @@ main(int argc, char **argv) {
     std::vector<uint8_t> data_veri_h(data_size);
 
     // create loader
-    data_loader_t data_loader(host_cache_size);
+    // data_loader_t data_loader(host_cache_size);
+    data_loader_t data_loader;
     int ld = data_loader.file_load(uring_reader, read_size, trans_type);
 
     // start loading
