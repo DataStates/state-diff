@@ -182,8 +182,8 @@ tree_t::create(client_info_t client_info, data_loader_t &data_loader,
                 uint32_t num_bytes = chunksize;
                 uint64_t offset = static_cast<uint64_t>(idx) *
                                   static_cast<uint64_t>(chunksize);
-                if (idx == nchunks - 1)   // Calculate how much data to hash
-                    num_bytes = data_size - offset;
+                if (idx == curr_n_leaves - 1)   // Calculate how much data to hash
+                    num_bytes = ready_size - offset;
                 // Hash chunk
                 if (use_fuzzy_hash) {
                     curr_tree.calc_leaf_fuzzy_hash(data_ptr + offset, num_bytes,

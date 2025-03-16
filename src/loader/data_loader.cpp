@@ -62,31 +62,33 @@ data_loader_t::enqueue_reads(int id, size_t seg_size, size_t n_segs_per_read,
                              size_t total_n_segs, size_t total_read_size) {
 
     size_t n_read_call = (total_n_segs + n_segs_per_read - 1) / n_segs_per_read;
-    batch_t *seg_batch = new batch_t(n_segs_per_read);
+    size_t staged_size = 0;
+    size_t batch_len = n_segs_per_read;
+    batch_t *seg_batch = new batch_t(batch_len);
     for (size_t i = 0; i < total_n_segs; i++) {
         if (i % n_segs_per_read == 0 && i > 0) {
 
             DBG("Loader (" << id << ")- Staging batch "
                            << (i / n_segs_per_read) - 1 << " of size "
-                           << n_segs_per_read << " for read from file");
+                           << batch_len << " for read from file");
             host_cache_->stage_in(id, seg_batch);
             n_read_call--;
             // Adjust the segment count for the last batch
             size_t remaining = total_n_segs - i;
-            size_t new_n_segs =
-                (n_read_call == 1) ? remaining : n_segs_per_read;
-            seg_batch = new batch_t(new_n_segs);
+            batch_len = (n_read_call == 1) ? remaining : batch_len;
+            seg_batch = new batch_t(batch_len);
         }
         size_t offset = i * seg_size;
         size_t current_seg_size =
-            (i == total_n_segs - 1) ? total_read_size - offset : seg_size;
+            (i == total_n_segs - 1) ? total_read_size - staged_size : seg_size;
         segment_t seg(offset, current_seg_size);
         seg_batch->push(seg);
+        staged_size += current_seg_size;
     }
     // stage last batch
     DBG("Loader (" << id << ")- Staging batch "
-                   << (total_n_segs / n_segs_per_read) - 1 << " of size "
-                   << n_segs_per_read << " for read from file");
+                   << total_n_segs / n_segs_per_read << " of size " << batch_len
+                   << " for read from file");
     host_cache_->stage_in(id, seg_batch);
 }
 
@@ -157,7 +159,7 @@ data_loader_t::file_load(FileReader &io_reader0, FileReader &io_reader1,
     ready_count[loader_id] = 0;
     // Set two reader to use for file IO
     host_cache_->set_reader(loader_id, &io_reader0, &io_reader1);
-    
+
     int n_readers = 2;
 
     INFO("Loader ("

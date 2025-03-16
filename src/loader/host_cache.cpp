@@ -59,14 +59,13 @@ host_cache_t::activate(int id) {
 
 void
 host_cache_t::stage_in(int id, batch_t *seg_batch) {
-    DBG("Host (" << id << ")- Allocating memory to front batch of size "
-                 << seg_batch->batch_len);
-
     if (auto *reader_pair =
             std::get_if<std::pair<FileReader *, FileReader *>>(&freader_[id])) {
-        DBG("Host (" << id << ")- Enqueuing for read from two files");
+        DBG("Host (" << id << ")- Allocating memory to batch of size "
+                     << seg_batch->batch_len);
         // data_store_->allocate(seg_batch);
         seg_batch->allocate();
+        DBG("Host (" << id << ")- Enqueuing for read from two files");
         reader_pair->first->enqueue_reads(seg_batch->left_vec());
         reader_pair->second->enqueue_reads(seg_batch->right_vec());
     }
@@ -139,6 +138,8 @@ host_cache_t::fetch_(int id) {
         for (size_t i = 0; i < curr_capacity; i++) {
             batch_t *item = batches[i];
             if (single_reader) {
+                DBG("Host (" << id << ")- Allocating memory to batch of size "
+                             << item->batch_len);
                 // data_store_->allocate(item);
                 item->allocate();
                 DBG("Host (" << id << ")- Enqueuing for read from file");
@@ -152,7 +153,8 @@ host_cache_t::fetch_(int id) {
                 // reader_pair->first->wait_n(nsegs_inbatch);
                 // reader_pair->second->wait_n(nsegs_inbatch)
                 reader_pair->first->wait(item->data[0].offset);
-                reader_pair->second->wait(item->data[0].offset);;
+                reader_pair->second->wait(item->data[0].offset);
+                ;
             }
             DBG("Host (" << id << ")- Adding item to host ready queue");
             stage_out(id, item);
@@ -248,7 +250,7 @@ host_cache_t::release(int id) {
                  << ")- Releasing memory used by previous processed batch");
     batch_t *consumed_item = ready_q_[id].front();
     // data_store_->deallocate(consumed_item);
-    free(consumed_item->start_ptr);
+    free(consumed_item->ptr);
     ready_q_[id].pop();
     return true;
 }
@@ -264,5 +266,5 @@ host_cache_t::coalesce_and_copy(batch_t *consumed_item, void *ptr) {
         destination += segment.size;
     }
     // data_store_->deallocate(consumed_item);
-    free(consumed_item->start_ptr);
+    free(consumed_item->ptr);
 }
