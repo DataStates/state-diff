@@ -22,6 +22,7 @@ data_loader_t::coalesce(int id, std::vector<size_t> offsets, size_t seg_size,
     size_t start = offsets[0];
     size_t lastOffset = start;
     size_t in_group_offt = 1;
+    size_t wasted_read_bytes = 0;
     for (size_t i = 1; i < offsets.size(); i++) {
         size_t curr_offset = offsets[i];
         if (curr_offset - lastOffset <= gap) {   // include new offset
@@ -31,6 +32,9 @@ data_loader_t::coalesce(int id, std::vector<size_t> offsets, size_t seg_size,
             batch_t *seg_batch = new batch_t(n_readers, in_group_offt);
             size_t segment_start = start * seg_size;
             size_t combined_size = (lastOffset - start + 1) * seg_size;
+            // Compute wasted bytes
+            size_t needed_size = in_group_offt * seg_size;
+            wasted_read_bytes += (combined_size - needed_size);
             for (int j = 0; j < n_readers; j++) {
                 seg_batch->push(segment_t(segment_start, combined_size));
             }
@@ -48,6 +52,7 @@ data_loader_t::coalesce(int id, std::vector<size_t> offsets, size_t seg_size,
         seg_batch->push(segment_t(segment_start, combined_size));
     }
     host_cache_->stage_in(id, seg_batch);
+    wasted_bytes[id] = wasted_read_bytes;
 }
 
 void
@@ -116,6 +121,7 @@ data_loader_t::file_load(FileReader &io_reader, size_t seg_size,
     // Assign an ID to this loader call
     int loader_id = instance_count++;
     ready_count[loader_id] = 0;
+    wasted_bytes[loader_id] = 0;
 
     INFO("Loader (" << loader_id
                     << ")- Creating segments without given file offsets");
@@ -216,4 +222,9 @@ data_loader_t::next(int id, TransferType trans_type) {
     next_batch_t batch = {front_batch->data[0].buffer, front_batch->size,
                           front_batch->proc_offt};
     return batch;
+}
+
+size_t
+data_loader_t::get_wasted_bytes_count(int id) {
+    return wasted_bytes[id];
 }

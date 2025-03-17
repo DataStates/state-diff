@@ -31,6 +31,7 @@ class data_loader_t {
     int last_retrieving_id = 0;
     std::atomic<int> instance_count{0};
     std::unordered_map<int, size_t> ready_count;
+    std::unordered_map<int, size_t> wasted_bytes;
 
     void coalesce(int id, std::vector<size_t> offsets, size_t seg_size,
                   uint32_t gap, int n_readers);
@@ -48,6 +49,6 @@ class data_loader_t {
                   std::vector<size_t> offsets, size_t seg_size,
                   TransferType trans_type, uint32_t gap = 0);
     next_batch_t next(int loader_id, TransferType trans_type);
-    size_t get_chunksize(size_t data_size);
+    size_t get_wasted_bytes_count(int id);
 };
 #endif   // __DATA_LOADER_HPP

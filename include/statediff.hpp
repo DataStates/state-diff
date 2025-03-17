@@ -54,6 +54,7 @@ template <typename DataType> class client_t {
     Kokkos::View<size_t[1]> num_hash_comp =
         Kokkos::View<size_t[1]>("Num hash comparisons");
     size_t nchange = 0;
+    size_t wasted_bytes = 0;
 
     // timers (setup, compare_tree, compare_direct, load_direct,
     // elementwise_compare)
@@ -105,6 +106,7 @@ template <typename DataType> class client_t {
     size_t get_num_changes() const;
     size_t get_filtered_blocks() const;
     size_t get_validated_diffs() const;
+    size_t get_wastedbytes_count() const;
     double get_tree_comparison_time() const;
     double get_data_compare_time() const;
     std::vector<double> get_create_time() const;
@@ -271,6 +273,7 @@ client_t<DataType>::compare_with(int chkpt_id, Reader &curr_reader,
         compare_data(prev, ld_id, diff_hash_vec, changed_chunks, num_changed,
                      num_comparisons, compare_tier);
         DBG("Number of different hashes after phase 2: " << nchange);
+        wasted_bytes = data_loader.get_wasted_bytes_count(ld_id);
     }
     TIMER_STOP(client_compare_with, "State-diff tree and data for chkpt "
                                         << curr_chkpt_id << " compared");
@@ -501,6 +504,12 @@ template <typename DataType>
 size_t
 client_t<DataType>::get_validated_diffs() const {
     return changed_chunks.count();
+}
+
+template <typename DataType>
+size_t
+client_t<DataType>::get_wastedbytes_count() const {
+    return wasted_bytes;
 }
 
 template <typename DataType>

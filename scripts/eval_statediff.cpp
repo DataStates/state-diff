@@ -190,6 +190,7 @@ main(int argc, char **argv) {
         uint64_t filtered_blocks = 0;
         uint64_t n_comparisons = 0;
         uint64_t n_hash_comp = 0;
+        size_t wasted_bytes = 0;
 
         double setup_time = 0;
         double read_time = 0;
@@ -327,6 +328,7 @@ main(int argc, char **argv) {
                                         offt_gap);
                 compare_time1 = client_cur.get_tree_comparison_time();
                 compare_time2 = client_cur.get_data_compare_time();
+                wasted_bytes = client_cur.get_wastedbytes_count();
                 Kokkos::Profiling::popRegion();
                 std::cout << "\tRank " << world_rank
                           << ": Compare Tree Phase 1: " << compare_time1
@@ -383,7 +385,7 @@ main(int argc, char **argv) {
                 logfile << "Rank,File,File size,Baseline file,Baseline file "
                            "size,Hash function,Chunk size,Data type,";
                 logfile
-                    << "Error tolerance,Start level,Create blksize,Offset gap,";
+                    << "Error tolerance,Start level,Create blksize,Offset gap,Wasted read,";
                 logfile
                     << "Setup time,Read time,Deserialization time,Construction "
                        "time,Compare tree time,Compare direct "
@@ -415,6 +417,7 @@ main(int argc, char **argv) {
             logfile << level << ",";
             logfile << create_blksize << ",";
             logfile << offt_gap << ",";
+            logfile << wasted_bytes << ",";
             logfile << timers[0] << ",";
             logfile << timers[1] << ",";
             logfile << timers[2] << ",";
