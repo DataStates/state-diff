@@ -19,7 +19,6 @@ struct batch_t {
     size_t count;
     size_t size;
     uint8_t *ptr = nullptr;
-    // std::vector<uint8_t> buffer;
 
     batch_t(size_t size_, size_t offt_count = 0)
         : batch_len(size_), proc_offt(offt_count), count(0), size(0) {
@@ -45,7 +44,6 @@ struct batch_t {
         ptr = nullptr;
         delete[] data;
     }
-    // ~batch_t() {}
     void push(segment_t item) {
         assert(count < batch_len);
         data[count++] = item;
@@ -55,11 +53,6 @@ struct batch_t {
         DBG("Batch - Allocating memory resources to " << batch_len
                                                       << " segments in batch");
         ptr = (uint8_t *)malloc(batch_len * data[0].size);
-        // // start_ptr = (uint8_t *)malloc(size);
-        // if (!ptr) {
-        //     throw std::bad_alloc();
-        // }
-        // buffer.resize(size);
         size_t cur_alloc = 0;
         for (size_t i = 0; i < batch_len; i++) {
             segment_t &seg = data[i];

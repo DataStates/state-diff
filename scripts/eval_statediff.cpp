@@ -56,14 +56,6 @@ main(int argc, char **argv) {
             .help("Level to start/stop processing the tree. Root is level 0.")
             .default_value(static_cast<uint32_t>(13))
             .scan<'u', uint32_t>();
-        // program.add_argument("--host-cache")
-        //     .help("Size of host cache for data transfers. (bytes)")
-        //     .default_value(static_cast<size_t>(1073741824))
-        //     .scan<'u', size_t>();
-        // program.add_argument("--dev-cache")
-        //     .help("Size of device cache for data transfers. (bytes)")
-        //     .default_value(static_cast<size_t>(1073741824))
-        //     .scan<'u', size_t>();
         program.add_argument("--run0")
             .help("Checkpoint files for run 0")
             .nargs(argparse::nargs_pattern::any)
@@ -100,8 +92,6 @@ main(int argc, char **argv) {
         std::string dtype = program.get<std::string>("--type");
         double err_tol = program.get<double>("--error");
         uint32_t level = program.get<uint32_t>("-l");
-        // size_t host_cache = program.get<size_t>("--host-cache");
-        // size_t dev_cache = program.get<size_t>("--dev-cache");
         size_t create_blksize = program.get<size_t>("-b");
         uint32_t offt_gap = program.get<uint32_t>("-g");
         auto run0_all_files = program.get<std::vector<std::string>>("--run0");
@@ -218,19 +208,13 @@ main(int argc, char **argv) {
         off_t filesize;
         get_file_size(ref_file, &filesize);
         size_t data_size = static_cast<size_t>(filesize);
-        size_t cache_size;
         if (comparing_runs) {
             off_t meta_filesize;
             get_file_size(run0_files[0], &meta_filesize);
             base_data_size = static_cast<size_t>(meta_filesize);
-            // cache_size = data_size * 2 + (1024 * 1024 * 1024);
-            cache_size = 16ULL * (1024 * 1024 * 1024);
-        } else {
-            cache_size = data_size + (1024 * 1024 * 1024);
         }
         state_diff::client_t<float> client_cur(0, data_size, err_tol, dtype[0],
-                                               chunk_size, level, fuzzy_hash,
-                                               cache_size);
+                                               chunk_size, level, fuzzy_hash);
         state_diff::client_t<float> client_prev;
 
         MPI_Barrier(MPI_COMM_WORLD);
@@ -398,8 +382,8 @@ main(int argc, char **argv) {
             if (logfile.tellp() == logfile.beg) {
                 logfile << "Rank,File,File size,Baseline file,Baseline file "
                            "size,Hash function,Chunk size,Data type,";
-                logfile << "Error tolerance,Start level,Host cache,Device "
-                           "cache,Create blksize,Offset gap,";
+                logfile
+                    << "Error tolerance,Start level,Create blksize,Offset gap,";
                 logfile
                     << "Setup time,Read time,Deserialization time,Construction "
                        "time,Compare tree time,Compare direct "
@@ -429,8 +413,6 @@ main(int argc, char **argv) {
             logfile << dtype << ",";
             logfile << err_tol << ",";
             logfile << level << ",";
-            logfile << cache_size << ",";
-            logfile << cache_size << ",";
             logfile << create_blksize << ",";
             logfile << offt_gap << ",";
             logfile << timers[0] << ",";

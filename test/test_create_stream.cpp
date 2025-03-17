@@ -52,9 +52,6 @@ main(int argc, char **argv) {
     int root_level = 1;
     std::string fname = "checkpoint.dat";
     std::string metadata_fn = "checkpoint.tree";
-    // int MB = 1024 * 1024;
-    // int dev_buf_sizes[] = {16 * MB, 64 * MB, 256 * MB, 1024 * MB};
-    int dev_buf_sizes[] = {256 * MB};
 
     int num_chunks = data_size / chunk_size;
     std::cout << "Nunber of leaf nodes = " << num_chunks << std::endl;
@@ -80,21 +77,18 @@ main(int argc, char **argv) {
         std::cout << "EXEC STATE:: File saved" << std::endl;
         liburing_io_reader_t reader(fname);
 
-        for (int buf_size : dev_buf_sizes) {
-            state_diff::client_t<float> client(
-                1, data_size, error_tolerance, dtype, chunk_size,
-                root_level, fuzzy_hash, buf_size);
-            auto start_create = std::chrono::high_resolution_clock::now();
-            client.create(run_data);
-            auto end_create = std::chrono::high_resolution_clock::now();
-            std::chrono::duration<double> create_time =
-                end_create - start_create;
-            std::cout << "Buffer size: " << buf_size
-                      << ", Creation time: " << create_time.count()
-                      << " seconds, throughput: "
-                      << (data_size / create_time.count()) / (1024 * MB)
-                      << " GB/s" << std::endl;
-        }
+        state_diff::client_t<float> client(
+            1, data_size, error_tolerance, dtype, chunk_size,
+            root_level, fuzzy_hash);
+        auto start_create = std::chrono::high_resolution_clock::now();
+        client.create(run_data);
+        auto end_create = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> create_time =
+            end_create - start_create;
+        std::cout << "Creation time: " << create_time.count()
+                    << " seconds, throughput: "
+                    << (data_size / create_time.count()) / (1024 * MB)
+                    << " GB/s" << std::endl;
     }
     Kokkos::finalize();
     return test_status;

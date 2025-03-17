@@ -1,11 +1,5 @@
 #include "data_loader.hpp"
 
-// data_loader_t::data_loader_t(size_t cache_size) {
-//     TIMER_START(init_loader);
-//     host_cache_ = new host_cache_t(cache_size);
-//     INFO("Loader - host caches initialized");
-//     TIMER_STOP(init_loader, "Initialized data loader");
-// }
 data_loader_t::data_loader_t() {
     TIMER_START(init_loader);
     host_cache_ = new host_cache_t();
@@ -47,7 +41,6 @@ data_loader_t::coalesce(int id, std::vector<size_t> offsets, size_t seg_size,
         }
     }
     // Account for the last group
-    // what if the size of the last chunk was not seg_size?
     batch_t *seg_batch = new batch_t(n_readers, in_group_offt);
     size_t segment_start = start * seg_size;
     size_t combined_size = (lastOffset - start + 1) * seg_size;
@@ -170,7 +163,6 @@ data_loader_t::file_load(FileReader &io_reader0, FileReader &io_reader1,
                     << ")- All batches staged in for read with two readers");
     TIMER_STOP(file_load, "Created segments and staged for file read");
 
-    // host_cache_->set_reader(loader_id, &io_reader0, &io_reader1);
     host_cache_->activate(loader_id);
 
     return loader_id;

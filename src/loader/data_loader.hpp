@@ -38,8 +38,6 @@ class data_loader_t {
                        size_t total_n_segs, size_t total_read_size);
 
   public:
-    // data_loader_t() {};
-    // data_loader_t(size_t host_cache_size);
     data_loader_t();
 
     ~data_loader_t();
@@ -49,8 +47,6 @@ class data_loader_t {
     int file_load(FileReader &io_reader0, FileReader &io_reader1,
                   std::vector<size_t> offsets, size_t seg_size,
                   TransferType trans_type, uint32_t gap = 0);
-    // std::pair<uint8_t *, size_t> next(int loader_id, TransferType
-    // trans_type);
     next_batch_t next(int loader_id, TransferType trans_type);
     size_t get_chunksize(size_t data_size);
 };

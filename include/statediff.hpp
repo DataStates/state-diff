@@ -31,7 +31,6 @@ template <typename DataType> class client_t {
     static const bool DEFAULT_FUZZY_HASH = true;
     static const size_t DEFAULT_START_LEVEL = 13;
     static const size_t DEFAULT_CHUNK_SIZE = 4 * KB;
-    static const size_t DEFAULT_CACHE_SIZE = 2ULL * GB;
     static const size_t DEFAULT_CREATE_READ_SIZE = 128 * MB;
     static const TransferType DEFAULT_CACHE_TIER = TransferType::FileToHost;
 
@@ -40,6 +39,7 @@ template <typename DataType> class client_t {
     tree_t tree;
     data_loader_t data_loader;
     int curr_chkpt_id = -1;
+    bool is_initialized_ = false;
 
     // comparison state
     Queue working_queue;
@@ -59,17 +59,20 @@ template <typename DataType> class client_t {
     // elementwise_compare)
     double timers[5];
 
-    void initialize(size_t n_chunks);
+    void resize(size_t n_chunks);
 
   public:
     client_t() {};
     client_t(int client_id, size_t data_size, double error,
              char dtype = DEFAULT_DTYPE, size_t chunk_size = DEFAULT_CHUNK_SIZE,
              size_t start_level = DEFAULT_START_LEVEL,
-             bool fuzzyhash = DEFAULT_FUZZY_HASH,
-             size_t cache_size = DEFAULT_CACHE_SIZE);
+             bool fuzzyhash = DEFAULT_FUZZY_HASH);
     ~client_t();
-
+    void initialize(int client_id, size_t data_size, double error,
+                    char dtype = DEFAULT_DTYPE,
+                    size_t chunk_size = DEFAULT_CHUNK_SIZE,
+                    size_t start_level = DEFAULT_START_LEVEL,
+                    bool fuzzyhash = DEFAULT_FUZZY_HASH);
     void create(std::vector<DataType> &data);
     void create(uint8_t *data_ptr);
 
@@ -113,25 +116,10 @@ template <typename DataType> class client_t {
 template <typename DataType>
 client_t<DataType>::client_t(int client_id, size_t data_size, double error,
                              char dtype, size_t chunk_size, size_t start,
-                             bool fuzzyhash, size_t cache_size) {
-    // : data_loader(cache_size) {
+                             bool fuzzyhash) {
     TIMER_START(client_init);
-    DBG("Begin client setup");
-    std::string setup_region_name = std::string("StateDiff:: Checkpoint ") +
-                                    std::to_string(client_id) +
-                                    std::string(": Setup");
-    Kokkos::Profiling::pushRegion(setup_region_name.c_str());
-    client_info =
-        client_info_t{client_id, dtype, data_size, chunk_size, start, error};
-
-    size_t n_chunks = data_size / chunk_size;
-    if (n_chunks * chunk_size < data_size)
-        n_chunks += 1;
-
-    tree = tree_t(n_chunks, chunk_size, fuzzyhash);
-    initialize(n_chunks);
-
-    Kokkos::Profiling::popRegion();
+    initialize(client_id, data_size, error, dtype, chunk_size, start,
+               fuzzyhash);
     TIMER_STOP(client_init,
                "State-diff client " << client_id << " initialized");
     DBG("Finished client setup");
@@ -139,7 +127,29 @@ client_t<DataType>::client_t(int client_id, size_t data_size, double error,
 
 template <typename DataType>
 void
-client_t<DataType>::initialize(size_t n_chunks) {
+client_t<DataType>::initialize(int client_id, size_t data_size, double error,
+                               char dtype, size_t chunk_size, size_t start,
+                               bool fuzzyhash) {
+    if (!is_initialized_) {
+        std::string setup_region_name = std::string("StateDiff:: Checkpoint ") +
+                                        std::to_string(client_id) +
+                                        std::string(": Setup");
+        Kokkos::Profiling::pushRegion(setup_region_name.c_str());
+        client_info = client_info_t{client_id,  dtype, data_size,
+                                    chunk_size, start, error};
+
+        size_t n_chunks = data_size / chunk_size;
+        if (n_chunks * chunk_size < data_size)
+            n_chunks += 1;
+        tree = tree_t(n_chunks, chunk_size, fuzzyhash);
+        resize(n_chunks);
+        Kokkos::Profiling::popRegion();
+    }
+}
+
+template <typename DataType>
+void
+client_t<DataType>::resize(size_t n_chunks) {
     working_queue = Queue(n_chunks);
     changed_chunks = Kokkos::Bitset<>(n_chunks);
     changed_chunks.reset();
@@ -154,6 +164,7 @@ client_t<DataType>::initialize(size_t n_chunks) {
     Kokkos::deep_copy(num_comparisons, 0);
     Kokkos::deep_copy(num_hash_comp, 0);
     Kokkos::deep_copy(num_changed, 0);
+    is_initialized_ = true;
 }
 
 template <typename DataType> client_t<DataType>::~client_t() {}
@@ -215,7 +226,7 @@ void
 client_t<DataType>::load(Archive &ar, const unsigned int version) {
     ar(client_info);
     ar(tree);
-    initialize(tree.num_leaves);
+    resize(tree.num_leaves);
 }
 
 template <typename DataType>
@@ -395,6 +406,7 @@ client_t<DataType>::compare_data(client_t &prev, int ld_id,
     auto &changed_blocks = changed_chunks;
     auto data_size = client_info.data_size;
     auto chunk_size = client_info.chunk_size;
+    size_t *offsets = diff_hash_vec.vector_d.data();
     int n_files = 2;
     size_t work_done = 0;
     DataType *prev_ptr = NULL, *curr_ptr = NULL;
@@ -417,15 +429,7 @@ client_t<DataType>::compare_data(client_t &prev, int ld_id,
         // even those that do not correspond to offsets in diff_hash_vec. We
         // adjust that by corelating with diff_hash_vec to only compare chunks
         // that need to be validated.
-        auto subview_bounds =
-            Kokkos::make_pair(work_done, work_done + proc_offt);
-        auto diff_hash_subview =
-            Kokkos::subview(diff_hash_vec.vector_d, subview_bounds);
-
-        Kokkos::Profiling::pushRegion(
-            diff_label + std::string("Statediff direct compare iter"));
         size_t ndiff = 0;
-        // Parallel comparison
         auto range_policy =
             Kokkos::RangePolicy<size_t>(0, proc_offt * elemPerChunk);
         Kokkos::parallel_reduce(
@@ -433,20 +437,22 @@ client_t<DataType>::compare_data(client_t &prev, int ld_id,
             KOKKOS_LAMBDA(const size_t idx, size_t &update) {
                 auto ncomp_access = num_comp.access();
                 size_t blk_idx = idx / elemPerChunk;   // Block idx
-                size_t gap = diff_hash_subview[blk_idx] - diff_hash_subview[0];
+                size_t curr_offset = offsets[work_done + blk_idx];
+                size_t gap = curr_offset - offsets[work_done];
                 size_t blk_start = gap * elemPerChunk;   // Block start
                 size_t elm_idx =
                     blk_start + (idx % elemPerChunk);   // Element in block
-                size_t data_idx =
-                    (diff_hash_subview[blk_idx] * chunk_size) +
-                    (elm_idx * sizeof(DataType));   // Element in file
-                if (data_idx < data_size) {
-                    if (!abs_comp(prev_ptr[elm_idx], curr_ptr[elm_idx], err_tol)) {
+                size_t data_idx = chunk_size * curr_offset +
+                                  (idx % elemPerChunk) * sizeof(float);
+                if ((work_done + blk_idx < num_diff_hash) &&
+                    (data_idx < data_size)) {
+                    if (!abs_comp(prev_ptr[elm_idx], curr_ptr[elm_idx],
+                                  err_tol)) {
                         update += 1;
-                        changed_blocks.set(diff_hash_subview[blk_idx]);
+                        changed_blocks.set(curr_offset);
                     }
+                    ncomp_access(0) += 1;
                 }
-                ncomp_access(0) += 1;
             },
             Kokkos::Sum<size_t>(ndiff));
         nchange += ndiff;

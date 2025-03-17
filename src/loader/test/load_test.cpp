@@ -16,7 +16,8 @@ int
 validate(DataType *data, DataType *loader_out, size_t data_len) {
     auto start = std::chrono::high_resolution_clock::now();
     for (size_t i = 0; i < data_len; i++) {
-        // std::cout << "Loader at index " << i << " = " << loader_out[i] << " vs real val = " << data[i] << "\n";
+        // std::cout << "Loader at index " << i << " = " << loader_out[i] << "
+        // vs real val = " << data[i] << "\n";
         if (data[i] != loader_out[i]) {
             std::cout << "Mismatch at index " << i << ": ifstream = " << data[i]
                       << ", loader = " << loader_out[i] << "\n";
@@ -33,8 +34,8 @@ validate(DataType *data, DataType *loader_out, size_t data_len) {
 
 template <typename DataType>
 void
-read_ifstream(std::string filename, DataType *data_veri_h,
-                 size_t num_elements, std::streampos start_offset = 0) {
+read_ifstream(std::string filename, DataType *data_veri_h, size_t num_elements,
+              std::streampos start_offset = 0) {
     std::ifstream f;
     f.exceptions(std::ifstream::failbit | std::ifstream::badbit);
     try {
@@ -50,17 +51,11 @@ read_ifstream(std::string filename, DataType *data_veri_h,
 
 int
 main(int argc, char **argv) {
-    size_t host_cache_size = std::stol(argv[1]);
-    std::string filename = argv[2];
-    std::string dtype = argv[3];
+    std::string filename = argv[1];
+    std::string dtype = argv[2];
 
-    using DataType = uint32_t;  // Default type
-    if (dtype.compare("-f") == 0) {
-        using DataType = float;  // If dtype is not "-f", set DataType to uint32_t
-    }
-    
     int MB = 1024 * 1024;
-    size_t read_size = 128*MB;
+    size_t read_size = 128 * MB;
     TransferType trans_type = TransferType::FileToHost;
 
     // Create reader
@@ -86,20 +81,35 @@ main(int argc, char **argv) {
         next_batch_t batch = data_loader.next(ld, trans_type);
         uint8_t *data_ptr = batch.ptr;
         size_t ready_size = batch.size;
-        printf("Client - Loaded batch %zu of size %zu bytes\n", ++i, ready_size);
-        std::memcpy(data_h.data()+read_bytes, data_ptr, ready_size);
+        printf("Client - Loaded batch %zu of size %zu bytes\n", ++i,
+               ready_size);
+        std::memcpy(data_h.data() + read_bytes, data_ptr, ready_size);
         read_bytes += ready_size;
     }
-    printf("Client - Loaded %zu batches (%zu bytes) out of %zu bytes of data\n", i, read_bytes, data_size);
+    printf("Client - Loaded %zu batches (%zu bytes) out of %zu bytes of data\n",
+           i, read_bytes, data_size);
 
     printf("Validating the results for correctness\n");
     try {
-        read_ifstream<DataType>(filename, (DataType *)data_veri_h.data(), data_size/sizeof(DataType));
+        if (dtype.compare("-f") == 0) {
+            read_ifstream<float>(filename, (float *)data_veri_h.data(),
+                                 data_size / sizeof(float));
+        } else {
+            read_ifstream<uint32_t>(filename, (uint32_t *)data_veri_h.data(),
+                                    data_size / sizeof(uint32_t));
+        }
         std::cout << "Validation data read successfully." << std::endl;
     } catch (const std::ifstream::failure &e) {
         std::cerr << "Exception occurred while reading file: " << e.what()
                   << std::endl;
     }
-    validate<DataType>((DataType *)data_veri_h.data(), (DataType *)data_h.data(), data_size/sizeof(DataType));
+    if (dtype.compare("-f") == 0) {
+        validate<float>((float *)data_veri_h.data(), (float *)data_h.data(),
+                        data_size / sizeof(float));
+    } else {
+        validate<uint32_t>((uint32_t *)data_veri_h.data(),
+                           (uint32_t *)data_h.data(),
+                           data_size / sizeof(uint32_t));
+    }
     return 0;
 }

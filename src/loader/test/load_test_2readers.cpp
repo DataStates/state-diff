@@ -29,16 +29,10 @@ validate(DataType *data0, DataType *data1, size_t data_len) {
 
 int
 main(int argc, char **argv) {
-    size_t host_cache_size = std::stol(argv[1]);
-    std::string filename0 = argv[2];
-    std::string filename1 = argv[3];
-    std::string dtype = argv[4];
-    int offset_pct = std::stoi(argv[5]);
-
-    using DataType = uint32_t;
-    if (dtype.compare("-f") == 0) {
-        using DataType = float;
-    }
+    std::string filename0 = argv[1];
+    std::string filename1 = argv[2];
+    std::string dtype = argv[3];
+    int offset_pct = std::stoi(argv[4]);
 
     size_t chunk_size = 8196;
     TransferType trans_type = TransferType::FileToHost;
@@ -63,9 +57,11 @@ main(int argc, char **argv) {
         unique_offsets.insert(int_dis(gen));
     }
 
-    std::vector<size_t> chunk_offsets(unique_offsets.begin(), unique_offsets.end());
+    std::vector<size_t> chunk_offsets(unique_offsets.begin(),
+                                      unique_offsets.end());
     std::sort(chunk_offsets.begin(), chunk_offsets.end());
-    printf("Generated %zu offsets (%d percent of %zu)\n", num_offsets, offset_pct, num_chunks);
+    printf("Generated %zu offsets (%d percent of %zu)\n", num_offsets,
+           offset_pct, num_chunks);
 
     // create loader
     // data_loader_t data_loader(host_cache_size);
@@ -74,8 +70,9 @@ main(int argc, char **argv) {
                                    chunk_size, trans_type, 2);
 
     // load data
-    size_t total_read_size = static_cast<size_t>(num_offsets*chunk_size);
-    printf("Data size = %zu | Total Read Size = %zu\n", data_size, total_read_size);
+    size_t total_read_size = static_cast<size_t>(num_offsets * chunk_size);
+    printf("Data size = %zu | Total Read Size = %zu\n", data_size,
+           total_read_size);
     std::vector<uint8_t> data_0(total_read_size);
     std::vector<uint8_t> data_1(total_read_size);
     size_t read_bytes = 0;
@@ -103,12 +100,19 @@ main(int argc, char **argv) {
         std::memcpy(data_0.data() + read_bytes, data_ptr0, ready_size);
         std::memcpy(data_1.data() + read_bytes, data_ptr1, ready_size);
         read_bytes += ready_size;
-        printf("Client - Loaded batch %zu of size %zu bytes\n", ++i, batch.size);
+        printf("Client - Loaded batch %zu of size %zu bytes\n", ++i,
+               batch.size);
     }
-    printf("Client - Loaded %zu batches (%zu bytes) out of %zu bytes of data\n", i, read_bytes, data_size);
+    printf("Client - Loaded %zu batches (%zu bytes) out of %zu bytes of data\n",
+           i, read_bytes, data_size);
 
     printf("Validating the results for correctness\n");
-    validate<DataType>((DataType *)data_0.data(), (DataType *)data_1.data(),
-    total_read_size / sizeof(DataType));
+    if (dtype.compare("-f") == 0) {
+        validate<float>((float *)data_0.data(), (float *)data_1.data(),
+                        total_read_size / sizeof(float));
+    } else {
+        validate<uint32_t>((uint32_t *)data_0.data(), (uint32_t *)data_1.data(),
+                           total_read_size / sizeof(uint32_t));
+    }
     return 0;
 }
