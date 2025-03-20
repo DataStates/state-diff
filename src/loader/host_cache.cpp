@@ -60,7 +60,7 @@ host_cache_t::set_reader(int id, FileReader *io_reader0,
     DBG("Host (" << id << ")- Setting reader to read from file");
     assert(io_reader0 != nullptr && io_reader1 != nullptr);
     freader_[id] = std::make_pair(io_reader0, io_reader1);
-    // activate(id);
+    //activate(id);
 }
 
 void

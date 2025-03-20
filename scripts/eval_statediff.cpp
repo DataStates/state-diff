@@ -56,6 +56,10 @@ main(int argc, char **argv) {
             .help("Level to start/stop processing the tree. Root is level 0.")
             .default_value(static_cast<uint32_t>(13))
             .scan<'u', uint32_t>();
+        program.add_argument("-i", "--ideal")
+            .help("benchmark ideal compute time, i.e., all data pre-loaded.")
+            .default_value(false)
+            .implicit_value(true);
         program.add_argument("--run0")
             .help("Checkpoint files for run 0")
             .nargs(argparse::nargs_pattern::any)
@@ -103,6 +107,7 @@ main(int argc, char **argv) {
         std::string output_fname =
             program.get<std::string>("--output-filename");
         std::string logname = program.get<std::string>("--result-logname");
+        bool ideal = program["--ideal"];
         STDOUT_PRINT("Chunk Size: %u\n", chunk_size);
         STDOUT_PRINT("Data Type:  %s\n", dtype.c_str());
         STDOUT_PRINT("Error Tol:  %s\n", err_tol);
@@ -193,17 +198,16 @@ main(int argc, char **argv) {
         size_t wasted_bytes = 0;
 
         double setup_time = 0;
-        double read_time = 0;
+        double serialize_time = 0;
+        double construction_time = 0;
         double deserialize_time = 0;
         double compare_time1 = 0;
         double compare_time2 = 0;
-        double serialize_time = 0;
-        double write_time = 0;
         std::vector<double> ld_cmp_timings = {0, 0};
 
         // Create statediff clients
         bool fuzzy_hash = true;
-        size_t base_data_size = 0;
+        size_t tree_size = 0;
         std::string ref_file =
             comparing_runs ? run1_full_files[0] : run0_files[0];
         off_t filesize;
@@ -212,7 +216,7 @@ main(int argc, char **argv) {
         if (comparing_runs) {
             off_t meta_filesize;
             get_file_size(run0_files[0], &meta_filesize);
-            base_data_size = static_cast<size_t>(meta_filesize);
+            tree_size = static_cast<size_t>(meta_filesize);
         }
         state_diff::client_t<float> client_cur(0, data_size, err_tol, dtype[0],
                                                chunk_size, level, fuzzy_hash);
@@ -247,12 +251,11 @@ main(int argc, char **argv) {
                 client_cur.create(reader_cur, create_blksize);
                 Kokkos::Profiling::popRegion();
                 Timer::time_point end_create = Timer::now();
-                double create_time = std::chrono::duration_cast<Duration>(
+                construction_time = std::chrono::duration_cast<Duration>(
                                          end_create - beg_create)
                                          .count();
                 std::cout << "\tRank " << world_rank
-                          << ": Create Tree: " << create_time << std::endl;
-                compare_time1 = create_time;
+                          << ": Create Tree: " << construction_time << std::endl;
                 std::vector<double> create_timings =
                     client_cur.get_create_time();
                 ld_cmp_timings[0] = create_timings[3];
@@ -325,7 +328,7 @@ main(int argc, char **argv) {
                 // ================================================================
                 Kokkos::Profiling::pushRegion("Compare phase");
                 client_cur.compare_with(0, reader_cur, client_prev, reader_prev,
-                                        offt_gap);
+                                        offt_gap, ideal);
                 compare_time1 = client_cur.get_tree_comparison_time();
                 compare_time2 = client_cur.get_data_compare_time();
                 wasted_bytes = client_cur.get_wastedbytes_count();
@@ -350,13 +353,6 @@ main(int argc, char **argv) {
             // ========================================================================================
             // Collect stats for logs
             // ========================================================================================
-            timers[0] = setup_time;
-            timers[1] = read_time;
-            timers[2] = deserialize_time;
-            timers[3] = compare_time1;
-            timers[4] = compare_time2;
-            timers[5] = serialize_time;
-            timers[6] = write_time;
             n_comparisons = client_cur.get_num_comparisons();
             n_hash_comp = client_cur.get_num_hash_comparisons();
             elem_changed = client_cur.get_num_changes();
@@ -381,61 +377,51 @@ main(int argc, char **argv) {
             std::ofstream logfile;
             logfile.open(logname, std::ofstream::out | std::ofstream::app);
             logfile.precision(10);
-            if (logfile.tellp() == logfile.beg) {
-                logfile << "Rank,File,File size,Baseline file,Baseline file "
-                           "size,Hash function,Chunk size,Data type,";
-                logfile
-                    << "Error tolerance,Start level,Create blksize,Offset gap,Wasted read,";
-                logfile
-                    << "Setup time,Read time,Deserialization time,Construction "
-                       "time,Compare tree time,Compare direct "
-                       "time,Serialization time,Write time,";
-                logfile << "Elements different,Hashes different,Num "
-                           "comparisons,Num hash comparisons,Filtered hashes,";
-                logfile << "Load time,Compute time\n";
-            }
-            logfile << world_rank << ",";
             if (comparing_runs) {
-                logfile << run1_files[idx] << "," << base_data_size << ",";
+                if (logfile.tellp() == logfile.beg) {
+                    logfile << "File,Data filesize,Tree filesize,Chunk size,Error tolerance,"
+                                "Offset gap,Wasted read,Elements different,Hashes different,"
+                                "Num comparisons,Num hash comparisons,Filtered hashes,Setup time,"
+                                "Deserialization time,Compare tree time,Compare direct time,Wait time,Compute time\n";
+                }
+                logfile << run1_files[idx] << ",";
+                logfile << data_size << ",";
+                logfile << tree_size << ",";
+                logfile << chunk_size << ",";
+                logfile << err_tol << ",";
+                logfile << offt_gap << ",";
+                logfile << wasted_bytes << ",";
+                logfile << elem_changed << ",";
+                logfile << changed_blocks << ",";
+                logfile << n_comparisons << ",";
+                logfile << n_hash_comp << ",";
+                logfile << filtered_blocks << ",";
+                logfile << setup_time << ",";
+                logfile << deserialize_time << ",";
+                logfile << compare_time1 << ",";
+                logfile << compare_time2 << ",";
+                logfile << ld_cmp_timings[0] << ",";
+                logfile << ld_cmp_timings[1] << std::endl;
+                logfile.close();
+
             } else {
-                logfile << run0_files[idx] << "," << data_size << ",";
-            }
-            if (comparing_runs) {
+                if (logfile.tellp() == logfile.beg) {
+                    logfile << "File,Data filesize,Chunk size,Error tolerance,"
+                                "Create blksize,Setup time,Construction time,Serialization time,"
+                                "Load time,Compute time\n";
+                }
                 logfile << run0_files[idx] << ",";
-                logfile << base_data_size << ",";
-            } else {
-                logfile << ",,";
+                logfile << data_size << ",";
+                logfile << chunk_size << ",";
+                logfile << err_tol << ",";
+                logfile << create_blksize << ",";
+                logfile << setup_time << ",";
+                logfile << construction_time << ",";
+                logfile << serialize_time << ",";
+                logfile << ld_cmp_timings[0] << ",";
+                logfile << ld_cmp_timings[1] << std::endl;
+                logfile.close();
             }
-            if (fuzzy_hash) {
-                logfile << "Fuzzy hash,";
-            } else {
-                logfile << "Murmur3,";
-            }
-            logfile << chunk_size << ",";
-            logfile << dtype << ",";
-            logfile << err_tol << ",";
-            logfile << level << ",";
-            logfile << create_blksize << ",";
-            logfile << offt_gap << ",";
-            logfile << wasted_bytes << ",";
-            logfile << timers[0] << ",";
-            logfile << timers[1] << ",";
-            logfile << timers[2] << ",";
-            if (comparing_runs) {
-                logfile << "0," << timers[3] << "," << timers[4] << ",";
-            } else {
-                logfile << timers[3] << ",0,0,";
-            }
-            logfile << timers[5] << ",";
-            logfile << timers[6] << ",";
-            logfile << elem_changed << ",";
-            logfile << changed_blocks << ",";
-            logfile << n_comparisons << ",";
-            logfile << n_hash_comp << ",";
-            logfile << filtered_blocks << ",";
-            logfile << ld_cmp_timings[0] << ",";
-            logfile << ld_cmp_timings[1] << std::endl;
-            logfile.close();
         }
     }
     Kokkos::finalize();
