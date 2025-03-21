@@ -107,7 +107,7 @@ main(int argc, char **argv) {
         std::string output_fname =
             program.get<std::string>("--output-filename");
         std::string logname = program.get<std::string>("--result-logname");
-        bool ideal = program["--ideal"];
+        bool ideal = program.get<bool>("--ideal");
         STDOUT_PRINT("Chunk Size: %u\n", chunk_size);
         STDOUT_PRINT("Data Type:  %s\n", dtype.c_str());
         STDOUT_PRINT("Error Tol:  %s\n", err_tol);
@@ -189,7 +189,6 @@ main(int argc, char **argv) {
                    run1_files[i].c_str());
         }
 
-        double timers[7] = {0.0};
         size_t elem_changed = 0;
         uint64_t changed_blocks = 0;
         uint64_t filtered_blocks = 0;

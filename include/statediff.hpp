@@ -86,8 +86,8 @@ template <typename DataType> class client_t {
 
     template <typename Reader>
     bool compare_with(int chkpt_id, Reader &curr_reader, client_t &prev,
-                      Reader &prev_reader, uint32_t offt_gap = 0,
-                      TransferType compare_tier = DEFAULT_CACHE_TIER, bool ideal_compare=false);
+                      Reader &prev_reader, uint32_t offt_gap = 0, bool ideal_compare=false,
+                      TransferType compare_tier = DEFAULT_CACHE_TIER);
 
     // Internal implementations
     size_t compare_trees(const client_t &prev, Queue &working_queue,
@@ -243,7 +243,7 @@ template <typename Reader>
 bool
 client_t<DataType>::compare_with(int chkpt_id, Reader &curr_reader,
                                  client_t &prev, Reader &prev_reader,
-                                 uint32_t offt_gap, TransferType compare_tier, bool ideal_compare) {
+                                 uint32_t offt_gap, bool ideal_compare, TransferType compare_tier) {
     TIMER_START(client_compare_with);
     ASSERT(client_info == prev.client_info ||
            "Comparing two clients with different metadata characteristics.");

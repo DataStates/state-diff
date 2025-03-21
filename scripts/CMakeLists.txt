@@ -79,3 +79,13 @@ set_target_properties(eval_statediff PROPERTIES
     CXX_STANDARD_REQUIRED YES
     CXX_EXTENSIONS OFF
 )
+
+add_executable(bench_create bench_create.cpp)
+target_include_directories(bench_create PUBLIC ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(bench_create PRIVATE Kokkos::kokkos)
+target_link_libraries(bench_create PRIVATE OpenSSL::SSL)
+set_target_properties(bench_create PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS OFF
+)
