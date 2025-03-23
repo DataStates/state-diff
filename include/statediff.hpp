@@ -274,15 +274,15 @@ client_t<DataType>::compare_with(int chkpt_id, Reader &curr_reader,
         timers[0] += setup_time;
 
         if(ideal_compare) {
+            compare_data_ideal(prev, 0, diff_hash_vec, changed_chunks, num_changed,
+                        num_comparisons, compare_tier, prev_reader, curr_reader);
+        } else {
             int ld_id = data_loader.file_load(prev_reader, curr_reader,
                                               diff_offsets, client_info.chunk_size,
                                               compare_tier, offt_gap);
             compare_data(prev, ld_id, diff_hash_vec, changed_chunks, num_changed,
                          num_comparisons, compare_tier);
             wasted_bytes = data_loader.get_wasted_bytes_count(ld_id);
-        } else {
-            compare_data_ideal(prev, 0, diff_hash_vec, changed_chunks, num_changed,
-                        num_comparisons, compare_tier, prev_reader, curr_reader);
         }
         DBG("Number of different hashes after phase 2: " << nchange);
     }
