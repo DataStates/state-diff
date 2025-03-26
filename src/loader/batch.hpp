@@ -8,7 +8,7 @@
 #include <vector>
 
 struct batch_t {
-    segment_t *data;
+    std::vector<segment_t> data;
     // Number of segments expected to be in a batch
     size_t batch_len;
     // count of offsets to process in the batch. proc_offt is by default 0,
@@ -18,32 +18,32 @@ struct batch_t {
     // batch_size)
     size_t count;
     size_t size;
-    uint8_t *ptr = nullptr;
+    std::vector<uint8_t> buffer;
 
     batch_t(size_t size_, size_t offt_count = 0)
-        : batch_len(size_), proc_offt(offt_count), count(0), size(0) {
-        data = new segment_t[batch_len];
+        : data(size_), batch_len(size_), proc_offt(offt_count), count(0),
+          size(0) {
     }
     batch_t &operator=(const batch_t &) = delete;
     batch_t(const batch_t &other)
-        : batch_len(other.batch_len), proc_offt(other.proc_offt), count(0),
-          size(other.size) {
-        data = new segment_t[batch_len];
+        : data(other.batch_len), batch_len(other.batch_len),
+          proc_offt(other.proc_offt), count(0), size(other.size) {
+        // data = new segment_t[batch_len];
         for (size_t i = 0; i < other.batch_len; i++) {
-            INFO("Building batch of size "
+            DBG("Building batch of size "
                  << other.batch_len
                  << " with items at offset = " << other.data[i].offset
                  << ", size = " << other.data[i].size / 1024 << "KB");
             data[i] = other.data[i];
-            data[i].buffer = nullptr;   // Buffer not allocated yet
+            // Resseting buffer as the copy can be made to forward a batch from
+            // host to device where the new batch will have a buffer pointing to
+            // device memory
+            data[i].buffer = nullptr;
             count++;
         }
     }
     batch_t(batch_t *other) : batch_t(*other) {}
-    ~batch_t() {
-        ptr = nullptr;
-        delete[] data;
-    }
+    ~batch_t() {}
     void push(segment_t item) {
         assert(count < batch_len);
         data[count++] = item;
@@ -52,25 +52,27 @@ struct batch_t {
     void allocate() {
         DBG("Batch - Allocating memory resources to " << batch_len
                                                       << " segments in batch");
-        ptr = (uint8_t *)malloc(batch_len * data[0].size);
+        buffer.resize(size);
         size_t cur_alloc = 0;
         for (size_t i = 0; i < batch_len; i++) {
             segment_t &seg = data[i];
-            seg.buffer = ptr + cur_alloc;
+            assert(cur_alloc + seg.size <= size);
+            seg.buffer = buffer.data() + cur_alloc;
             cur_alloc += seg.size;
         }
     }
     void inc_last(size_t inc_size) { data[count - 1].size += inc_size; }
     std::vector<segment_t> to_vec() {
-        return std::vector<segment_t>(data, data + batch_len);
+        return data;
     }
     std::vector<segment_t> left_vec() {
         size_t half_size = batch_len / 2;
-        return std::vector<segment_t>(data, data + half_size);
+        return std::vector<segment_t>(data.begin(), data.begin() + half_size);
     }
     std::vector<segment_t> right_vec() {
         size_t half_size = batch_len / 2;
-        return std::vector<segment_t>(data + half_size, data + batch_len);
+        return std::vector<segment_t>(data.begin() + half_size,
+                                      data.begin() + batch_len);
     }
 };
 

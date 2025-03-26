@@ -123,7 +123,6 @@ main(int argc, char **argv) {
         int world_rank = 0, world_size = 1;
         MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
         MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-        logname += "." + std::to_string(world_rank) + ".csv";
         if (world_rank == 0) {
             if (run0_all_files.size() > 0) {
                 for (std::string str : run0_all_files) {
@@ -374,9 +373,14 @@ main(int argc, char **argv) {
             // Write log
             // ========================================================================================
             std::ofstream logfile;
-            logfile.open(logname, std::ofstream::out | std::ofstream::app);
             logfile.precision(10);
             if (comparing_runs) {
+                if(ideal) {
+                    logname += "." + std::to_string(world_rank) + ".idealcompare.csv";
+                } else {
+                    logname += "." + std::to_string(world_rank) + ".compare.csv";
+                }
+                logfile.open(logname, std::ofstream::out | std::ofstream::app);
                 if (logfile.tellp() == logfile.beg) {
                     logfile << "File,Data filesize,Tree filesize,Chunk size,Error tolerance,"
                                 "Offset gap,Wasted read,Elements different,Hashes different,"
@@ -404,6 +408,8 @@ main(int argc, char **argv) {
                 logfile.close();
 
             } else {
+                logname += "." + std::to_string(world_rank) + ".create.csv";
+                logfile.open(logname, std::ofstream::out | std::ofstream::app);
                 if (logfile.tellp() == logfile.beg) {
                     logfile << "File,Data filesize,Chunk size,Error tolerance,"
                                 "Create blksize,Setup time,Construction time,Serialization time,"

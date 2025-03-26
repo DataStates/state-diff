@@ -21,9 +21,11 @@ class host_cache_t : public base_cache_t {
     ~host_cache_t();
     void set_reader(int id, FileReader *io_reader);
     void set_reader(int id, FileReader *io_reader0, FileReader *io_reader1);
+    // void activate(int id, size_t used_chks_per_read = 1);
     void activate(int id);
     void stage_in(int id, batch_t *seg_batch);
     void stage_out(int id, batch_t *seg_batch);
+    // void fetch_(int id, size_t used_chks_per_read = 1);
     void fetch_(int id);
     bool wait_for_completion();
     batch_t* get_completed(int id);

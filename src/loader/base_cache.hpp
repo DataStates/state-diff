@@ -27,9 +27,11 @@ class base_cache_t {
     // base_cache_t(size_t total_size) : tot_cache_size_(total_size) {};
     base_cache_t() {};
     virtual ~base_cache_t() {};
+    // virtual void activate(int id, size_t used_chks_per_read = 1) = 0;
     virtual void activate(int id) = 0;
     virtual void stage_in(int id, batch_t *seg_batch) = 0;
     virtual void stage_out(int id, batch_t *seg_batch) = 0;
+    // virtual void fetch_(int id, size_t used_chks_per_read = 1) = 0;
     virtual void fetch_(int id) = 0;
     virtual bool wait_for_completion() = 0;
     virtual batch_t *get_completed(int id) = 0;

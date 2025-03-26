@@ -34,9 +34,15 @@ class data_loader_t {
     std::unordered_map<int, size_t> wasted_bytes;
 
     void coalesce(int id, std::vector<size_t> offsets, size_t seg_size,
-                  uint32_t gap, int n_readers);
+                  uint32_t gap, int n_readers, size_t used_chks_per_read);
     void enqueue_reads(int id, size_t seg_size, size_t n_segs_per_read,
                        size_t total_n_segs, size_t total_read_size);
+    void stage_batch_if_ready(int id, std::vector<segment_t> &segments,
+                              size_t &wait_for_count, size_t &n_seg_in_segvec,
+                              int n_readers, size_t used_chks_per_read);
+    void stage_final_batch(int id, std::vector<segment_t> &segments,
+                           size_t wait_for_count, size_t n_seg_in_segvec,
+                           int n_readers);
 
   public:
     data_loader_t();
