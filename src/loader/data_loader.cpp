@@ -305,9 +305,9 @@ data_loader_t::file_load(FileReader &io_reader, size_t seg_size,
                     << ")- All batches staged in for read from file");
     TIMER_STOP(file_load, "Created segments and staged for file read");
 
-    // // Set the reader to use for file IO.
-    // // Making sure metadata are enqueue before setting the reader to avoid
-    // // having the thread wait and constantly pool for enqueue metadata.
+    // Set the reader to use for file IO.
+    // Making sure metadata are enqueue before setting the reader to avoid
+    // having the thread wait and constantly pool for enqueue metadata.
     host_cache_->set_reader(loader_id, &io_reader);
     return loader_id;
 }
@@ -315,7 +315,7 @@ data_loader_t::file_load(FileReader &io_reader, size_t seg_size,
 int
 data_loader_t::file_load(FileReader &io_reader0, FileReader &io_reader1,
                          std::vector<size_t> offsets, size_t seg_size,
-                         TransferType trans_type, uint32_t gap) {
+                         TransferType trans_type, uint32_t gap, size_t block_size) {
     TIMER_START(file_load);
     assert((trans_type == TransferType::FileToHost ||
             trans_type == TransferType::FileToDevice) &&
@@ -327,7 +327,8 @@ data_loader_t::file_load(FileReader &io_reader0, FileReader &io_reader1,
     // host_cache_->set_reader(loader_id, &io_reader0, &io_reader1);
 
     int n_readers = 2;
-    size_t wait_for_size = 128 * 1024 * 1024;
+    // size_t wait_for_size = 128 * 1024 * 1024;
+    size_t wait_for_size = block_size;
     size_t used_chks_per_read = (wait_for_size + seg_size - 1) / seg_size;
 
     INFO("Loader ("
@@ -389,7 +390,6 @@ data_loader_t::next(int id, TransferType trans_type) {
     assert(front_batch->data[0].buffer != nullptr && front_batch->size > 0);
     DBG("Retrieved pointer to offset " << front_batch->data[0].offset << " for "
                                        << front_batch->size << " bytes");
-    // exit(0);
     next_batch_t batch = {front_batch->data[0].buffer, front_batch->size,
                           front_batch->proc_offt};
     return batch;

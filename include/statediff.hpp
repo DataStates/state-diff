@@ -32,6 +32,7 @@ template <typename DataType> class client_t {
     static const size_t DEFAULT_START_LEVEL = 13;
     static const size_t DEFAULT_CHUNK_SIZE = 4 * KB;
     static const size_t DEFAULT_CREATE_READ_SIZE = 128 * MB;
+    static const size_t DEFAULT_COMPARE_READ_SIZE = 4 * MB;
     static const TransferType DEFAULT_CACHE_TIER = TransferType::FileToHost;
 
     // client variables
@@ -87,7 +88,7 @@ template <typename DataType> class client_t {
     template <typename Reader>
     bool compare_with(int chkpt_id, Reader &curr_reader, client_t &prev,
                       Reader &prev_reader, uint32_t offt_gap = 0,
-                      bool ideal_compare = false,
+                      size_t block_size = DEFAULT_COMPARE_READ_SIZE, bool ideal_compare = false,
                       TransferType compare_tier = DEFAULT_CACHE_TIER);
 
     // Internal implementations
@@ -250,7 +251,7 @@ template <typename Reader>
 bool
 client_t<DataType>::compare_with(int chkpt_id, Reader &curr_reader,
                                  client_t &prev, Reader &prev_reader,
-                                 uint32_t offt_gap, bool ideal_compare,
+                                 uint32_t offt_gap, size_t block_size, bool ideal_compare,
                                  TransferType compare_tier) {
     TIMER_START(client_compare_with);
     ASSERT(client_info == prev.client_info ||
@@ -292,7 +293,7 @@ client_t<DataType>::compare_with(int chkpt_id, Reader &curr_reader,
                       << std::endl;
             int ld_id = data_loader.file_load(
                 prev_reader, curr_reader, diff_offsets, client_info.chunk_size,
-                compare_tier, offt_gap);
+                compare_tier, offt_gap, block_size);
             // compare_data(prev, ld_id, diff_hash_vec, changed_chunks,
             //              num_changed, num_comparisons, compare_tier);
             compare_data(prev, ld_id, diff_offsets, changed_chunks, num_changed,

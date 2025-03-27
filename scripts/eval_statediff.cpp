@@ -40,9 +40,13 @@ main(int argc, char **argv) {
             .help("Data type")
             .default_value(std::string("float"))
             .choices("byte", "float", "double");
-        program.add_argument("-b", "--create_blksize")
-            .help("Block size in bytes for reads during tree creation")
-            .default_value(static_cast<size_t>(134217728))
+        // program.add_argument("-b", "--block_size")
+        //     .help("Block size in bytes for reads (tree creation or direct comparison)")
+        //     .default_value(static_cast<size_t>(134217728))
+        //     .scan<'u', size_t>();
+        program.add_argument("-b", "--block_size")
+            .help("For tree creation (in bytes) or for direct comparison (N x avail cores)")
+            .default_value(static_cast<size_t>(1))
             .scan<'u', size_t>();
         program.add_argument("-g", "--merge_gap")
             .help("Gap tolerance to merge non-contiguous offsets")
@@ -96,7 +100,7 @@ main(int argc, char **argv) {
         std::string dtype = program.get<std::string>("--type");
         double err_tol = program.get<double>("--error");
         uint32_t level = program.get<uint32_t>("-l");
-        size_t create_blksize = program.get<size_t>("-b");
+        size_t block_size = program.get<size_t>("-b");
         uint32_t offt_gap = program.get<uint32_t>("-g");
         auto run0_all_files = program.get<std::vector<std::string>>("--run0");
         auto run1_all_files = program.get<std::vector<std::string>>("--run1");
@@ -225,7 +229,7 @@ main(int argc, char **argv) {
         for (uint32_t idx = 0; idx < num_file_per_run; idx++) {
             std::cout << "Rank " << world_rank << ": Checkpoint " << idx
                       << std::endl;
-
+            size_t blk_size = block_size;
             if (!comparing_runs) {
                 // ================================================================
                 // Setup
@@ -246,7 +250,7 @@ main(int argc, char **argv) {
                 // ================================================================
                 Timer::time_point beg_create = Timer::now();
                 Kokkos::Profiling::pushRegion("Create tree");
-                client_cur.create(reader_cur, create_blksize);
+                client_cur.create(reader_cur, blk_size);
                 Kokkos::Profiling::popRegion();
                 Timer::time_point end_create = Timer::now();
                 construction_time = std::chrono::duration_cast<Duration>(
@@ -325,8 +329,14 @@ main(int argc, char **argv) {
                 // Compare
                 // ================================================================
                 Kokkos::Profiling::pushRegion("Compare phase");
+                size_t n_threads = Kokkos::num_threads();
+                blk_size *= chunk_size * n_threads;
+                // std::cout << "block size = " << b_size  
+                //         << "; num thread = " << n_threads 
+                //         << "; chunk size = " << chunk_size 
+                //         << "; in block size = " << block_size << std::endl;
                 client_cur.compare_with(0, reader_cur, client_prev, reader_prev,
-                                        offt_gap, ideal);
+                                        offt_gap, blk_size, ideal);
                 compare_time1 = client_cur.get_tree_comparison_time();
                 compare_time2 = client_cur.get_data_compare_time();
                 wasted_bytes = client_cur.get_wastedbytes_count();
@@ -382,7 +392,7 @@ main(int argc, char **argv) {
                 }
                 logfile.open(logname, std::ofstream::out | std::ofstream::app);
                 if (logfile.tellp() == logfile.beg) {
-                    logfile << "File,Data filesize,Tree filesize,Chunk size,Error tolerance,"
+                    logfile << "File,Data filesize,Tree filesize,Chunk size,Error tolerance,Block size,"
                                 "Offset gap,Wasted read,Elements different,Hashes different,"
                                 "Num comparisons,Num hash comparisons,Filtered hashes,Setup time,"
                                 "Deserialization time,Compare tree time,Compare direct time,Wait time,Compute time\n";
@@ -392,6 +402,7 @@ main(int argc, char **argv) {
                 logfile << tree_size << ",";
                 logfile << chunk_size << ",";
                 logfile << err_tol << ",";
+                logfile << blk_size << ",";
                 logfile << offt_gap << ",";
                 logfile << wasted_bytes << ",";
                 logfile << elem_changed << ",";
@@ -419,7 +430,7 @@ main(int argc, char **argv) {
                 logfile << data_size << ",";
                 logfile << chunk_size << ",";
                 logfile << err_tol << ",";
-                logfile << create_blksize << ",";
+                logfile << block_size << ",";
                 logfile << setup_time << ",";
                 logfile << construction_time << ",";
                 logfile << serialize_time << ",";

@@ -53,7 +53,7 @@ class data_loader_t {
                   TransferType trans_type);
     int file_load(FileReader &io_reader0, FileReader &io_reader1,
                   std::vector<size_t> offsets, size_t seg_size,
-                  TransferType trans_type, uint32_t gap = 0);
+                  TransferType trans_type, uint32_t gap, size_t block_size);
     next_batch_t next(int loader_id, TransferType trans_type);
     size_t get_wasted_bytes_count(int id);
 };
