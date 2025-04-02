@@ -64,6 +64,10 @@ main(int argc, char **argv) {
             .help("benchmark ideal compute time, i.e., all data pre-loaded.")
             .default_value(false)
             .implicit_value(true);
+        program.add_argument("-d", "--data_only")
+            .help("benchmark data loading only without comparison in phase 2.")
+            .default_value(false)
+            .implicit_value(true);
         program.add_argument("--run0")
             .help("Checkpoint files for run 0")
             .nargs(argparse::nargs_pattern::any)
@@ -112,6 +116,7 @@ main(int argc, char **argv) {
             program.get<std::string>("--output-filename");
         std::string logname = program.get<std::string>("--result-logname");
         bool ideal = program.get<bool>("--ideal");
+        bool exec_compare = !(program.get<bool>("--data_only"));
         STDOUT_PRINT("Chunk Size: %u\n", chunk_size);
         STDOUT_PRINT("Data Type:  %s\n", dtype.c_str());
         STDOUT_PRINT("Error Tol:  %s\n", err_tol);
@@ -336,7 +341,7 @@ main(int argc, char **argv) {
                 //         << "; chunk size = " << chunk_size 
                 //         << "; in block size = " << block_size << std::endl;
                 client_cur.compare_with(0, reader_cur, client_prev, reader_prev,
-                                        offt_gap, blk_size, ideal);
+                                        offt_gap, blk_size, ideal, exec_compare);
                 compare_time1 = client_cur.get_tree_comparison_time();
                 compare_time2 = client_cur.get_data_compare_time();
                 wasted_bytes = client_cur.get_wastedbytes_count();

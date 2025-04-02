@@ -89,7 +89,7 @@ template <typename DataType> class client_t {
     bool compare_with(int chkpt_id, Reader &curr_reader, client_t &prev,
                       Reader &prev_reader, uint32_t offt_gap = 0,
                       size_t block_size = DEFAULT_COMPARE_READ_SIZE, bool ideal_compare = false,
-                      TransferType compare_tier = DEFAULT_CACHE_TIER);
+                      bool exec_compare = true, TransferType compare_tier = DEFAULT_CACHE_TIER);
 
     // Internal implementations
     size_t compare_trees(const client_t &prev, Queue &working_queue,
@@ -106,7 +106,7 @@ template <typename DataType> class client_t {
                         Kokkos::Bitset<> &changed_chunks,
                         Kokkos::View<size_t[1]> &num_changed,
                         Kokkos::View<size_t[1]> &num_comparisons,
-                        uint32_t offt_gap, TransferType cache_tier);
+                        uint32_t offt_gap, TransferType cache_tier, bool exec_compare);
     template <typename Reader>
     size_t compare_data_ideal(client_t &prev, int ld_id,
                               Vector<size_t> &diff_hash_vec,
@@ -252,7 +252,7 @@ bool
 client_t<DataType>::compare_with(int chkpt_id, Reader &curr_reader,
                                  client_t &prev, Reader &prev_reader,
                                  uint32_t offt_gap, size_t block_size, bool ideal_compare,
-                                 TransferType compare_tier) {
+                                 bool exec_compare, TransferType compare_tier) {
     TIMER_START(client_compare_with);
     ASSERT(client_info == prev.client_info ||
            "Comparing two clients with different metadata characteristics.");
@@ -289,7 +289,8 @@ client_t<DataType>::compare_with(int chkpt_id, Reader &curr_reader,
                                num_changed, num_comparisons, compare_tier,
                                prev_reader, curr_reader);
         } else {
-            std::cout << "Comparing data in the default comparison case"
+            std::cout << "Comparing data in the default comparison case with exec_compare = "
+                    << exec_compare
                       << std::endl;
             int ld_id = data_loader.file_load(
                 prev_reader, curr_reader, diff_offsets, client_info.chunk_size,
@@ -297,7 +298,7 @@ client_t<DataType>::compare_with(int chkpt_id, Reader &curr_reader,
             // compare_data(prev, ld_id, diff_hash_vec, changed_chunks,
             //              num_changed, num_comparisons, compare_tier);
             compare_data(prev, ld_id, diff_offsets, changed_chunks, num_changed,
-                         num_comparisons, offt_gap, compare_tier);
+                         num_comparisons, offt_gap, compare_tier, exec_compare);
             wasted_bytes = data_loader.get_wasted_bytes_count(ld_id);
         }
         DBG("Number of different hashes after phase 2: " << nchange);
@@ -418,7 +419,7 @@ client_t<DataType>::compare_data(client_t &prev, int ld_id,
                                  Kokkos::Bitset<> &changed_chunks,
                                  Kokkos::View<size_t[1]> &num_changed,
                                  Kokkos::View<size_t[1]> &num_comparisons,
-                                 uint32_t offt_gap, TransferType compare_tier) {
+                                 uint32_t offt_gap, TransferType compare_tier, bool exec_compare) {
     std::string diff_label = std::string("Chkpt ") +
                              std::to_string(client_info.id) + std::string(": ");
     Kokkos::Profiling::pushRegion(
@@ -453,11 +454,11 @@ client_t<DataType>::compare_data(client_t &prev, int ld_id,
         INFO("Work Done : " << work_done << "; Offsets to process: " << proc_offt
             << "; offsets read: "
             << ready_size / client_info.chunk_size);
-        Timer::time_point setup_beg = Timer::now();
         size_t work_end = work_done + proc_offt;
+        
+        Timer::time_point setup_beg = Timer::now();
         std::vector<size_t> relevant_offt(diff_offsets.begin() + work_done,
-                                          diff_offsets.begin() + work_end);
-        // printf("Here - %zu vs %zu\n", proc_offt, relevant_offt.size());
+                                        diff_offsets.begin() + work_end);
         size_t iter = relevant_offt[0];
         std::vector<size_t> all_read_offts = {iter};
         for (size_t i = 1; i < proc_offt; i++) {
@@ -474,43 +475,42 @@ client_t<DataType>::compare_data(client_t &prev, int ld_id,
         Timer::time_point setup_end = Timer::now();
         timers[0] +=
             std::chrono::duration_cast<Duration>(setup_end - setup_beg).count();
-        // printf("There\n");
-        // exit(0);
-
-        Timer::time_point cmp_beg = Timer::now();
-        size_t ndiff = 0;
-        auto range_policy =
-            Kokkos::RangePolicy<size_t>(0, all_read_offts.size());
-        Kokkos::parallel_reduce(
-            "Count differences", range_policy,
-            KOKKOS_LAMBDA(const size_t idx, size_t &update) {
-                size_t chunk_offt = all_read_offts[idx];
-                bool relevant = std::binary_search(
-                    relevant_offt.begin(), relevant_offt.end(), chunk_offt);
-                if (relevant) {
-                    size_t start = idx * elemPerChunk;
-                    bool diff_found = false;
-                    for (size_t i = 0; i < elemPerChunk; i++) {
-                        size_t elem_idx = start + i;
-                        if (!abs_comp(prev_ptr[elem_idx], curr_ptr[elem_idx],
-                                      err_tol)) {
-                            update += 1;
-                            diff_found = true;
+        if (exec_compare) {
+            Timer::time_point cmp_beg = Timer::now();
+            size_t ndiff = 0;
+            auto range_policy =
+                Kokkos::RangePolicy<size_t>(0, all_read_offts.size());
+            Kokkos::parallel_reduce(
+                "Count differences", range_policy,
+                KOKKOS_LAMBDA(const size_t idx, size_t &update) {
+                    size_t chunk_offt = all_read_offts[idx];
+                    bool relevant = std::binary_search(
+                        relevant_offt.begin(), relevant_offt.end(), chunk_offt);
+                    if (relevant) {
+                        size_t start = idx * elemPerChunk;
+                        bool diff_found = false;
+                        for (size_t i = 0; i < elemPerChunk; i++) {
+                            size_t elem_idx = start + i;
+                            if (!abs_comp(prev_ptr[elem_idx], curr_ptr[elem_idx],
+                                        err_tol)) {
+                                update += 1;
+                                diff_found = true;
+                            }
                         }
+                        if (diff_found) {
+                            changed_blocks.set(chunk_offt);
+                        }
+                        auto ncomp_access = num_comp.access();
+                        ncomp_access(0) += elemPerChunk;
                     }
-                    if (diff_found) {
-                        changed_blocks.set(chunk_offt);
-                    }
-                    auto ncomp_access = num_comp.access();
-                    ncomp_access(0) += elemPerChunk;
-                }
-            },
-            Kokkos::Sum<size_t>(ndiff));
-        nchange += ndiff;
+                },
+                Kokkos::Sum<size_t>(ndiff));
+            nchange += ndiff;
+            Timer::time_point cmp_end = Timer::now();
+            timers[4] +=
+                std::chrono::duration_cast<Duration>(cmp_end - cmp_beg).count();
+        }
         work_done = work_end;
-        Timer::time_point cmp_end = Timer::now();
-        timers[4] +=
-            std::chrono::duration_cast<Duration>(cmp_end - cmp_beg).count();
     }
     Timer::time_point compare_end = Timer::now();
     Kokkos::Experimental::contribute(num_comparisons, num_comp);

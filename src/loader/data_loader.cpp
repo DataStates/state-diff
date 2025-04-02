@@ -1,4 +1,6 @@
 #include "data_loader.hpp"
+#include <iostream>
+#include <string>
 
 data_loader_t::data_loader_t() {
     TIMER_START(init_loader);
@@ -334,7 +336,12 @@ data_loader_t::file_load(FileReader &io_reader0, FileReader &io_reader1,
     INFO("Loader ("
          << loader_id
          << ")- Creating segments for two readers given file offsets");
+    // auto start_coalesce = std::chrono::high_resolution_clock::now();
     coalesce(loader_id, offsets, seg_size, gap, n_readers, used_chks_per_read);
+    // auto end_coalesce = std::chrono::high_resolution_clock::now();
+    // std::chrono::duration<double> coalesce_time = end_coalesce - start_coalesce;
+    // double c_time = coalesce_time.count();
+    // printf("Coalesce time = %f ms\n", c_time*1000);
     INFO("Loader (" << loader_id
                     << ")- All batches staged in for read with two readers");
     TIMER_STOP(file_load, "Created segments and staged for file read");
