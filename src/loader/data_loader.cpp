@@ -14,14 +14,14 @@ data_loader_t::~data_loader_t() {
     DBG("Loader - destroyed");
 };
 
-void
+std::vector<size_t>
 data_loader_t::coalesce(int id, std::vector<size_t> offsets, size_t seg_size,
                         uint32_t gap, int n_readers,
                         size_t used_chks_per_read) {
     INFO("Loader (" << id << ")- Coalescing offsets with gap = " << gap
                     << " for large reads");
     if (offsets.empty())
-        return;
+        return {};
     size_t start = offsets[0];
     size_t lastOffset = start;
     size_t in_group_offt = 1;
@@ -29,6 +29,7 @@ data_loader_t::coalesce(int id, std::vector<size_t> offsets, size_t seg_size,
     size_t wait_for_count = 0;
     size_t n_seg_in_segvec = 0;
     std::vector<segment_t> segments;
+    std::vector<size_t> all_read_offts;
     for (size_t i = 1; i < offsets.size(); i++) {
         size_t curr_offset = offsets[i];
         if (curr_offset - lastOffset <= gap) { // include new offset
@@ -43,6 +44,11 @@ data_loader_t::coalesce(int id, std::vector<size_t> offsets, size_t seg_size,
             wasted_read_bytes += (combined_size - needed_size);
             n_seg_in_segvec += n_segs;
             segments.push_back(segment_t(segment_start, combined_size));
+            IOP_count[id]++; // number of IO operation (a segment is an IOP)
+            // Keep track of all read chunk offsets in segment
+            for (size_t i = start; i < lastOffset + 1; i++) {
+                all_read_offts.push_back(i);
+            }
             // Create batch and stage in when we reach minimum IO and compute
             wait_for_count += in_group_offt;
             if (wait_for_count >= used_chks_per_read) {
@@ -58,6 +64,7 @@ data_loader_t::coalesce(int id, std::vector<size_t> offsets, size_t seg_size,
                 wait_for_count = 0;
                 n_seg_in_segvec = 0;
             }
+            // Reset variables
             start = curr_offset;
             lastOffset = curr_offset;
             in_group_offt = 1;
@@ -72,6 +79,10 @@ data_loader_t::coalesce(int id, std::vector<size_t> offsets, size_t seg_size,
     wasted_read_bytes += (combined_size - needed_size);
     n_seg_in_segvec += n_segs;
     segments.push_back(segment_t(segment_start, combined_size));
+    // Keep track of all read chunk offsets in segment
+    for (size_t i = start; i < lastOffset + 1; i++) {
+        all_read_offts.push_back(i);
+    }
     wait_for_count += in_group_offt;
     // Create last batch and stage in for read
     batch_t *seg_batch =
@@ -83,6 +94,7 @@ data_loader_t::coalesce(int id, std::vector<size_t> offsets, size_t seg_size,
     }
     host_cache_->stage_in(id, seg_batch);
     wasted_bytes[id] = wasted_read_bytes;
+    return all_read_offts;
 }
 
 void
@@ -227,7 +239,7 @@ data_loader_t::file_load(FileReader &io_reader, size_t seg_size,
     return loader_id;
 }
 
-int
+std::pair<int, std::vector<size_t>>
 data_loader_t::file_load(FileReader &io_reader0, FileReader &io_reader1,
                          std::vector<size_t> offsets, size_t seg_size,
                          TransferType trans_type, uint32_t gap, size_t block_size) {
@@ -246,7 +258,7 @@ data_loader_t::file_load(FileReader &io_reader0, FileReader &io_reader1,
          << loader_id
          << ")- Creating segments for two readers given file offsets");
     // auto start_coalesce = std::chrono::high_resolution_clock::now();
-    coalesce(loader_id, offsets, seg_size, gap, n_readers, used_chks_per_read);
+    std::vector<size_t> read_offsets = coalesce(loader_id, offsets, seg_size, gap, n_readers, used_chks_per_read);
     // auto end_coalesce = std::chrono::high_resolution_clock::now();
     // std::chrono::duration<double> coalesce_time = end_coalesce - start_coalesce;
     // double c_time = coalesce_time.count();
@@ -257,7 +269,9 @@ data_loader_t::file_load(FileReader &io_reader0, FileReader &io_reader1,
     
     // Set two reader to use for file IO
     host_cache_->set_reader(loader_id, &io_reader0, &io_reader1);
-    return loader_id;
+    std::pair<int, std::vector<size_t>> lid_offt_pair(loader_id, read_offsets);
+    // return loader_id;
+    return lid_offt_pair;
 }
 
 // This implementation of next works because the memory for the segments in a
@@ -313,4 +327,9 @@ data_loader_t::next(int id, TransferType trans_type) {
 size_t
 data_loader_t::get_wasted_bytes_count(int id) {
     return wasted_bytes[id];
+}
+
+size_t
+data_loader_t::get_IOP_count(int id) {
+    return IOP_count[id];
 }

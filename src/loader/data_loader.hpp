@@ -32,9 +32,12 @@ class data_loader_t {
     std::atomic<int> instance_count{0};
     std::unordered_map<int, size_t> ready_count;
     std::unordered_map<int, size_t> wasted_bytes;
+    std::unordered_map<int, size_t> IOP_count;
+    std::unordered_map<int, size_t> IO_time;
 
-    void coalesce(int id, std::vector<size_t> offsets, size_t seg_size,
-                  uint32_t gap, int n_readers, size_t used_chks_per_read);
+    std::vector<size_t> coalesce(int id, std::vector<size_t> offsets,
+                                 size_t seg_size, uint32_t gap, int n_readers,
+                                 size_t used_chks_per_read);
     void enqueue_reads(int id, size_t seg_size, size_t n_segs_per_read,
                        size_t total_n_segs, size_t total_read_size);
     void stage_batch_if_ready(int id, std::vector<segment_t> &segments,
@@ -51,10 +54,12 @@ class data_loader_t {
 
     int file_load(FileReader &io_reader, size_t seg_size,
                   TransferType trans_type);
-    int file_load(FileReader &io_reader0, FileReader &io_reader1,
-                  std::vector<size_t> offsets, size_t seg_size,
-                  TransferType trans_type, uint32_t gap, size_t block_size);
+    std::pair<int, std::vector<size_t>>
+    file_load(FileReader &io_reader0, FileReader &io_reader1,
+              std::vector<size_t> offsets, size_t seg_size,
+              TransferType trans_type, uint32_t gap, size_t block_size);
     next_batch_t next(int loader_id, TransferType trans_type);
     size_t get_wasted_bytes_count(int id);
+    size_t get_IOP_count(int id) ;
 };
 #endif   // __DATA_LOADER_HPP

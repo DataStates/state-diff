@@ -202,7 +202,7 @@ main(int argc, char **argv) {
         uint64_t filtered_blocks = 0;
         uint64_t n_comparisons = 0;
         uint64_t n_hash_comp = 0;
-        size_t wasted_bytes = 0;
+        size_t wasted_bytes = 0, iop_count = 0;
 
         double setup_time = 0;
         double serialize_time = 0;
@@ -345,6 +345,7 @@ main(int argc, char **argv) {
                 compare_time1 = client_cur.get_tree_comparison_time();
                 compare_time2 = client_cur.get_data_compare_time();
                 wasted_bytes = client_cur.get_wastedbytes_count();
+                iop_count = client_cur.get_IOP_count();
                 Kokkos::Profiling::popRegion();
                 std::cout << "\tRank " << world_rank
                           << ": Compare Tree Phase 1: " << compare_time1
@@ -398,7 +399,7 @@ main(int argc, char **argv) {
                 logfile.open(logname, std::ofstream::out | std::ofstream::app);
                 if (logfile.tellp() == logfile.beg) {
                     logfile << "File,Data filesize,Tree filesize,Chunk size,Error tolerance,Block size,"
-                                "Offset gap,Wasted read,Elements different,Hashes different,"
+                                "Offset gap,Wasted read,IOP count,Elements different,Hashes different,"
                                 "Num comparisons,Num hash comparisons,Filtered hashes,Setup time,"
                                 "Deserialization time,Compare tree time,Compare direct time,Wait time,Compute time\n";
                 }
@@ -410,6 +411,7 @@ main(int argc, char **argv) {
                 logfile << blk_size << ",";
                 logfile << offt_gap << ",";
                 logfile << wasted_bytes << ",";
+                logfile << iop_count << ",";
                 logfile << elem_changed << ",";
                 logfile << changed_blocks << ",";
                 logfile << n_comparisons << ",";

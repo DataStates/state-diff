@@ -66,8 +66,10 @@ main(int argc, char **argv) {
     // create loader
     // data_loader_t data_loader(host_cache_size);
     data_loader_t data_loader;
-    int ld = data_loader.file_load(uring_reader0, uring_reader1, chunk_offsets,
-                                   chunk_size, trans_type, 2, 134217728);
+    std::pair<int, std::vector<size_t>> lid_offst_pair =
+        data_loader.file_load(uring_reader0, uring_reader1, chunk_offsets,
+                              chunk_size, trans_type, 2, 134217728);
+    int ld = lid_offst_pair.first;
 
     // load data
     size_t total_read_size = static_cast<size_t>(num_offsets * chunk_size);
