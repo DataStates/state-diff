@@ -210,7 +210,7 @@ main(int argc, char **argv) {
         double deserialize_time = 0;
         double compare_time1 = 0;
         double compare_time2 = 0;
-        std::vector<double> ld_cmp_timings = {0, 0};
+        std::vector<double> ld_cmp_timings = {0, 0, 0};
 
         // Create statediff clients
         bool fuzzy_hash = true;
@@ -336,10 +336,6 @@ main(int argc, char **argv) {
                 Kokkos::Profiling::pushRegion("Compare phase");
                 size_t n_threads = Kokkos::num_threads();
                 blk_size *= chunk_size * n_threads;
-                // std::cout << "block size = " << b_size  
-                //         << "; num thread = " << n_threads 
-                //         << "; chunk size = " << chunk_size 
-                //         << "; in block size = " << block_size << std::endl;
                 client_cur.compare_with(0, reader_cur, client_prev, reader_prev,
                                         offt_gap, blk_size, ideal, exec_compare);
                 compare_time1 = client_cur.get_tree_comparison_time();
@@ -401,7 +397,7 @@ main(int argc, char **argv) {
                     logfile << "File,Data filesize,Tree filesize,Chunk size,Error tolerance,Block size,"
                                 "Offset gap,Wasted read,IOP count,Elements different,Hashes different,"
                                 "Num comparisons,Num hash comparisons,Filtered hashes,Setup time,"
-                                "Deserialization time,Compare tree time,Compare direct time,Wait time,Compute time\n";
+                                "Deserialization time,Compare tree time,Compare direct time,Load time,Compute time,Wait time\n";
                 }
                 logfile << run1_files[idx] << ",";
                 logfile << data_size << ",";
@@ -422,7 +418,8 @@ main(int argc, char **argv) {
                 logfile << compare_time1 << ",";
                 logfile << compare_time2 << ",";
                 logfile << ld_cmp_timings[0] << ",";
-                logfile << ld_cmp_timings[1] << std::endl;
+                logfile << ld_cmp_timings[1] << ",";
+                logfile << ld_cmp_timings[2] << std::endl;
                 logfile.close();
 
             } else {
