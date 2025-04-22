@@ -59,8 +59,8 @@ template <typename DataType> class client_t {
     size_t IOP_count = 0;
 
     // timers (setup, compare_tree, compare_direct, load_direct,
-    // elementwise_compare)
-    double timers[5];
+    // elementwise_compare, wait_direct)
+    double timers[6];
 
     void resize(size_t n_chunks);
 
@@ -173,9 +173,10 @@ client_t<DataType>::resize(size_t n_chunks) {
     Kokkos::resize(diff_hash_vec.vector_h, n_chunks);
 
     // Clear stats
-    timers[0] = 0;
-    timers[1] = 0;
-    timers[2] = 0;
+    // timers[0] = 0;
+    // timers[1] = 0;
+    // timers[2] = 0;
+    std::fill(std::begin(timers), std::end(timers), 0.0);
     diff_hash_vec.clear();
     Kokkos::deep_copy(num_comparisons, 0);
     Kokkos::deep_copy(num_hash_comp, 0);
@@ -445,11 +446,20 @@ client_t<DataType>::compare_data(client_t &prev, Reader &reader0,
     while (work_done < num_diff_hash) {
         Timer::time_point iter_beg = Timer::now();
         // Read one batch of data
+        // Iterations are IO bound with a non-zero wait time after
+        // comparison. Therefore, the next load iteration will
+        // start after comparison+wait time. Thus load time is
+        // comparison + wait times, except the 1st iterarion where
+        // load time is wait time
+        Timer::time_point wait_beg = Timer::now();
         next_batch_t front_batch = data_loader.next(ld_id, compare_tier);
         prev_ptr = reinterpret_cast<DataType *>(front_batch.ptr);
+        // total size of data in batch (wasted + used)
         size_t ready_size = front_batch.size / n_files;
         curr_ptr = prev_ptr + ready_size / sizeof(DataType);
+        // number of used offsets per read, approx work size
         size_t proc_offt = front_batch.offt_count;
+        Timer::time_point wait_end = Timer::now();
 
         // Compare data in batch
         Timer::time_point cmp_beg = Timer::now();
@@ -491,19 +501,29 @@ client_t<DataType>::compare_data(client_t &prev, Reader &reader0,
                 Kokkos::Sum<size_t>(ndiff));
             nchange += ndiff;
         }
-        work_done = work_end;
-        chunks_read += n_chunks;
         Timer::time_point cmp_end = Timer::now();
         Timer::time_point iter_end = Timer::now();
 
         // update timers
         double comp_time_iter =
             std::chrono::duration_cast<Duration>(cmp_end - cmp_beg).count();
+        double wait_time_iter =
+            std::chrono::duration_cast<Duration>(wait_end - wait_beg).count();
         double total_time_iter =
             std::chrono::duration_cast<Duration>(iter_end - iter_beg).count();
-        timers[4] += comp_time_iter;                     // comparison time
-        timers[3] += total_time_iter - comp_time_iter;   // load time
         timers[2] += total_time_iter;   // total comparison time
+        // load time
+        if(work_done == 0) {
+            timers[3] += wait_time_iter;
+        } else {
+            timers[3] += total_time_iter;
+        }
+        timers[4] += comp_time_iter;    // comparison time  
+        timers[5] += wait_time_iter;    // wait time
+        
+        // update iterators
+        work_done = work_end;
+        chunks_read += n_chunks;
     }
     Kokkos::Experimental::contribute(num_comparisons, num_comp);
     wasted_bytes = data_loader.get_wasted_bytes_count(ld_id);
@@ -573,6 +593,8 @@ client_t<DataType>::compare_data_ideal_compute(
         reader1.wait_all();
         Timer::time_point load_end = Timer::now();
         timers[3] +=
+            std::chrono::duration_cast<Duration>(load_end - load_beg).count();
+	timers[5] +=
             std::chrono::duration_cast<Duration>(load_end - load_beg).count();
 
         Kokkos::Profiling::pushRegion(
@@ -689,8 +711,8 @@ client_t<DataType>::get_compare_time() const {
 template <typename DataType>
 std::vector<double>
 client_t<DataType>::get_direct_compare_time() const {
-    // load time and comparison time during direct comparison
-    return {timers[3], timers[4]};
+    // load time, comparison time and wait time during direct comparison
+    return {timers[3], timers[4], timers[5]};
 }
 
 template <typename DataType>

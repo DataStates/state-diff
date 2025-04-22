@@ -55,19 +55,19 @@
 #     CXX_EXTENSIONS OFF
 # )
 
-# find_package(MPI REQUIRED)
-# add_executable(eval_statediff eval_statediff.cpp)
-# target_include_directories(eval_statediff PUBLIC ${CMAKE_SOURCE_DIR}/include)
-# target_link_libraries(eval_statediff PRIVATE MPI::MPI_CXX)
-# target_link_libraries(eval_statediff PRIVATE Kokkos::kokkos)
-# target_link_libraries(eval_statediff PRIVATE OpenSSL::SSL)
-# target_link_libraries(eval_statediff PRIVATE statediff)
-# target_link_libraries(eval_statediff PRIVATE argparse)
-# set_target_properties(eval_statediff PROPERTIES
-#     CXX_STANDARD 17
-#     CXX_STANDARD_REQUIRED YES
-#     CXX_EXTENSIONS OFF
-# )
+find_package(MPI REQUIRED)
+add_executable(eval_statediff eval_statediff.cpp)
+target_include_directories(eval_statediff PUBLIC ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(eval_statediff PRIVATE MPI::MPI_CXX)
+target_link_libraries(eval_statediff PRIVATE Kokkos::kokkos)
+target_link_libraries(eval_statediff PRIVATE OpenSSL::SSL)
+target_link_libraries(eval_statediff PRIVATE statediff)
+target_link_libraries(eval_statediff PRIVATE argparse)
+set_target_properties(eval_statediff PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS OFF
+)
 
 # add_executable(posix_vs_liburing posix_vs_liburing.cpp)
 # target_include_directories(posix_vs_liburing PUBLIC ${CMAKE_SOURCE_DIR}/include)
@@ -99,7 +99,7 @@ set_target_properties(bench_compute PROPERTIES
     CXX_EXTENSIONS OFF
 )
 
-add_executable(bench_load bench_load_calls.cpp)
+add_executable(bench_load bench_load_calls_two.cpp)
 target_include_directories(bench_load PUBLIC ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(bench_load PRIVATE statediff)
 target_link_libraries(bench_load PRIVATE Kokkos::kokkos)

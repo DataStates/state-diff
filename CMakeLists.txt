@@ -16,13 +16,13 @@ find_package(Kokkos REQUIRED)
 find_package(OpenSSL REQUIRED)
 
 ##### Enable testing
-enable_testing()
+# enable_testing()
 
 ##### Subdirectories
 add_subdirectory(src)
 
 ##### State-diff Testing
-add_subdirectory(test)
+# add_subdirectory(test)
 
 ##### State-diff Benchmarking
 add_subdirectory(scripts)

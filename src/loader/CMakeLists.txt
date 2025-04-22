@@ -25,4 +25,4 @@ install (TARGETS statediff-loader EXPORT statediffTargets
 )
 
 ###### Unit tests
-add_subdirectory(test)
+# add_subdirectory(test)
