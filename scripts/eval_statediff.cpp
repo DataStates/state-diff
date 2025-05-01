@@ -121,8 +121,6 @@ main(int argc, char **argv) {
         STDOUT_PRINT("Data Type:  %s\n", dtype.c_str());
         STDOUT_PRINT("Error Tol:  %s\n", err_tol);
         STDOUT_PRINT("Start Level %u\n", level);
-        STDOUT_PRINT("Host Cache:  %s\n", dtype.c_str());
-        STDOUT_PRINT("Dev Cache:  %s\n", dtype.c_str());
 
         std::sort(run0_all_files.begin(), run0_all_files.end());
         std::sort(run1_all_files.begin(), run1_all_files.end());

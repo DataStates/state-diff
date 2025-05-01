@@ -69,6 +69,19 @@ set_target_properties(eval_statediff PROPERTIES
     CXX_EXTENSIONS OFF
 )
 
+add_executable(eval_direct eval_direct.cpp)
+target_include_directories(eval_direct PUBLIC ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src/common)
+target_link_libraries(eval_direct PRIVATE statediff)
+target_link_libraries(eval_direct PRIVATE MPI::MPI_CXX)
+target_link_libraries(eval_direct PRIVATE Kokkos::kokkos)
+target_link_libraries(eval_direct PRIVATE OpenSSL::SSL)
+target_link_libraries(eval_direct PRIVATE argparse)
+set_target_properties(eval_direct PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS OFF
+)
+
 # add_executable(posix_vs_liburing posix_vs_liburing.cpp)
 # target_include_directories(posix_vs_liburing PUBLIC ${CMAKE_SOURCE_DIR}/include)
 # target_link_libraries(posix_vs_liburing PRIVATE OpenSSL::SSL)

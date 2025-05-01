@@ -58,8 +58,12 @@ class data_loader_t {
     file_load(FileReader &io_reader0, FileReader &io_reader1,
               std::vector<size_t> offsets, size_t seg_size,
               TransferType trans_type, uint32_t gap, size_t block_size);
+    std::pair<int, std::vector<size_t>>
+    file_load(FileReader &io_reader0, FileReader &io_reader1,
+              std::vector<size_t> offsets, size_t seg_size,
+              TransferType trans_type, int nthreads = 16);
     next_batch_t next(int loader_id, TransferType trans_type);
     size_t get_wasted_bytes_count(int id);
-    size_t get_IOP_count(int id) ;
+    size_t get_IOP_count(int id);
 };
 #endif   // __DATA_LOADER_HPP

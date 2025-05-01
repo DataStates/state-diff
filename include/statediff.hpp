@@ -438,9 +438,12 @@ client_t<DataType>::compare_data(client_t &prev, Reader &reader0,
     DataType *prev_ptr = NULL, *curr_ptr = NULL;
 
     // start loading data from the two readers
+    // std::pair<int, std::vector<size_t>> lid_offst_pair = data_loader.file_load(
+    //     reader0, reader1, diff_offsets, client_info.chunk_size, compare_tier,
+    //     offt_gap, block_size);
+    int nthreads = Kokkos::num_threads();
     std::pair<int, std::vector<size_t>> lid_offst_pair = data_loader.file_load(
-        reader0, reader1, diff_offsets, client_info.chunk_size, compare_tier,
-        offt_gap, block_size);
+        reader0, reader1, diff_offsets, client_info.chunk_size, compare_tier, nthreads);
     int ld_id = lid_offst_pair.first;
     std::vector<size_t> all_read_offts = lid_offst_pair.second;
     while (work_done < num_diff_hash) {
