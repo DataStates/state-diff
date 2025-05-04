@@ -201,6 +201,8 @@ main(int argc, char **argv) {
         uint64_t n_comparisons = 0;
         uint64_t n_hash_comp = 0;
         size_t wasted_bytes = 0, iop_count = 0;
+        int best_gap = 0;
+        size_t best_block_size = 0;
 
         double setup_time = 0;
         double serialize_time = 0;
@@ -334,12 +336,17 @@ main(int argc, char **argv) {
                 Kokkos::Profiling::pushRegion("Compare phase");
                 size_t n_threads = Kokkos::num_threads();
                 blk_size *= chunk_size * n_threads;
+                // blk_size = 1ULL * 1024 * 1024 * 1024;
+                // blk_size = chunk_size * n_threads;
                 client_cur.compare_with(0, reader_cur, client_prev, reader_prev,
                                         offt_gap, blk_size, ideal, exec_compare);
                 compare_time1 = client_cur.get_tree_comparison_time();
                 compare_time2 = client_cur.get_data_compare_time();
                 wasted_bytes = client_cur.get_wastedbytes_count();
                 iop_count = client_cur.get_IOP_count();
+                auto ld_info = client_cur.get_loader_info();
+                best_gap = ld_info.first;
+                best_block_size = ld_info.second;
                 Kokkos::Profiling::popRegion();
                 std::cout << "\tRank " << world_rank
                           << ": Compare Tree Phase 1: " << compare_time1
@@ -402,8 +409,8 @@ main(int argc, char **argv) {
                 logfile << tree_size << ",";
                 logfile << chunk_size << ",";
                 logfile << err_tol << ",";
-                logfile << blk_size << ",";
-                logfile << offt_gap << ",";
+                logfile << best_block_size << ",";
+                logfile << best_gap << ",";
                 logfile << wasted_bytes << ",";
                 logfile << iop_count << ",";
                 logfile << elem_changed << ",";

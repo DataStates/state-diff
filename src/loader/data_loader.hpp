@@ -22,6 +22,13 @@ struct next_batch_t {
     size_t offt_count;   // Number of offsets to process
 };
 
+struct loader_info_t {
+    int ld_id;
+    std::vector<size_t> read_offsets;
+    int best_gap;
+    size_t best_block_size;
+};
+
 class data_loader_t {
 
     using FileReader = base_io_reader_t;
@@ -54,11 +61,12 @@ class data_loader_t {
 
     int file_load(FileReader &io_reader, size_t seg_size,
                   TransferType trans_type);
-    std::pair<int, std::vector<size_t>>
+    // std::pair<int, std::vector<size_t>>
+    loader_info_t 
     file_load(FileReader &io_reader0, FileReader &io_reader1,
               std::vector<size_t> offsets, size_t seg_size,
               TransferType trans_type, uint32_t gap, size_t block_size);
-    std::pair<int, std::vector<size_t>>
+    loader_info_t 
     file_load(FileReader &io_reader0, FileReader &io_reader1,
               std::vector<size_t> offsets, size_t seg_size,
               TransferType trans_type, int nthreads = 16);

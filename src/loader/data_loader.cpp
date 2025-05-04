@@ -240,7 +240,7 @@ data_loader_t::file_load(FileReader &io_reader, size_t seg_size,
     return loader_id;
 }
 
-std::pair<int, std::vector<size_t>>
+loader_info_t
 data_loader_t::file_load(FileReader &io_reader0, FileReader &io_reader1,
                          std::vector<size_t> offsets, size_t seg_size,
                          TransferType trans_type, uint32_t gap,
@@ -272,12 +272,13 @@ data_loader_t::file_load(FileReader &io_reader0, FileReader &io_reader1,
 
     // Set two reader to use for file IO
     host_cache_->set_reader(loader_id, &io_reader0, &io_reader1);
-    std::pair<int, std::vector<size_t>> lid_offt_pair(loader_id, read_offsets);
+    // std::pair<int, std::vector<size_t>> lid_offt_pair(loader_id, read_offsets);
+    loader_info_t lid_offt_pair = {loader_id, read_offsets, static_cast<int>(gap), block_size};
     // return loader_id;
     return lid_offt_pair;
 }
 
-std::pair<int, std::vector<size_t>>
+loader_info_t
 data_loader_t::file_load(FileReader &io_reader0, FileReader &io_reader1,
                          std::vector<size_t> offsets, size_t seg_size,
                          TransferType trans_type, int nthreads) {
@@ -312,7 +313,7 @@ data_loader_t::file_load(FileReader &io_reader0, FileReader &io_reader1,
 
     // Set two reader to use for file IO
     host_cache_->set_reader(loader_id, &io_reader0, &io_reader1);
-    std::pair<int, std::vector<size_t>> lid_offt_pair(loader_id, read_offsets);
+    loader_info_t lid_offt_pair = {loader_id, read_offsets, gap, block_size};
     // return loader_id;
     return lid_offt_pair;
 }

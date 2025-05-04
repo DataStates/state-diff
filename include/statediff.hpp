@@ -57,6 +57,8 @@ template <typename DataType> class client_t {
     size_t nchange = 0;
     size_t wasted_bytes = 0;
     size_t IOP_count = 0;
+    int best_gap = 0;
+    size_t best_batch_size = 0;
 
     // timers (setup, compare_tree, compare_direct, load_direct,
     // elementwise_compare, wait_direct)
@@ -127,6 +129,7 @@ template <typename DataType> class client_t {
     std::vector<double> get_compare_time() const;
     std::vector<double> get_direct_compare_time() const;
     client_info_t get_client_info() const;
+    std::pair<int, size_t> get_loader_info() const;
 };
 
 template <typename DataType>
@@ -437,15 +440,30 @@ client_t<DataType>::compare_data(client_t &prev, Reader &reader0,
     auto first_offset = diff_offsets.begin();
     DataType *prev_ptr = NULL, *curr_ptr = NULL;
 
-    // start loading data from the two readers
+
     // std::pair<int, std::vector<size_t>> lid_offst_pair = data_loader.file_load(
     //     reader0, reader1, diff_offsets, client_info.chunk_size, compare_tier,
     //     offt_gap, block_size);
+
+    // start loading data from the two readers
+    // using the input gap
+    // loader_info_t lid_offst_pair = data_loader.file_load(
+    //     reader0, reader1, diff_offsets, client_info.chunk_size, compare_tier,
+    //     offt_gap, block_size);
+    // int ld_id = lid_offst_pair.ld_id;
+    // std::vector<size_t> all_read_offts = lid_offst_pair.read_offsets;
+    // best_gap = lid_offst_pair.best_gap;
+    // best_batch_size = lid_offst_pair.best_block_size;
+
+    // using our performance model
     int nthreads = Kokkos::num_threads();
-    std::pair<int, std::vector<size_t>> lid_offst_pair = data_loader.file_load(
+    loader_info_t lid_offst_pair = data_loader.file_load(
         reader0, reader1, diff_offsets, client_info.chunk_size, compare_tier, nthreads);
-    int ld_id = lid_offst_pair.first;
-    std::vector<size_t> all_read_offts = lid_offst_pair.second;
+    int ld_id = lid_offst_pair.ld_id;
+    std::vector<size_t> all_read_offts = lid_offst_pair.read_offsets;
+    best_gap = lid_offst_pair.best_gap;
+    best_batch_size = lid_offst_pair.best_block_size;
+    
     while (work_done < num_diff_hash) {
         Timer::time_point iter_beg = Timer::now();
         // Read one batch of data
@@ -734,6 +752,12 @@ template <typename DataType>
 client_info_t
 client_t<DataType>::get_client_info() const {
     return client_info;
+}
+
+template <typename DataType>
+std::pair<int, size_t>
+client_t<DataType>::get_loader_info() const {
+    return std::make_pair(best_gap, best_batch_size);
 }
 
 }   // namespace state_diff
