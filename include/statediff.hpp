@@ -222,7 +222,7 @@ client_t<DataType>::create(Reader &reader, size_t read_blk_size,
     int ld = data_loader.file_load(reader, read_blk_size, create_tree_tier);
     tree.create(client_info, data_loader, ld, create_tree_tier);
     TIMER_STOP(client_create_tree,
-               "State-diff tree " << curr_chkpt_id << " created from reader");
+               "State-diff tree " << curr_chkpt_id+1 << " created from reader");
     curr_chkpt_id++;
 }
 

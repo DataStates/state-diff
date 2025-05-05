@@ -4,6 +4,7 @@ include(CMakeFindDependencyMacro)
 
 find_dependency(OpenSSL REQUIRED)
 find_dependency(Kokkos REQUIRED)
+find_dependency(liburing REQUIRED)
 
 if (@ADIOS2_FOUND@)
   find_dependency(ADIOS2 REQUIRED)

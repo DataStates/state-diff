@@ -18,7 +18,7 @@ target_include_directories (statediff-loader PUBLIC
 )
 
 ###### Install libraries
-install (TARGETS statediff-loader EXPORT statediffTargets
+install (TARGETS asyncDataReader statediff-loader EXPORT statediffTargets
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
