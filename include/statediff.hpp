@@ -149,7 +149,7 @@ void
 client_t<DataType>::initialize(int client_id, size_t data_size, double error,
                                char dtype, size_t chunk_size, size_t start,
                                bool fuzzyhash) {
-    if (!is_initialized_) {
+    // if (!is_initialized_) {
         std::string setup_region_name = std::string("StateDiff:: Checkpoint ") +
                                         std::to_string(client_id) +
                                         std::string(": Setup");
@@ -163,7 +163,7 @@ client_t<DataType>::initialize(int client_id, size_t data_size, double error,
         tree = tree_t(n_chunks, chunk_size, fuzzyhash);
         resize(n_chunks);
         Kokkos::Profiling::popRegion();
-    }
+    // }
 }
 
 template <typename DataType>
@@ -184,6 +184,11 @@ client_t<DataType>::resize(size_t n_chunks) {
     Kokkos::deep_copy(num_comparisons, 0);
     Kokkos::deep_copy(num_hash_comp, 0);
     Kokkos::deep_copy(num_changed, 0);
+    nchange = 0;
+    wasted_bytes = 0;
+    IOP_count = 0;
+    best_gap = 0;
+    best_batch_size = 0;
     is_initialized_ = true;
 }
 

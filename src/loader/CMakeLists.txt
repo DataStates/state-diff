@@ -6,7 +6,7 @@ add_library (statediff-loader SHARED
 
 # add_dependencies(statediff-loader asyncDataReader)
 
-# target_link_libraries(statediff-loader PUBLIC statediff-io)
+#target_link_libraries(statediff-loader PUBLIC statediff-io)
 target_link_libraries(statediff-loader PUBLIC asyncDataReader)
 
 ##### Add include directories

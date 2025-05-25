@@ -41,3 +41,5 @@ add_subdirectory(extern/liburing-loader)
 # add_subdirectory(readers)
 add_subdirectory(loader)
 # add_subdirectory(tools)
+
+set_target_properties(asyncDataReader PROPERTIES POSITION_INDEPENDENT_CODE ON)

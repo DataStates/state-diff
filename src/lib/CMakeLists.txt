@@ -9,7 +9,7 @@ add_library(statediff SHARED
 add_library(statediff::client ALIAS statediff)
 
 #### Library linking
-# target_link_libraries(statediff PUBLIC statediff-io statediff-loader Kokkos::kokkos)
+#target_link_libraries(statediff PUBLIC statediff-io statediff-loader Kokkos::kokkos)
 target_link_libraries(statediff PUBLIC asyncDataReader statediff-loader Kokkos::kokkos)
 
 set_target_properties(statediff PROPERTIES PUBLIC_HEADER ${CMAKE_SOURCE_DIR}/include/statediff.hpp)

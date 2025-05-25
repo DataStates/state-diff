@@ -10,10 +10,7 @@ class host_cache_t : public base_cache_t {
     using FileReader = base_io_reader_t;
     using SingleOrDoubleReader = std::variant<FileReader*, std::pair<FileReader*, FileReader*>>;
 
-    // FileReader *freader_ = nullptr;
-    // std::unordered_map<int, FileReader *> freader_;
     std::unordered_map<int, SingleOrDoubleReader> freader_;
-    // uint8_t *start_ptr_ = nullptr;
 
     void submit_work(int id);
 
