@@ -7,12 +7,14 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(argparse)
 
 #Liburing-loader
+# Allow override from environment or -D
+set(LIBURING_LOADER_REPO "https://github.com/DataStates/liburing-loader.git" CACHE STRING "URL to liburing-loader repo")
 set(READER_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/src/extern/liburing-loader/include")
 if(NOT EXISTS "${READER_INCLUDE_DIR}/async_data_reader.hpp")
     message(STATUS "Liburing-loader library not found. Downloading...")
     FetchContent_Declare(
         statediff-io
-        GIT_REPOSITORY git@github.com:DataStates/liburing-loader.git
+        GIT_REPOSITORY ${LIBURING_LOADER_REPO}
         GIT_TAG        rev-id2offset
         SOURCE_DIR     ${CMAKE_SOURCE_DIR}/src/extern/liburing-loader
     )
