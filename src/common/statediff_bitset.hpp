@@ -2,6 +2,7 @@
 #define __MODIFIED_KOKKOS_BITSET_HPP
 #include <Kokkos_Core.hpp>
 #include <Kokkos_Functional.hpp>
+#include <bit>
 
 // Assuming necessary Kokkos implementation details are included or accessible
 
@@ -23,7 +24,8 @@ class Bitset {
   };
   enum : unsigned { block_mask = block_size - 1u };
   enum : unsigned {
-    block_shift = Kokkos::Impl::integral_power_of_two(block_size)
+    //block_shift = Kokkos::Impl::integral_power_of_two(block_size)
+    block_shift = std::countr_zero(block_size)
   };
 
   using block_view_type = Kokkos::View<unsigned*, Device, Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
