@@ -9,20 +9,17 @@ add_library(statediff::client ALIAS statediff)
 #### Dependencies
 # Cereal Settings
 set(CEREAL_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/extern/cereal/include")
-
 if(NOT EXISTS "${CEREAL_INCLUDE_DIR}/cereal/cereal.hpp")
     message(STATUS "Cereal library not found. Downloading...")
     include(FetchContent)
-
-    # Declare the Boost content
     FetchContent_Declare(
         cereal
         GIT_REPOSITORY https://github.com/USCiLab/cereal.git
         GIT_TAG        v1.3.2
         SOURCE_DIR     ${CMAKE_SOURCE_DIR}/extern/cereal
     )
-
-    # Fetch the content
+    set(BUILD_SANDBOX OFF CACHE BOOL "Disable Cereal tests")
+    set(SKIP_PERFORMANCE_COMPARISON ON CACHE BOOL "Disable Cereal performance comparison")
     FetchContent_MakeAvailable(cereal)
 endif()
 
