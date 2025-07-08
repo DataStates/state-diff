@@ -23,7 +23,8 @@ class Bitset {
   };
   enum : unsigned { block_mask = block_size - 1u };
   enum : unsigned {
-    block_shift = Kokkos::Impl::integral_power_of_two(block_size)
+    // block_shift = Kokkos::Impl::integral_power_of_two(block_size)
+    block_shift = integral_power_of_two(block_size)
   };
 
   using block_view_type = Kokkos::View<unsigned*, Device, Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
@@ -107,6 +108,16 @@ class Bitset {
   KOKKOS_FORCEINLINE_FUNCTION
   unsigned* data() const {
     return m_blocks.data();
+  }
+
+  KOKKOS_FORCEINLINE_FUNCTION
+  constexpr int integral_power_of_two(size_t value) {
+      int shift = 0;
+      while (value > 1) {
+          value >>= 1;
+          ++shift;
+      }
+      return shift;
   }
 
   private:
