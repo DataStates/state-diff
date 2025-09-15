@@ -1,6 +1,8 @@
 // #include "common/direct_io.hpp"
 #include "direct_io.hpp"
 #include "liburing_reader.hpp"
+#include "mmap_reader.hpp"
+#include "posix_reader.hpp"
 #include "mpi.h"
 #include "statediff.hpp"
 #include "stdio.h"
@@ -297,6 +299,13 @@ main(int argc, char **argv) {
                 Kokkos::Profiling::pushRegion("Setup");
                 liburing_io_reader_t reader_prev(run0_full_files[idx]);
                 liburing_io_reader_t reader_cur(run1_full_files[idx]);
+
+                // mmap_io_reader_t reader_prev(run0_full_files[idx]);
+                // mmap_io_reader_t reader_cur(run1_full_files[idx]);
+
+                // posix_io_reader_t reader_prev(run0_full_files[idx]);
+                // posix_io_reader_t reader_cur(run1_full_files[idx]);
+
                 Kokkos::Profiling::popRegion();
                 Timer::time_point end_setup = Timer::now();
                 setup_time =

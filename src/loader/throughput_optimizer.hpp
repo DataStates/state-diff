@@ -12,10 +12,26 @@ class ThroughputOptimizer {
     // double comp_curve_max_;
     // double comp_growth_rate_;
     // double comp_midpoint_;
-    double compute_slope_ = 0.743;
-    double compute_intercept_ = -17.0f;
-    std::vector<double> io_slope_ = {0.281, 0.058};
-    double io_intercept_ = -5.525;
+    // double compute_slope_ = 0.743;
+    // double compute_intercept_ = -17.0f;
+    // std::vector<double> io_slope_ = {0.281, 0.058};
+    // double io_intercept_ = -5.525;
+
+    double compute_slope_ = 0.748;
+    double compute_intercept_ = -17.0366f;
+
+    // PFS
+    std::vector<double> io_slope_ = {0.359, 0.018};
+    double io_intercept_ = -5.097;
+
+    // SSD
+    // std::vector<double> io_slope_ = {0.386, 0.411};
+    // double io_intercept_ = -13.883;
+
+    // Hybrid
+    // std::vector<double> io_slope_ = {0.218, 0.131};
+    // double io_intercept_ = -5.668;
+
     std::vector<int> gaps = {0, 1, 2, 3};
 
   public:

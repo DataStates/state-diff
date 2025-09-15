@@ -11,6 +11,7 @@
 #include "io_reader.hpp"
 #include "merkle_tree.hpp"
 #include "statediff_bitset.hpp"
+#include "mmap_reader.hpp"
 #include <chrono>
 #include <climits>
 #include <cstddef>
@@ -115,6 +116,12 @@ template <typename DataType> class client_t {
                                       Kokkos::View<size_t[1]> &num_comparisons,
                                       TransferType compare_tier,
                                       Reader &reader0, Reader &reader1);
+    // template <typename Reader>
+    // size_t compare_data_mmap_posix(client_t &prev, Reader &reader0,
+    //                              Reader &reader1, Vector<size_t> &diff_hash_vec,
+    //                              Kokkos::Bitset<> &changed_chunks,
+    //                              Kokkos::View<size_t[1]> &num_changed,
+    //                              Kokkos::View<size_t[1]> &num_comparisons);
     // Stats getters
     size_t get_num_hash_comparisons() const;
     size_t get_num_comparisons() const;
@@ -452,22 +459,22 @@ client_t<DataType>::compare_data(client_t &prev, Reader &reader0,
 
     // start loading data from the two readers
     // using the input gap
-    // loader_info_t lid_offst_pair = data_loader.file_load(
-    //     reader0, reader1, diff_offsets, client_info.chunk_size, compare_tier,
-    //     offt_gap, block_size);
-    // int ld_id = lid_offst_pair.ld_id;
-    // std::vector<size_t> all_read_offts = lid_offst_pair.read_offsets;
-    // best_gap = lid_offst_pair.best_gap;
-    // best_batch_size = lid_offst_pair.best_block_size;
-
-    // using our performance model
-    int nthreads = Kokkos::num_threads();
     loader_info_t lid_offst_pair = data_loader.file_load(
-        reader0, reader1, diff_offsets, client_info.chunk_size, compare_tier, nthreads);
+        reader0, reader1, diff_offsets, client_info.chunk_size, compare_tier,
+        offt_gap, block_size);
     int ld_id = lid_offst_pair.ld_id;
     std::vector<size_t> all_read_offts = lid_offst_pair.read_offsets;
     best_gap = lid_offst_pair.best_gap;
     best_batch_size = lid_offst_pair.best_block_size;
+
+    // using our performance model
+    // int nthreads = Kokkos::num_threads();
+    // loader_info_t lid_offst_pair = data_loader.file_load(
+    //     reader0, reader1, diff_offsets, client_info.chunk_size, compare_tier, nthreads);
+    // int ld_id = lid_offst_pair.ld_id;
+    // std::vector<size_t> all_read_offts = lid_offst_pair.read_offsets;
+    // best_gap = lid_offst_pair.best_gap;
+    // best_batch_size = lid_offst_pair.best_block_size;
     
     while (work_done < num_diff_hash) {
         Timer::time_point iter_beg = Timer::now();
@@ -558,6 +565,107 @@ client_t<DataType>::compare_data(client_t &prev, Reader &reader0,
     return nchange;
 }
 
+// template <typename DataType>
+// template <typename Reader>
+// size_t
+// client_t<DataType>::compare_data_mmap_posix(client_t &prev, Reader &reader0,
+//                                  Reader &reader1, Vector<size_t> &diff_hash_vec,
+//                                  Kokkos::Bitset<> &changed_chunks,
+//                                  Kokkos::View<size_t[1]> &num_changed,
+//                                  Kokkos::View<size_t[1]> &num_comparisons) {
+
+//     Timer::time_point setup_beg = Timer::now();
+//     STDOUT_PRINT("Number of first occurrences (Leaves) - Phase One: %u\n",
+//                  diff_hash_vec.size());
+//     std::string diff_label = std::string("Chkpt ") +
+//                              std::to_string(client_info.id) + std::string(": ");
+//     Kokkos::Profiling::pushRegion(
+//         diff_label + std::string("Compare Trees direct comparison"));
+
+//     // Sort indices for better performance
+//     Kokkos::Profiling::pushRegion(diff_label +
+//                                   std::string("Compare Tree sort indices"));
+//     size_t num_diff_hash = static_cast<size_t>(diff_hash_vec.size());
+//     auto subview_bounds = Kokkos::make_pair((size_t) (0), num_diff_hash);
+//     auto diff_hash_subview =
+//         Kokkos::subview(diff_hash_vec.vector_d, subview_bounds);
+//     Kokkos::sort(diff_hash_vec.vector_d, 0, num_diff_hash);
+//     size_t chunk_size = client_info.chunk_size;
+//     size_t elemPerChunk = chunk_size / sizeof(DataType);
+//     Kokkos::Profiling::popRegion();
+//     std::vector<segment_t> segments0(num_diff_hash), segments1(num_diff_hash);
+//     std::vector<DataType> buffer0(num_diff_hash*elemPerChunk), buffer1(num_diff_hash*elemPerChunk);
+//     double err_tol = client_info.error_tolerance;
+//     AbsoluteComp<DataType> abs_comp;
+//     Timer::time_point total_beg = Timer::now();
+//     Timer::time_point read_beg = Timer::now();
+
+//     Kokkos::deep_copy(diff_hash_vec.vector_h, diff_hash_vec.vector_d);
+//     Kokkos::parallel_for("Fill segment vectors", 
+//         Kokkos::RangePolicy<Kokkos::DefaultHostExecutionSpace>(0,num_diff_hash), 
+//         [&](size_t i) {
+//         segments0[i].id = i;
+//         segments0[i].buffer = (uint8_t*)(buffer0.data())+i*chunk_size;
+//         segments0[i].offset = diff_hash_vec.vector_h(i)*chunk_size;
+//         segments0[i].size = chunk_size;
+
+//         segments1[i].id = i;
+//         segments1[i].buffer = (uint8_t*)(buffer1.data())+i*chunk_size;
+//         segments1[i].offset = diff_hash_vec.vector_h(i)*chunk_size;
+//         segments1[i].size = chunk_size;
+//     });
+//     Kokkos::fence();
+//     double enq_time = 0, wait_time = 0;
+//     Timer::time_point enq_beg = Timer::now();
+//     reader0.enqueue_reads(reader0.fname, segments0);
+//     reader1.enqueue_reads(reader1.fname, segments1);
+//     Timer::time_point enq_end = Timer::now();
+//     enq_time += std::chrono::duration_cast<Duration>(enq_end-enq_beg).count();
+//     Timer::time_point wait_beg = Timer::now();
+//     reader0.wait_all();
+//     reader1.wait_all();
+//     Timer::time_point wait_end = Timer::now();
+//     wait_time += std::chrono::duration_cast<Duration>(wait_end-wait_beg).count();
+//     Timer::time_point read_end = Timer::now();
+//     read_timer +=
+//         std::chrono::duration_cast<Duration>(read_end - read_beg).count();
+
+//     Kokkos::Profiling::pushRegion(
+//         diff_label + std::string("Compare Tree direct comparison"));
+//     Timer::time_point comp_beg = Timer::now();
+//     uint64_t ndiff = 0;
+//     // Parallel comparison
+//     using PolicyType = Kokkos::RangePolicy<size_t, Kokkos::DefaultHostExecutionSpace>;
+//     auto range_policy = PolicyType(0, num_diff_hash*elemPerChunk);
+//     const segment_t* segments = segments0.data();
+//     const DataType* prev_buffer = buffer0.data();
+//     const DataType* curr_buffer = buffer1.data();
+//     Kokkos::parallel_reduce("Count differences", range_policy,
+//         KOKKOS_LAMBDA(const size_t idx, uint64_t &update) {
+//             size_t i = idx / elemPerChunk;   // Block
+//             size_t j = idx % elemPerChunk;   // Element in block
+//             size_t data_idx = segments[i].offset + j * sizeof(DataType);
+//             if(data_idx < data_len) {
+//                 if(!abs_comp(prev_buffer[idx], curr_buffer[idx], err_tol)) {
+//                     update += 1;
+//                 }
+//             }
+//         },
+//         Kokkos::Sum<uint64_t>(ndiff));
+//     Kokkos::fence();
+//     nchange += ndiff;
+//     Kokkos::Profiling::popRegion();
+//     Timer::time_point comp_end = Timer::now();
+//     compare_timer +=
+//         std::chrono::duration_cast<Duration>(comp_end - comp_beg).count();
+
+//     Timer::time_point total_end = Timer::now();
+
+//     STDOUT_PRINT("Number of changed elements - Phase Two: %lu\n", nchange);
+//     Kokkos::Profiling::popRegion();
+//     return nchange;
+// }
+
 template <typename DataType>
 template <typename Reader>
 size_t
@@ -612,16 +720,12 @@ client_t<DataType>::compare_data_ideal_compute(
                 segments1[i].size = chunk_size;
             });
         Kokkos::fence();
-        Timer::time_point load_beg = Timer::now();
-        reader0.enqueue_reads(reader0.fname, segments0);
-        reader1.enqueue_reads(reader1.fname, segments1);
+        reader0.enqueue_reads(segments0);
+        reader1.enqueue_reads(segments1);
+        std::cout << "Segment enqueued successfully" << std::endl; 
         reader0.wait_all();
         reader1.wait_all();
-        Timer::time_point load_end = Timer::now();
-        timers[3] +=
-            std::chrono::duration_cast<Duration>(load_end - load_beg).count();
-	timers[5] +=
-            std::chrono::duration_cast<Duration>(load_end - load_beg).count();
+        std::cout << "Segment loaded successfully" << std::endl; 
 
         Kokkos::Profiling::pushRegion(
             diff_label + std::string("Compare Tree direct comparison"));

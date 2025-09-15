@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# BUILD_DIR="$HOME/research/recup/veloc/apps/state-diff/build/scripts"
-# VMTOUCH_BIN="$HOME/install/vmtouch/bin/"
+BUILD_DIR="$HOME/research/recup/veloc/apps/state-diff/build/scripts"
+VMTOUCH_BIN="$HOME/install/vmtouch/bin/"
 #BUILD_DIR="$HOME/research/recup/veloc/apps/state-diff/build_sophia/scripts"
 #VMTOUCH_BIN="$HOME/install/sophia/vmtouch/usr/local/bin/"
-BUILD_DIR="$HOME/research/anl/state-diff/build/scripts"
-VMTOUCH_BIN="$HOME/research/anl/install/vmtouch/"
+# BUILD_DIR="$HOME/research/anl/state-diff/build/scripts"
+# VMTOUCH_BIN="$HOME/research/anl/install/vmtouch/"
 KB=1024
 MB=$((1024 * $KB))
 GB=$((1024 * $MB))
@@ -19,9 +19,9 @@ rnd_data_gen() {
     echo "==============================================================================="
     echo " Copying target file from PFS to SSD "
     echo "==============================================================================="
-    $BUILD_DIR/../src/tools/data_generator --data-len $data_size -n 1 -e 0 --num-changes 0 $destination \
+    $BUILD_DIR/../src/tools/data_generator --data-len $data_size -n 2 -e 0 --num-changes 0 $destination \
         --kokkos-num-threads=$NTHREADS
-    $VMTOUCH_BIN/vmtouch -ve "${destination}0.dat"
+    $VMTOUCH_BIN/vmtouch -ve "${destination}0.dat" "${destination}1.dat"
 }
 
 pfs2ssd() {
@@ -171,18 +171,18 @@ usage() {
     echo "    compare - Executes procedure to benchmark direct comparison"
 }
 
-if [[ $# -lt 2 ]]; then
-    echo "Error: No benchmarking task specified."
-    usage
-    exit 1
-fi
+# if [[ $# -lt 2 ]]; then
+#     echo "Error: No benchmarking task specified."
+#     usage
+#     exit 1
+# fi
 
 case "$1" in
     local)
-        ckpt_size=$((1 * $GB))
-        ckpt_name="/data/checkpoint"
+        ckpt_size=$((3 * $GB))
+        ckpt_name="/lus/eagle/projects/RECUP/kassogba/veloc-ckpt/rand-sample/rand_sample"
         rnd_data_gen $ckpt_name $ckpt_size
-        SOURCE_FILE="/data/checkpoint0.dat"
+        SOURCE_FILE="/lus/eagle/projects/RECUP/kassogba/veloc-ckpt/rand-sample/rand_sample0.dat"
         ;;
     polaris)
         # Ensure the data is on the SSD at the start of the experiments
@@ -202,19 +202,19 @@ if [[ ! -f "$SOURCE_FILE" ]]; then
     exit 1
 fi
 
-case "$2" in
-    read)
-        validate_liburing "$SOURCE_FILE"
-        ;;
-    create)
-        benchmark_creation "$SOURCE_FILE"
-        ;;
-    compare)
-        benchmark_comparison
-        ;;
-    *)
-        echo "Error: Invalid benchmarking task name."
-        usage
-        exit 1
-        ;;
-esac
+# case "$2" in
+#     read)
+#         validate_liburing "$SOURCE_FILE"
+#         ;;
+#     create)
+#         benchmark_creation "$SOURCE_FILE"
+#         ;;
+#     compare)
+#         benchmark_comparison
+#         ;;
+#     *)
+#         echo "Error: Invalid benchmarking task name."
+#         usage
+#         exit 1
+#         ;;
+# esac
