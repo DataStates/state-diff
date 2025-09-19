@@ -5,9 +5,32 @@
 #include <stdexcept>
 #include <string>
 #include <cmath>
+#include <random>
+#include <numeric>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <algorithm>
+
+std::vector<size_t> get_offsets(size_t total_chunks, size_t n_segs, bool sequential) {
+    if(sequential) {
+        std::vector<size_t> idx(n_segs);
+        std::iota(idx.begin(), idx.end(), 0);
+        // printf("Here\n");
+        return idx;
+    } else {
+        std::vector<size_t> idx(total_chunks);
+        std::iota(idx.begin(), idx.end(), 0);
+        std::mt19937_64 rng(std::random_device{}());
+        std::shuffle(idx.begin(), idx.end(), rng);
+        idx.resize(n_segs);
+        // printf("There\n");
+        return idx;
+    }
+}
 
 void benchmark_liburing_reads(std::string& file1, std::string& file2, size_t dsize,
-                               size_t chunk_size,
+                               size_t chunk_size, bool sequential_offt,
                                const std::string& log_fname = "benchmark_load_two.csv") {
     // Open log file
     std::fstream benchmark_stream(log_fname, std::fstream::ate | std::fstream::out | std::fstream::app);
@@ -28,21 +51,47 @@ void benchmark_liburing_reads(std::string& file1, std::string& file2, size_t dsi
     size_t n_segs = dsize / chunk_size;
     if (n_segs * chunk_size < dsize) n_segs += 1;
 
+    // Open files and get size, close files
+    int fd_1 = open(file1.c_str(), O_RDONLY);
+    int fd_2 = open(file2.c_str(), O_RDONLY);
+    if (fd_1 == -1 || fd_2 == -1) {
+        std::cerr << "cannot open files, error = " << std::strerror(errno) << std::endl;
+        return;
+    }
+    size_t fsize_1 = lseek(fd_1, 0, SEEK_END);
+    size_t fsize_2 = lseek(fd_2, 0, SEEK_END);
+    lseek(fd_1, 0, SEEK_SET);
+    lseek(fd_2, 0, SEEK_SET);
+    if( fsize_1 != fsize_2) {
+        std::cerr << "Mismatching file sizes " << std::strerror(errno) << std::endl;
+        close(fd_1); close(fd_2);
+        return;
+    }
+    close(fd_1); close(fd_2);
+    size_t total_chunks = fsize_1 / chunk_size;
+
     // Create segments
     std::vector<segment_t> segments1(n_segs);
     std::vector<segment_t> segments2(n_segs);
+    std::vector<size_t> file_offsets = get_offsets(total_chunks, n_segs, sequential_offt);
     
     for (size_t i = 0; i < n_segs; ++i) {
         segment_t seg0;
         segment_t seg1;
-        seg0.offset = chunk_size * i;
-        seg0.size = (i == n_segs - 1) ? dsize - seg0.offset : chunk_size;
-        seg0.buffer = reinterpret_cast<uint8_t*>(buffer1.data()) + seg0.offset;
+        const size_t off = file_offsets[i] * chunk_size;
+        const size_t buf_off  = i * chunk_size; 
+        seg0.offset = off;
+        // seg0.size = (i == n_segs - 1) ? dsize - seg0.offset : chunk_size;
+        seg0.size   = std::min(chunk_size, fsize_1 - off);
+        // seg0.buffer = reinterpret_cast<uint8_t*>(buffer1.data()) + seg0.offset;
+        seg0.buffer = reinterpret_cast<uint8_t*>(buffer1.data()) + buf_off;
         segments1[i] = seg0;
 
-        seg1.offset = chunk_size * i;
-        seg1.size = (i == n_segs - 1) ? dsize - seg1.offset : chunk_size;
-        seg1.buffer = reinterpret_cast<uint8_t*>(buffer2.data()) + seg1.offset;
+        seg1.offset = off;
+        // seg1.size = (i == n_segs - 1) ? dsize - seg1.offset : chunk_size;
+        seg1.size   = std::min(chunk_size, fsize_1 - off);
+        // seg1.buffer = reinterpret_cast<uint8_t*>(buffer2.data()) + seg1.offset;
+        seg1.buffer = reinterpret_cast<uint8_t*>(buffer2.data()) + buf_off;
         segments2[i] = seg1;
     }
 
@@ -58,7 +107,7 @@ void benchmark_liburing_reads(std::string& file1, std::string& file2, size_t dsi
 
     // Compute throughput
     std::chrono::duration<double> load_time = end_load - start_load;
-    double throughput = (double(dsize) / (1024.0 * 1024.0 * 1024.0)) / load_time.count();
+    double throughput = (double(dsize*2) / (1024.0 * 1024.0 * 1024.0)) / load_time.count();
 
     // Log result
     benchmark_stream << n_segs << ","
@@ -71,18 +120,24 @@ void benchmark_liburing_reads(std::string& file1, std::string& file2, size_t dsi
 }
 
 int main(int argc, char* argv[]) {
-    if (argc != 5) {
-        std::cerr << "Usage: " << argv[0] << " <filename> <dsize> <chunk_size>\n";
+    if (argc < 5) {
+        std::cerr << "Usage: " << argv[0] << " <filename> <dsize> <chunk_size> [--rand]\n";
         return 1;
     }
     std::string fname1 = argv[1];
     std::string fname2 = argv[2];
     size_t chunk_size = std::stoull(argv[3]);
     size_t nsegs = std::stoull(argv[4]);
+    bool sequential_offt = true;
+    for (int i = 1; i < argc; i++) {
+        if (std::string(argv[i]) == "--rand") {
+            sequential_offt = false;
+        }
+    }
     size_t dsize = chunk_size * nsegs;
 
     try {
-        benchmark_liburing_reads(fname1, fname2, dsize, chunk_size);
+        benchmark_liburing_reads(fname1, fname2, dsize, chunk_size, sequential_offt);
     } catch (const std::exception& e) {
         std::cerr << "Benchmark failed: " << e.what() << std::endl;
         return 1;

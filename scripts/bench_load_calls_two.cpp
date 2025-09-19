@@ -42,8 +42,9 @@ void benchmark_liburing_reads(std::string& file_1, std::string& file_2, size_t d
     }
 
     // Create data buffer
-    std::vector<float> buffer_1(dsize / sizeof(float), 0);
-    std::vector<float> buffer_2(dsize / sizeof(float), 0);
+    // std::vector<float> buffer_1(dsize / sizeof(float), 0);
+    // std::vector<float> buffer_2(dsize / sizeof(float), 0);
+    std::vector<uint8_t> buffer_1(dsize), buffer_2(dsize);
 
     // Compute number of segments
     size_t n_segs = dsize / chunk_size;
@@ -52,14 +53,15 @@ void benchmark_liburing_reads(std::string& file_1, std::string& file_2, size_t d
     // Open files and get size
     int fd_1 = open(file_1.c_str(), O_RDONLY);
     int fd_2 = open(file_2.c_str(), O_RDONLY);
-    size_t fsize_1 = lseek(fd_1, 0, SEEK_END);
-    size_t fsize_2 = lseek(fd_2, 0, SEEK_END);
-    lseek(fd_1, 0, SEEK_SET);
-    lseek(fd_2, 0, SEEK_SET);
     if (fd_1 == -1 || fd_2 == -1) {
         std::cerr << "cannot open files, error = " << std::strerror(errno) << std::endl;
         return;
     }
+    size_t fsize_1 = lseek(fd_1, 0, SEEK_END);
+    size_t fsize_2 = lseek(fd_2, 0, SEEK_END);
+    // off_t fsize_1 = lseek(fd_1, 0, SEEK_END);
+    // off_t fsize_2 = lseek(fd_2, 0, SEEK_END);
+    if (fsize_1 < 0 || fsize_2 < 0) { perror("lseek"); close(fd_1); close(fd_2); return; }
     if( fsize_1 != fsize_2) {
         std::cerr << "Mismatching file sizes " << std::strerror(errno) << std::endl;
         close(fd_1); close(fd_2);
@@ -67,31 +69,37 @@ void benchmark_liburing_reads(std::string& file_1, std::string& file_2, size_t d
     }
 
     size_t total_chunks = fsize_1 / chunk_size;
+    if (n_segs > total_chunks) {
+        std::cerr << "Requested " << n_segs << " segments but file holds only "
+                << total_chunks << " chunks of size " << chunk_size << "\n";
+        close(fd_1); close(fd_2); return;
+    }
     size_t n_reads = n_segs*2;
     std::vector<segment_t> segments(n_reads);
-    liburing_io_reader_t file_reader("", dsize);
+    liburing_io_reader_t file_reader("", fsize_1);
     std::vector<size_t> file_offsets = get_offsets(total_chunks, n_segs, sequential_offt);
     // std::cout << "Loader initialized" << std::endl;
 
     // Create segments
     for (size_t j = 0; j < n_segs; ++j) {
         const size_t off = file_offsets[j] * chunk_size;
+        const size_t buf_off  = j * chunk_size;
         if (off >= fsize_1) break;
 
         // File 1
         segment_t seg0;
         seg0.fd     = fd_1;
         seg0.offset = off;
-        seg0.size   = std::min(chunk_size, fsize_1 - off);
-        seg0.buffer = reinterpret_cast<uint8_t*>(buffer_1.data()) + off;
+        seg0.size   = std::min(chunk_size, dsize - buf_off);
+        seg0.buffer = reinterpret_cast<uint8_t*>(buffer_1.data()) + buf_off;
         segments[2*j] = seg0;
 
         // File 2
         segment_t seg1;
         seg1.fd     = fd_2;
         seg1.offset = off;
-        seg1.size   = std::min(chunk_size, fsize_1 - off);
-        seg1.buffer = reinterpret_cast<uint8_t*>(buffer_2.data()) + off;
+        seg1.size   = std::min(chunk_size,  dsize - buf_off);
+        seg1.buffer = reinterpret_cast<uint8_t*>(buffer_2.data()) + buf_off;
         segments[2*j + 1] = seg1;
     }
     // printf("%zu Segments created\n", n_reads);
@@ -128,8 +136,8 @@ int main(int argc, char* argv[]) {
         std::cerr << "Usage: " << argv[0] << " <filename> <dsize> <chunk_size> [--rand]\n";
         return 1;
     }
-    std::string pfs_fname = argv[1];
-    std::string ssd_fname = argv[2];
+    std::string fname1 = argv[1];
+    std::string fname2 = argv[2];
     size_t chunk_size = std::stoull(argv[3]);
     size_t nsegs = std::stoull(argv[4]);
     bool sequential_offt = true;
@@ -141,7 +149,7 @@ int main(int argc, char* argv[]) {
     size_t dsize = chunk_size * nsegs;
 
     try {
-        benchmark_liburing_reads(pfs_fname, ssd_fname, dsize, chunk_size, sequential_offt);
+        benchmark_liburing_reads(fname1, fname2, dsize, chunk_size, sequential_offt);
     } catch (const std::exception& e) {
         std::cerr << "Benchmark failed: " << e.what() << std::endl;
         return 1;
