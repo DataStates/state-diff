@@ -122,7 +122,17 @@ set_target_properties(eval_direct PROPERTIES
 #    CXX_STANDARD_REQUIRED YES
 #    CXX_EXTENSIONS OFF
 # )
-add_executable(bench_load bench_load_calls_two.cpp)
+add_executable(bench_load_2rdrs bench_load_calls_2rdrs.cpp)
+target_include_directories(bench_load_2rdrs PUBLIC ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(bench_load_2rdrs PRIVATE statediff)
+target_link_libraries(bench_load_2rdrs PRIVATE Kokkos::kokkos)
+target_link_libraries(bench_load_2rdrs PRIVATE OpenSSL::SSL)
+set_target_properties(bench_load_2rdrs PROPERTIES
+   CXX_STANDARD 17
+   CXX_STANDARD_REQUIRED YES
+   CXX_EXTENSIONS OFF
+)
+add_executable(bench_load bench_load_calls.cpp)
 target_include_directories(bench_load PUBLIC ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(bench_load PRIVATE statediff)
 target_link_libraries(bench_load PRIVATE Kokkos::kokkos)
@@ -132,13 +142,3 @@ set_target_properties(bench_load PROPERTIES
    CXX_STANDARD_REQUIRED YES
    CXX_EXTENSIONS OFF
 )
-# add_executable(bench_load bench_load_calls_two_2rdrs.cpp)
-# target_include_directories(bench_load PUBLIC ${CMAKE_SOURCE_DIR}/include)
-# target_link_libraries(bench_load PRIVATE statediff)
-# target_link_libraries(bench_load PRIVATE Kokkos::kokkos)
-# target_link_libraries(bench_load PRIVATE OpenSSL::SSL)
-# set_target_properties(bench_load PROPERTIES
-#    CXX_STANDARD 17
-#    CXX_STANDARD_REQUIRED YES
-#    CXX_EXTENSIONS OFF
-# )

@@ -31,7 +31,8 @@ template <typename DataType> class DirectComparer {
     ~DirectComparer() {};
 
     template <typename Reader>
-    size_t compare(Reader &reader_prev, Reader &reader_cur);
+    size_t compare(Reader &reader, const std::string& fname0, const std::string& fname1);
+    // size_t compare(Reader &reader_prev, Reader &reader_cur);
 
     double get_total_time() const;
     double get_compare_time() const;
@@ -50,23 +51,28 @@ DirectComparer<DataType>::DirectComparer(size_t data_size, double tolerance,
 template <typename DataType>
 template <typename Reader>
 size_t
-DirectComparer<DataType>::compare(Reader &reader_prev, Reader &reader_cur) {
+DirectComparer<DataType>::compare(Reader &reader, const std::string& fname0, const std::string& fname1) {
     Timer::time_point e2e_beg = Timer::now();
     Kokkos::Profiling::pushRegion("Direct: Compare: start streaming");
 
     size_t num_iops = (d_size + buf_len - 1) / buf_len;
     std::vector<segment_t> segments0(num_iops), segments1(num_iops);
-
+    int fd0 = open(fname0.c_str(), O_RDONLY);
+    int fd1 = open(fname1.c_str(), O_RDONLY);
     Kokkos::parallel_for(
         "Fill segment vectors",
         Kokkos::RangePolicy<Kokkos::DefaultHostExecutionSpace>(0, num_iops),
         [&](size_t i) {
             size_t start = i * buf_len;
             size_t c_size = (i < num_iops - 1) ? buf_len : d_size - start;
+            segments0[i].id = i;
+            segments0[i].fd = fd0;
             segments0[i].offset = start;
             segments0[i].size = c_size;
             segments0[i].buffer = (uint8_t *)malloc(c_size);
 
+            segments1[i].id = i;
+            segments1[i].fd = fd1;
             segments1[i].offset = start;
             segments1[i].size = c_size;
             segments1[i].buffer = (uint8_t *)malloc(c_size);
@@ -83,18 +89,21 @@ DirectComparer<DataType>::compare(Reader &reader_prev, Reader &reader_cur) {
     Kokkos::Profiling::popRegion();
 
     // Start with first segments
-    reader_prev.enqueue_reads({segments0[0]});
-    reader_cur.enqueue_reads({segments1[0]});
+    reader.enqueue_reads({segments0[0], segments1[0]});
+    // reader_prev.enqueue_reads({segments0[0]});
+    // reader_cur.enqueue_reads({segments1[0]});
 
     for (size_t iter = 0; iter < num_iops; ++iter) {
         Kokkos::Profiling::pushRegion("Direct: Compare: get slices");
-        reader_cur.wait_all();
-        reader_prev.wait_all();
+        reader.wait_all();
+        // reader_cur.wait_all();
+        // reader_prev.wait_all();
 
         // Enqueue next read if not at the last iteration
         if (iter + 1 < num_iops) {
-            reader_prev.enqueue_reads({segments0[iter + 1]});
-            reader_cur.enqueue_reads({segments1[iter + 1]});
+            reader.enqueue_reads({segments0[iter + 1], segments1[iter + 1]});
+            // reader_prev.enqueue_reads({segments0[iter + 1]});
+            // reader_cur.enqueue_reads({segments1[iter + 1]});
         }
 
         segment_t &prev_seg = segments0[iter];
@@ -132,6 +141,7 @@ DirectComparer<DataType>::compare(Reader &reader_prev, Reader &reader_cur) {
     }
 
     Timer::time_point e2e_end = Timer::now();
+    close(fd0), close(fd1);
     total_time +=
         std::chrono::duration_cast<Duration>(e2e_end - e2e_beg).count();
     return num_diff;

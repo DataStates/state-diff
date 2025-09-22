@@ -3,20 +3,38 @@
 #include <iostream>
 #include <string>
 
-data_loader_t::data_loader_t() {
+data_loader_t::data_loader_t(FileReader &reader_) : io_reader(reader_) {
     TIMER_START(init_loader);
     host_cache_ = new host_cache_t();
+    // io_reader = reader_;
     INFO("Loader - host caches initialized");
     TIMER_STOP(init_loader, "Initialized data loader");
 }
 
 data_loader_t::~data_loader_t() {
     host_cache_ = nullptr;
+    // Close any file descriptors we opened
+    for (auto &kv : file_fds) {
+        if (kv.second >= 0) close(kv.second);
+    }
+    file_fds.clear();
     DBG("Loader - destroyed");
 };
 
+int data_loader_t::get_or_open_fd(const std::string& fname) {
+    auto it = file_fds.find(fname);
+    if (it != file_fds.end()) return it->second;
+
+    int newfd = open(fname.c_str(), O_RDONLY);
+    if (newfd < 0) {
+        FATAL("cannot open " << fname << ", error = " << std::strerror(errno));
+    }
+    file_fds.emplace(fname, newfd);
+    return newfd;
+}
+
 std::vector<size_t>
-data_loader_t::coalesce(int id, std::vector<size_t> offsets, size_t seg_size,
+data_loader_t::coalesce(int id, std::vector<int> fds, std::vector<size_t> offsets, size_t seg_size,
                         uint32_t gap, int n_readers,
                         size_t used_chks_per_read) {
     INFO("Loader (" << id << ")- Coalescing offsets with gap = " << gap
@@ -44,7 +62,8 @@ data_loader_t::coalesce(int id, std::vector<size_t> offsets, size_t seg_size,
             size_t needed_size = in_group_offt * seg_size;
             wasted_read_bytes += (combined_size - needed_size);
             n_seg_in_segvec += n_segs;
-            segments.push_back(segment_t(segment_start, combined_size));
+            int dummy_fd = -1; // to be set when pushing the segment into the batch
+            segments.push_back(segment_t(IOP_count[id], dummy_fd, segment_start, combined_size));
             IOP_count[id]++;   // number of IO operation (a segment is an IOP)
             // Keep track of all read chunk offsets in segment
             for (size_t i = start; i < lastOffset + 1; i++) {
@@ -55,8 +74,15 @@ data_loader_t::coalesce(int id, std::vector<size_t> offsets, size_t seg_size,
             if (wait_for_count >= used_chks_per_read) {
                 batch_t *seg_batch =
                     new batch_t(segments.size() * n_readers, wait_for_count);
-                for (int j = 0; j < n_readers; j++) {
-                    for (segment_t segment : segments) {
+                // for (int j = 0; j < n_readers; j++) {
+                //     for (segment_t segment : segments) {
+                //         segment.fd = fds[j];
+                //         seg_batch->push(segment);
+                //     }
+                // }
+                for (segment_t segment : segments) {
+                    for (int j = 0; j < n_readers; j++) {
+                        segment.fd = fds[j]; // everything else is same except file descriptor
                         seg_batch->push(segment);
                     }
                 }
@@ -79,7 +105,8 @@ data_loader_t::coalesce(int id, std::vector<size_t> offsets, size_t seg_size,
     size_t needed_size = in_group_offt * seg_size;
     wasted_read_bytes += (combined_size - needed_size);
     n_seg_in_segvec += n_segs;
-    segments.push_back(segment_t(segment_start, combined_size));
+    int dummy_fd = -1;
+    segments.push_back(segment_t(IOP_count[id], dummy_fd, segment_start, combined_size));
     // Keep track of all read chunk offsets in segment
     for (size_t i = start; i < lastOffset + 1; i++) {
         all_read_offts.push_back(i);
@@ -88,8 +115,15 @@ data_loader_t::coalesce(int id, std::vector<size_t> offsets, size_t seg_size,
     // Create last batch and stage in for read
     batch_t *seg_batch =
         new batch_t(segments.size() * n_readers, wait_for_count);
-    for (int j = 0; j < n_readers; j++) {
-        for (segment_t segment : segments) {
+    // for (int j = 0; j < n_readers; j++) {
+    //     for (segment_t segment : segments) {
+    //         segment.fd = fds[j];
+    //         seg_batch->push(segment);
+    //     }
+    // }
+    for (segment_t segment : segments) {
+        for (int j = 0; j < n_readers; j++) {
+            segment.fd = fds[j];
             seg_batch->push(segment);
         }
     }
@@ -99,7 +133,7 @@ data_loader_t::coalesce(int id, std::vector<size_t> offsets, size_t seg_size,
 }
 
 void
-data_loader_t::enqueue_reads(int id, size_t seg_size, size_t n_segs_per_read,
+data_loader_t::enqueue_reads(int id, int fd, size_t seg_size, size_t n_segs_per_read,
                              size_t total_n_segs, size_t total_read_size) {
 
     size_t n_read_call = (total_n_segs + n_segs_per_read - 1) / n_segs_per_read;
@@ -122,7 +156,7 @@ data_loader_t::enqueue_reads(int id, size_t seg_size, size_t n_segs_per_read,
         size_t offset = i * seg_size;
         size_t current_seg_size =
             (i == total_n_segs - 1) ? total_read_size - staged_size : seg_size;
-        segment_t seg(offset, current_seg_size);
+        segment_t seg(i, fd, offset, current_seg_size);
         seg_batch->push(seg);
         staged_size += current_seg_size;
     }
@@ -154,7 +188,7 @@ data_loader_t::enqueue_reads(int id, size_t seg_size, size_t n_segs_per_read,
  * concurrent file loading requests.
  */
 int
-data_loader_t::file_load(FileReader &io_reader, size_t seg_size,
+data_loader_t::file_load(const std::string& fname, size_t total_read_size, size_t seg_size,
                          TransferType trans_type) {
     TIMER_START(file_load);
     assert((trans_type == TransferType::FileToHost ||
@@ -168,14 +202,14 @@ data_loader_t::file_load(FileReader &io_reader, size_t seg_size,
 
     INFO("Loader (" << loader_id
                     << ")- Creating segments without given file offsets");
-
+    // Reuse an existing fd or open it once.
+    const int fd = get_or_open_fd(fname);
     // Create segments to read
-    size_t total_read_size = io_reader.size();
     assert(seg_size > 0 && total_read_size > 0);
     size_t total_n_segs = (total_read_size + seg_size - 1) / seg_size;
     size_t base_segcnt = 2;
     size_t n_segs_per_read = std::min({base_segcnt, total_n_segs});
-    enqueue_reads(loader_id, seg_size, n_segs_per_read, total_n_segs,
+    enqueue_reads(loader_id, fd, seg_size, n_segs_per_read, total_n_segs,
                   total_read_size);
     INFO("Loader (" << loader_id
                     << ")- All batches staged in for read from file");
@@ -189,7 +223,7 @@ data_loader_t::file_load(FileReader &io_reader, size_t seg_size,
 }
 
 loader_info_t
-data_loader_t::file_load(FileReader &io_reader0, FileReader &io_reader1,
+data_loader_t::file_load(const std::string& fname0, const std::string& fname1,
                          std::vector<size_t> offsets, size_t seg_size,
                          TransferType trans_type, uint32_t gap,
                          size_t block_size) {
@@ -207,20 +241,23 @@ data_loader_t::file_load(FileReader &io_reader0, FileReader &io_reader1,
     INFO("Loader ("
          << loader_id
          << ")- Creating segments for two readers given file offsets");
+    const int fd0 = get_or_open_fd(fname0);
+    const int fd1 = get_or_open_fd(fname1);
     std::vector<size_t> read_offsets = coalesce(
-        loader_id, offsets, seg_size, gap, n_readers, used_chks_per_read);
+        loader_id, {fd0, fd1}, offsets, seg_size, gap, n_readers, used_chks_per_read);
     INFO("Loader (" << loader_id
                     << ")- All batches staged in for read with two readers");
     TIMER_STOP(file_load, "Created segments and staged for file read");
 
     // Set two reader to use for file IO
-    host_cache_->set_reader(loader_id, &io_reader0, &io_reader1);
+    // host_cache_->set_reader(loader_id, &io_reader0, &io_reader1);
+    host_cache_->set_reader(loader_id, &io_reader);
     loader_info_t lid_offt_pair = {loader_id, read_offsets, static_cast<int>(gap), block_size};
     return lid_offt_pair;
 }
 
 loader_info_t
-data_loader_t::file_load(FileReader &io_reader0, FileReader &io_reader1,
+data_loader_t::file_load(const std::string& fname0, const std::string& fname1,
                          std::vector<size_t> offsets, size_t seg_size,
                          TransferType trans_type, int nthreads) {
     TIMER_START(file_load);
@@ -241,14 +278,17 @@ data_loader_t::file_load(FileReader &io_reader0, FileReader &io_reader1,
     INFO("Loader ("
          << loader_id
          << ")- Creating segments for two readers given file offsets");
+    const int fd0 = get_or_open_fd(fname0);
+    const int fd1 = get_or_open_fd(fname1);
     std::vector<size_t> read_offsets = coalesce(
-        loader_id, offsets, seg_size, gap, n_readers, used_chks_per_read);
+        loader_id, {fd0, fd1}, offsets, seg_size, gap, n_readers, used_chks_per_read);
     INFO("Loader (" << loader_id
                     << ")- All batches staged in for read with two readers");
     TIMER_STOP(file_load, "Created segments and staged for file read");
 
     // Set two reader to use for file IO
-    host_cache_->set_reader(loader_id, &io_reader0, &io_reader1);
+    // host_cache_->set_reader(loader_id, &io_reader0, &io_reader1);
+    host_cache_->set_reader(loader_id, &io_reader);
     loader_info_t lid_offt_pair = {loader_id, read_offsets, gap, block_size};
     return lid_offt_pair;
 }

@@ -227,7 +227,9 @@ main(int argc, char **argv) {
             get_file_size(run0_files[0], &meta_filesize);
             tree_size = static_cast<size_t>(meta_filesize);
         }
-        state_diff::client_t<float> client_cur(0, data_size, err_tol, dtype[0],
+        liburing_io_reader_t files_reader;
+        state_diff::client_t<float> client_cur;
+        client_cur.init(0, files_reader, data_size, err_tol, dtype[0],
                                                chunk_size, level, fuzzy_hash);
         state_diff::client_t<float> client_prev;
 
@@ -243,7 +245,7 @@ main(int argc, char **argv) {
                 // ================================================================
                 Timer::time_point beg_setup = Timer::now();
                 Kokkos::Profiling::pushRegion("Setup");
-                liburing_io_reader_t reader_cur(run0_files[idx]);
+                // liburing_io_reader_t reader_cur(run0_files[idx]);
                 Kokkos::Profiling::popRegion();
                 Timer::time_point end_setup = Timer::now();
                 setup_time =
@@ -257,7 +259,8 @@ main(int argc, char **argv) {
                 // ================================================================
                 Timer::time_point beg_create = Timer::now();
                 Kokkos::Profiling::pushRegion("Create tree");
-                client_cur.create(reader_cur, blk_size);
+                // client_cur.create(reader_cur, blk_size);
+                client_cur.create(run0_files[idx], blk_size);
                 Kokkos::Profiling::popRegion();
                 Timer::time_point end_create = Timer::now();
                 construction_time = std::chrono::duration_cast<Duration>(
@@ -297,8 +300,8 @@ main(int argc, char **argv) {
                 // ================================================================
                 Timer::time_point beg_setup = Timer::now();
                 Kokkos::Profiling::pushRegion("Setup");
-                liburing_io_reader_t reader_prev(run0_full_files[idx]);
-                liburing_io_reader_t reader_cur(run1_full_files[idx]);
+                // liburing_io_reader_t reader_prev(run0_full_files[idx]);
+                // liburing_io_reader_t reader_cur(run1_full_files[idx]);
 
                 // mmap_io_reader_t reader_prev(run0_full_files[idx]);
                 // mmap_io_reader_t reader_cur(run1_full_files[idx]);
@@ -347,7 +350,7 @@ main(int argc, char **argv) {
                 blk_size *= chunk_size * n_threads;
                 // blk_size = 1ULL * 1024 * 1024 * 1024;
                 // blk_size = chunk_size * n_threads;
-                client_cur.compare_with(0, reader_cur, client_prev, reader_prev,
+                client_cur.compare_with(0, run1_full_files[idx], client_prev, run0_full_files[idx],
                                         offt_gap, blk_size, ideal, exec_compare);
                 compare_time1 = client_cur.get_tree_comparison_time();
                 compare_time2 = client_cur.get_data_compare_time();

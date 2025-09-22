@@ -142,9 +142,11 @@ main(int argc, char **argv) {
             // Compare
             // ================================================================
             Kokkos::Profiling::pushRegion("Compare");
-            liburing_io_reader_t reader_prev(run0_files[idx]);
-            liburing_io_reader_t reader_cur(run1_files[idx]);
-            elem_changed = comparator.compare(reader_prev, reader_cur);
+            // liburing_io_reader_t reader_prev(run0_files[idx]);
+            // liburing_io_reader_t reader_cur(run1_files[idx]);
+            // elem_changed = comparator.compare(reader_prev, reader_cur);
+            liburing_io_reader_t reader;
+            elem_changed = comparator.compare(reader, run0_files[idx], run1_files[idx]);
             changed_blocks = comparator.get_num_changed_blocks();
             n_comparisons = comparator.get_num_comparisons();
             compare_time = comparator.get_compare_time();
