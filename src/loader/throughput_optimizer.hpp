@@ -9,47 +9,62 @@
 class ThroughputOptimizer {
 
   private:
-    // double comp_curve_max_;
-    // double comp_growth_rate_;
-    // double comp_midpoint_;
-    // double compute_slope_ = 0.743;
-    // double compute_intercept_ = -17.0f;
-    // std::vector<double> io_slope_ = {0.281, 0.058};
-    // double io_intercept_ = -5.525;
-
+ 
     double compute_slope_ = 0.748;
     double compute_intercept_ = -17.0366f;
+    std::vector<double> io_params_;
+    std::vector<int> gaps = {0, 1, 2, 3};
 
     // PFS
-    std::vector<double> io_slope_ = {0.359, 0.018};
-    double io_intercept_ = -5.097;
+    // std::vector<double> io_slope_ = {0.359, 0.018};
+    // double io_intercept_ = -5.097;
+    // double a, b, c, d, e;
+    // std::vector<double> io_params_ = {1.84e-01, -3.33e-02, 7.26e-06, 4.55e-01, 1.34e-04};
 
     // SSD
     // std::vector<double> io_slope_ = {0.386, 0.411};
     // double io_intercept_ = -13.883;
-
-    // Hybrid
-    // std::vector<double> io_slope_ = {0.218, 0.131};
-    // double io_intercept_ = -5.668;
-
-    std::vector<int> gaps = {0, 1, 2, 3};
+    // std::vector<double> io_params_ = {3.63e+00, -5.59e-03, 1.82e-05, 1.64e-01, 7.30e-05};
 
   public:
-    ThroughputOptimizer() {}
+    ThroughputOptimizer(FileSrc file_src_loc) {
+        switch (file_src_loc) {
+            case PFS:
+                io_params_ = {4.29e+00, -3.33e-02, 7.26e-06, 4.54e-01, 1.37e-01};
+            case SSD:
+                io_params_ = {1.13e+01, -5.58e-03, 1.82e-05, 1.64e-01, 7.48e-02};
+            case Hybrid: 
+                io_params_ = {4.26e+00, -3.47e-02, 4.35e-06, 3.86e-01, -2.72e-02};
+            default:
+                io_params_ = {4.29e+00, -3.33e-02, 7.26e-06, 4.54e-01, 1.37e-01};
+        }
+        std::cout << "Optimizing batch size and gap to read from " << file_src_loc << std::endl;
+    }
 
     double compute_model(double batch_size) const {
         double log_x = std::log(batch_size);
         return std::exp(compute_intercept_ + compute_slope_ * log_x);
-        // return comp_curve_max_ /
-        //        (1 + std::exp(-comp_growth_rate_ * (log_x - comp_midpoint_)));
     }
 
+    // double io_model(double num_ops, double op_size) const {
+    //     double log_ops = std::log(num_ops);
+    //     double log_size = std::log(op_size);
+    //     double log_y =
+    //         io_intercept_ + (io_slope_[0] * log_ops + io_slope_[1] * log_size);
+    //     return std::exp(log_y);
+    // }
+
+    // num_ops = IOP (number of operations)
+    // op_size = s (op size in MiB or whatever units you're using)
     double io_model(double num_ops, double op_size) const {
-        double log_ops = std::log(num_ops);
-        double log_size = std::log(op_size);
-        double log_y =
-            io_intercept_ + (io_slope_[0] * log_ops + io_slope_[1] * log_size);
-        return std::exp(log_y);
+        // Compute each part directly
+        double term_iop_pow = std::pow(num_ops, io_params_[1]);
+        double term_iop_exp = std::exp(-io_params_[2] * num_ops);
+
+        double term_size_pow = std::pow(op_size, io_params_[3]);
+        double term_size_exp = std::exp(-io_params_[4] * op_size);
+
+        return io_params_[0] * term_iop_pow * term_iop_exp * term_size_pow * term_size_exp;
     }
 
     std::pair<std::vector<size_t>, std::vector<size_t>>
@@ -127,9 +142,14 @@ class ThroughputOptimizer {
         }
 
         // estimating the data loading time
+        double io_size_gb, pred_io_thrpt;
         std::vector<double> pred_io_time;
         for (size_t i = 0; i < iops_counts.size(); ++i) {
-            pred_io_time.push_back(io_model(iops_counts[i], iops_sizes[i]));
+            // convert size to GB and pass to io model
+            io_size_gb = static_cast<double>(iops_sizes[i]) / (1024.0 * 1024.0 * 1024.0);
+            pred_io_thrpt = io_model(iops_counts[i], io_size_gb);
+            pred_io_time.push_back(io_size_gb/pred_io_thrpt);
+            // pred_io_time.push_back(io_model(iops_counts[i], iops_sizes[i]));
         }
 
         double total_data_size =

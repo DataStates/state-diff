@@ -86,6 +86,10 @@ main(int argc, char **argv) {
             .help("Full checkpoint files for run 1")
             .nargs(argparse::nargs_pattern::any)
             .default_value(std::vector<std::string>());
+        program.add_argument("-s", "--file_src_loc")
+            .help("Location of files to process. 0 for PFS, 1 for SSD, 2 for hybrid")
+            .default_value(static_cast<uint32_t>(0))
+            .scan<'u', uint32_t>();
         program.add_argument("-o", "--output-filename")
             .help("Save tree data to file")
             .default_value(std::string(""));
@@ -108,6 +112,7 @@ main(int argc, char **argv) {
         uint32_t level = program.get<uint32_t>("-l");
         size_t block_size = program.get<size_t>("-b");
         uint32_t offt_gap = program.get<uint32_t>("-g");
+        uint32_t file_loc = program.get<uint32_t>("-s");
         auto run0_all_files = program.get<std::vector<std::string>>("--run0");
         auto run1_all_files = program.get<std::vector<std::string>>("--run1");
         auto run0_all_full_files =
@@ -350,8 +355,11 @@ main(int argc, char **argv) {
                 blk_size *= chunk_size * n_threads;
                 // blk_size = 1ULL * 1024 * 1024 * 1024;
                 // blk_size = chunk_size * n_threads;
+                
+                TransferType transfer_type = static_cast<TransferType>(0); // file to host
+                FileSrc file_src_loc = static_cast<FileSrc>(file_loc); // 0-pfs, 1-ssd, 2-hyb 
                 client_cur.compare_with(0, run1_full_files[idx], client_prev, run0_full_files[idx],
-                                        offt_gap, blk_size, ideal, exec_compare);
+                                        offt_gap, blk_size, ideal, exec_compare, transfer_type, file_src_loc);
                 compare_time1 = client_cur.get_tree_comparison_time();
                 compare_time2 = client_cur.get_data_compare_time();
                 wasted_bytes = client_cur.get_wastedbytes_count();

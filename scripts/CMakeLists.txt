@@ -102,15 +102,15 @@ set_target_properties(eval_direct PROPERTIES
 #     CXX_EXTENSIONS OFF
 # )
 
-#add_executable(bench_compute bench_compare_kernel.cpp)
-#target_include_directories(bench_compute PUBLIC ${CMAKE_SOURCE_DIR}/include)
-#target_link_libraries(bench_compute PRIVATE Kokkos::kokkos)
-#target_link_libraries(bench_compute PRIVATE OpenSSL::SSL)
-#set_target_properties(bench_compute PROPERTIES
-#    CXX_STANDARD 17
-#    CXX_STANDARD_REQUIRED YES
-#    CXX_EXTENSIONS OFF
-#)
+add_executable(bench_compute bench_compare_kernel.cpp)
+target_include_directories(bench_compute PUBLIC ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(bench_compute PRIVATE Kokkos::kokkos)
+target_link_libraries(bench_compute PRIVATE OpenSSL::SSL)
+set_target_properties(bench_compute PROPERTIES
+   CXX_STANDARD 17
+   CXX_STANDARD_REQUIRED YES
+   CXX_EXTENSIONS OFF
+)
 #
 # add_executable(bench_load bench_load_calls_single.cpp)
 # target_include_directories(bench_load PUBLIC ${CMAKE_SOURCE_DIR}/include)
@@ -138,6 +138,16 @@ target_link_libraries(bench_load PRIVATE statediff)
 target_link_libraries(bench_load PRIVATE Kokkos::kokkos)
 target_link_libraries(bench_load PRIVATE OpenSSL::SSL)
 set_target_properties(bench_load PROPERTIES
+   CXX_STANDARD 17
+   CXX_STANDARD_REQUIRED YES
+   CXX_EXTENSIONS OFF
+)
+add_executable(bench_load_genoft bench_load_calls_genoft.cpp)
+target_include_directories(bench_load_genoft PUBLIC ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(bench_load_genoft PRIVATE statediff)
+target_link_libraries(bench_load_genoft PRIVATE Kokkos::kokkos)
+target_link_libraries(bench_load_genoft PRIVATE OpenSSL::SSL)
+set_target_properties(bench_load_genoft PROPERTIES
    CXX_STANDARD 17
    CXX_STANDARD_REQUIRED YES
    CXX_EXTENSIONS OFF

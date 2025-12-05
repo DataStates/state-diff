@@ -6,7 +6,6 @@
 data_loader_t::data_loader_t(FileReader &reader_) : io_reader(reader_) {
     TIMER_START(init_loader);
     host_cache_ = new host_cache_t();
-    // io_reader = reader_;
     INFO("Loader - host caches initialized");
     TIMER_STOP(init_loader, "Initialized data loader");
 }
@@ -25,7 +24,7 @@ int data_loader_t::get_or_open_fd(const std::string& fname) {
     auto it = file_fds.find(fname);
     if (it != file_fds.end()) return it->second;
 
-    int newfd = open(fname.c_str(), O_RDONLY);
+    int newfd = open(fname.c_str(), O_RDONLY | O_DIRECT);
     if (newfd < 0) {
         FATAL("cannot open " << fname << ", error = " << std::strerror(errno));
     }
@@ -39,6 +38,7 @@ data_loader_t::coalesce(int id, std::vector<int> fds, std::vector<size_t> offset
                         size_t used_chks_per_read) {
     INFO("Loader (" << id << ")- Coalescing offsets with gap = " << gap
                     << " for large reads");
+    assert(fds.size() == n_readers && "fds.size() != n_readers");
     if (offsets.empty())
         return {};
     size_t start = offsets[0];
@@ -73,15 +73,9 @@ data_loader_t::coalesce(int id, std::vector<int> fds, std::vector<size_t> offset
             wait_for_count += in_group_offt;
             if (wait_for_count >= used_chks_per_read) {
                 batch_t *seg_batch =
-                    new batch_t(segments.size() * n_readers, wait_for_count);
-                // for (int j = 0; j < n_readers; j++) {
-                //     for (segment_t segment : segments) {
-                //         segment.fd = fds[j];
-                //         seg_batch->push(segment);
-                //     }
-                // }
+                    new batch_t(segments.size() * n_readers, wait_for_count, seg_size, n_readers);
                 for (segment_t segment : segments) {
-                    for (int j = 0; j < n_readers; j++) {
+                    for (int j = 0; j < n_readers; ++j) {
                         segment.fd = fds[j]; // everything else is same except file descriptor
                         seg_batch->push(segment);
                     }
@@ -107,6 +101,7 @@ data_loader_t::coalesce(int id, std::vector<int> fds, std::vector<size_t> offset
     n_seg_in_segvec += n_segs;
     int dummy_fd = -1;
     segments.push_back(segment_t(IOP_count[id], dummy_fd, segment_start, combined_size));
+    IOP_count[id]++;
     // Keep track of all read chunk offsets in segment
     for (size_t i = start; i < lastOffset + 1; i++) {
         all_read_offts.push_back(i);
@@ -114,13 +109,7 @@ data_loader_t::coalesce(int id, std::vector<int> fds, std::vector<size_t> offset
     wait_for_count += in_group_offt;
     // Create last batch and stage in for read
     batch_t *seg_batch =
-        new batch_t(segments.size() * n_readers, wait_for_count);
-    // for (int j = 0; j < n_readers; j++) {
-    //     for (segment_t segment : segments) {
-    //         segment.fd = fds[j];
-    //         seg_batch->push(segment);
-    //     }
-    // }
+        new batch_t(segments.size() * n_readers, wait_for_count, seg_size, n_readers);
     for (segment_t segment : segments) {
         for (int j = 0; j < n_readers; j++) {
             segment.fd = fds[j];
@@ -139,7 +128,7 @@ data_loader_t::enqueue_reads(int id, int fd, size_t seg_size, size_t n_segs_per_
     size_t n_read_call = (total_n_segs + n_segs_per_read - 1) / n_segs_per_read;
     size_t staged_size = 0;
     size_t batch_len = n_segs_per_read;
-    batch_t *seg_batch = new batch_t(batch_len);
+    batch_t *seg_batch = new batch_t(batch_len, 0, seg_size);
     for (size_t i = 0; i < total_n_segs; i++) {
         if (i % n_segs_per_read == 0 && i > 0) {
 
@@ -151,11 +140,18 @@ data_loader_t::enqueue_reads(int id, int fd, size_t seg_size, size_t n_segs_per_
             // Adjust the segment count for the last batch
             size_t remaining = total_n_segs - i;
             batch_len = (n_read_call == 1) ? remaining : batch_len;
-            seg_batch = new batch_t(batch_len);
+            seg_batch = new batch_t(batch_len, 0, seg_size);
         }
         size_t offset = i * seg_size;
-        size_t current_seg_size =
-            (i == total_n_segs - 1) ? total_read_size - staged_size : seg_size;
+        size_t current_seg_size = seg_size;
+        if(i == total_n_segs - 1) {
+            // aliging to 4K for O_DIRECT
+            size_t lblk_size = 4096;
+            size_t remaining = total_read_size - staged_size;
+            current_seg_size = (remaining + lblk_size-1) & ~(lblk_size-1);
+        }
+        // size_t current_seg_size =
+        //     (i == total_n_segs - 1) ? total_read_size - staged_size : seg_size;
         segment_t seg(i, fd, offset, current_seg_size);
         seg_batch->push(seg);
         staged_size += current_seg_size;
@@ -167,26 +163,7 @@ data_loader_t::enqueue_reads(int id, int fd, size_t seg_size, size_t n_segs_per_
     host_cache_->stage_in(id, seg_batch);
 }
 
-/**
- * @brief Load data from a file
- *
- * This function takes a liburing reader and a destination of the data
- * as input (trans_type) and loads data from a file to the destination.
- *
- * @param io_reader The reference of the liburing reader for file IO.
- * @param start_foffset Offset of the file from which the reader starts reading
- * from.
- * @param seg_size  Size of each segment enqueued for read operations
- * @param batch_size Number of segments to submit at a time to the liburing
- * reader
- * @param trans_type Definition of the source and destination of the data
- * @param offsets List of file offsets to read data from. If empty, all
- * data are read.
- * @param merge_seg Temporary boolean parameter used to define if non-contiguous
- * offsets should be merged.
- * @return ID of the file loading request. It is used to coordinate multiple
- * concurrent file loading requests.
- */
+// Load data from one checkpoint file for data compaction (creation of Merkle tree)
 int
 data_loader_t::file_load(const std::string& fname, size_t total_read_size, size_t seg_size,
                          TransferType trans_type) {
@@ -222,11 +199,13 @@ data_loader_t::file_load(const std::string& fname, size_t total_read_size, size_
     return loader_id;
 }
 
+// Load data from two files to validate the results of the tree comparison
 loader_info_t
 data_loader_t::file_load(const std::string& fname0, const std::string& fname1,
                          std::vector<size_t> offsets, size_t seg_size,
-                         TransferType trans_type, uint32_t gap,
-                         size_t block_size) {
+                         TransferType trans_type, FileSrc file_src_loc, int nthreads, uint32_t gap,
+                         size_t block_size)
+{
     TIMER_START(file_load);
     assert((trans_type == TransferType::FileToHost ||
             trans_type == TransferType::FileToDevice) &&
@@ -234,63 +213,34 @@ data_loader_t::file_load(const std::string& fname0, const std::string& fname1,
     // Assign an ID to this loader call
     int loader_id = instance_count++;
     ready_count[loader_id] = 0;
+
+    // Decide how to get (gap, block_size)
+    if (nthreads > 1) { // using 1 as marker for sdiff profiling only
+        ThroughputOptimizer optimizer(file_src_loc);
+        std::tie(gap, block_size) = optimizer.optimize_throughput(offsets, seg_size, nthreads);
+    }
+    // If no block_size was provided or computed, use at least one segment
+    if (block_size == 0) {
+        block_size = seg_size;
+    }
+
     int n_readers = 2;
-    size_t wait_for_size = block_size;
+    size_t wait_for_size      = block_size;
     size_t used_chks_per_read = (wait_for_size + seg_size - 1) / seg_size;
 
-    INFO("Loader ("
-         << loader_id
-         << ")- Creating segments for two readers given file offsets");
+    INFO("Loader (" << loader_id << ") - Creating segments for two readers");
     const int fd0 = get_or_open_fd(fname0);
     const int fd1 = get_or_open_fd(fname1);
     std::vector<size_t> read_offsets = coalesce(
         loader_id, {fd0, fd1}, offsets, seg_size, gap, n_readers, used_chks_per_read);
-    INFO("Loader (" << loader_id
-                    << ")- All batches staged in for read with two readers");
+
+    INFO("Loader (" << loader_id << ") - All batches staged for read with two readers");
     TIMER_STOP(file_load, "Created segments and staged for file read");
 
-    // Set two reader to use for file IO
-    // host_cache_->set_reader(loader_id, &io_reader0, &io_reader1);
+    // Set reader to use for file IO
     host_cache_->set_reader(loader_id, &io_reader);
-    loader_info_t lid_offt_pair = {loader_id, read_offsets, static_cast<int>(gap), block_size};
-    return lid_offt_pair;
-}
 
-loader_info_t
-data_loader_t::file_load(const std::string& fname0, const std::string& fname1,
-                         std::vector<size_t> offsets, size_t seg_size,
-                         TransferType trans_type, int nthreads) {
-    TIMER_START(file_load);
-    assert((trans_type == TransferType::FileToHost ||
-            trans_type == TransferType::FileToDevice) &&
-           "Invalid TransferType: Must be FileToHost or FileToDevice");
-    // Assign an ID to this loader call
-    int loader_id = instance_count++;
-    ready_count[loader_id] = 0;
-    int n_readers = 2;
-    ThroughputOptimizer optimizer;
-    auto [gap, block_size] =
-        optimizer.optimize_throughput(offsets, seg_size, nthreads);
-
-    size_t wait_for_size = block_size;
-    size_t used_chks_per_read = (wait_for_size + seg_size - 1) / seg_size;
-
-    INFO("Loader ("
-         << loader_id
-         << ")- Creating segments for two readers given file offsets");
-    const int fd0 = get_or_open_fd(fname0);
-    const int fd1 = get_or_open_fd(fname1);
-    std::vector<size_t> read_offsets = coalesce(
-        loader_id, {fd0, fd1}, offsets, seg_size, gap, n_readers, used_chks_per_read);
-    INFO("Loader (" << loader_id
-                    << ")- All batches staged in for read with two readers");
-    TIMER_STOP(file_load, "Created segments and staged for file read");
-
-    // Set two reader to use for file IO
-    // host_cache_->set_reader(loader_id, &io_reader0, &io_reader1);
-    host_cache_->set_reader(loader_id, &io_reader);
-    loader_info_t lid_offt_pair = {loader_id, read_offsets, gap, block_size};
-    return lid_offt_pair;
+    return loader_info_t{loader_id, std::move(read_offsets), static_cast<int>(gap), block_size};
 }
 
 // This implementation of next works because the memory for the segments in a
@@ -335,11 +285,10 @@ data_loader_t::next(int id, TransferType trans_type) {
     // Retrieve the next batch for the current ID
     batch_t *front_batch = get_next(id, cache_tier, call_count > 0);
     TIMER_STOP(next, "Retrieved pointer to next batch of data for computation");
-    assert(front_batch->data[0].buffer != nullptr && front_batch->size > 0);
+    assert(front_batch->batch_ptr != nullptr && front_batch->size > 0);
     DBG("Retrieved pointer to offset " << front_batch->data[0].offset << " for "
                                        << front_batch->size << " bytes");
-    next_batch_t batch = {front_batch->data[0].buffer, front_batch->size,
-                          front_batch->proc_offt};
+    next_batch_t batch(*front_batch);
     return batch;
 }
 
@@ -352,3 +301,74 @@ size_t
 data_loader_t::get_IOP_count(int id) {
     return IOP_count[id];
 }
+
+// ================= Backup of previous implementations ==================
+
+// loader_info_t
+// data_loader_t::file_load(const std::string& fname0, const std::string& fname1,
+//                          std::vector<size_t> offsets, size_t seg_size,
+//                          TransferType trans_type, uint32_t gap,
+//                          size_t block_size) {
+//     TIMER_START(file_load);
+//     assert((trans_type == TransferType::FileToHost ||
+//             trans_type == TransferType::FileToDevice) &&
+//            "Invalid TransferType: Must be FileToHost or FileToDevice");
+//     // Assign an ID to this loader call
+//     int loader_id = instance_count++;
+//     ready_count[loader_id] = 0;
+//     int n_readers = 2;
+//     size_t wait_for_size = block_size;
+//     size_t used_chks_per_read = (wait_for_size + seg_size - 1) / seg_size;
+
+//     INFO("Loader ("
+//          << loader_id
+//          << ")- Creating segments for two readers given file offsets");
+//     const int fd0 = get_or_open_fd(fname0);
+//     const int fd1 = get_or_open_fd(fname1);
+//     std::vector<size_t> read_offsets = coalesce(
+//         loader_id, {fd0, fd1}, offsets, seg_size, gap, n_readers, used_chks_per_read);
+//     INFO("Loader (" << loader_id
+//                     << ")- All batches staged in for read with two readers");
+//     TIMER_STOP(file_load, "Created segments and staged for file read");
+
+//     // Set reader to use for file IO
+//     host_cache_->set_reader(loader_id, &io_reader);
+//     loader_info_t lid_offt_pair = {loader_id, read_offsets, static_cast<int>(gap), block_size};
+//     return lid_offt_pair;
+// }
+
+// loader_info_t
+// data_loader_t::file_load(const std::string& fname0, const std::string& fname1,
+//                          std::vector<size_t> offsets, size_t seg_size,
+//                          TransferType trans_type, int nthreads) {
+//     TIMER_START(file_load);
+//     assert((trans_type == TransferType::FileToHost ||
+//             trans_type == TransferType::FileToDevice) &&
+//            "Invalid TransferType: Must be FileToHost or FileToDevice");
+//     // Assign an ID to this loader call
+//     int loader_id = instance_count++;
+//     ready_count[loader_id] = 0;
+//     int n_readers = 2;
+//     ThroughputOptimizer optimizer;
+//     auto [gap, block_size] =
+//         optimizer.optimize_throughput(offsets, seg_size, nthreads);
+
+//     size_t wait_for_size = block_size;
+//     size_t used_chks_per_read = (wait_for_size + seg_size - 1) / seg_size;
+
+//     INFO("Loader ("
+//          << loader_id
+//          << ")- Creating segments for two readers given file offsets");
+//     const int fd0 = get_or_open_fd(fname0);
+//     const int fd1 = get_or_open_fd(fname1);
+//     std::vector<size_t> read_offsets = coalesce(
+//         loader_id, {fd0, fd1}, offsets, seg_size, gap, n_readers, used_chks_per_read);
+//     INFO("Loader (" << loader_id
+//                     << ")- All batches staged in for read with two readers");
+//     TIMER_STOP(file_load, "Created segments and staged for file read");
+
+//     // Set two reader to use for file IO
+//     host_cache_->set_reader(loader_id, &io_reader);
+//     loader_info_t lid_offt_pair = {loader_id, read_offsets, gap, block_size};
+//     return lid_offt_pair;
+// }

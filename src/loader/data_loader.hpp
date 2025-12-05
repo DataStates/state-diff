@@ -16,10 +16,25 @@ enum TransferType : int {
     HostPinned = 3,
 };
 
+enum FileSrc : int {
+    PFS = 0,
+    SSD = 1,
+    Hybrid = 2,
+};
+
 struct next_batch_t {
-    uint8_t *ptr;        // Pointer to start offset
-    size_t size;         // Size of the batch in bytes
-    size_t offt_count;   // Number of offsets to process
+    uint8_t *ptr = nullptr;        // Pointer to start offset
+    size_t size = 0;         // Size of the batch in bytes
+    size_t offt_count = 0;   // Number of offsets to process
+    size_t total_n_chunks = 0;
+    std::vector<size_t> seg_first_chunk;   // Position of 1st chunk in each seg (in chunks)
+    std::vector<size_t> seg_num_chunks;    // #of chunks in each seg
+
+    next_batch_t(const batch_t &ref)
+        : ptr(ref.batch_ptr), size(ref.size), offt_count(ref.proc_offt),
+          total_n_chunks(ref.n_chunks()), 
+          seg_first_chunk(ref.first_chunk_idx()), 
+          seg_num_chunks(ref.seg_num_chunks()) {}
 };
 
 struct loader_info_t {
@@ -70,14 +85,20 @@ class data_loader_t {
 
     int file_load(const std::string& fname, size_t data_size, size_t seg_size,
                   TransferType trans_type);
+    // loader_info_t 
+    // file_load(const std::string& fname0, const std::string& fname1,
+    //           std::vector<size_t> offsets, size_t seg_size,
+    //           TransferType trans_type, uint32_t gap, size_t block_size);
+    // loader_info_t 
+    // file_load(const std::string& fname0, const std::string& fname1,
+    //           std::vector<size_t> offsets, size_t seg_size,
+    //           TransferType trans_type, int nthreads = 16);
+    
     loader_info_t 
     file_load(const std::string& fname0, const std::string& fname1,
-              std::vector<size_t> offsets, size_t seg_size,
-              TransferType trans_type, uint32_t gap, size_t block_size);
-    loader_info_t 
-    file_load(const std::string& fname0, const std::string& fname1,
-              std::vector<size_t> offsets, size_t seg_size,
-              TransferType trans_type, int nthreads = 16);
+            std::vector<size_t> offsets, size_t seg_size,
+            TransferType trans_type, FileSrc file_src_loc, int nthreads = 1, uint32_t gap = 0,
+            size_t block_size = 0);
 
     // int file_load(FileReader &io_reader, size_t data_size, size_t seg_size,
     //               TransferType trans_type);

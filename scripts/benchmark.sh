@@ -179,7 +179,7 @@ usage() {
 
 case "$1" in
     local)
-        ckpt_size=$((3 * $GB))
+        ckpt_size=$((7 * $GB))
         ckpt_name="/lus/eagle/projects/RECUP/kassogba/veloc-ckpt/rand-sample/rand_sample"
         rnd_data_gen $ckpt_name $ckpt_size
         SOURCE_FILE="/lus/eagle/projects/RECUP/kassogba/veloc-ckpt/rand-sample/rand_sample0.dat"
