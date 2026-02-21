@@ -42,13 +42,17 @@ main(int argc, char **argv) {
             .help("Data type")
             .default_value(std::string("float"))
             .choices("byte", "float", "double");
-        // program.add_argument("-b", "--block_size")
-        //     .help("Block size in bytes for reads (tree creation or direct comparison)")
-        //     .default_value(static_cast<size_t>(134217728))
-        //     .scan<'u', size_t>();
         program.add_argument("-b", "--block_size")
             .help("For tree creation (in bytes) or for direct comparison (N x avail cores)")
             .default_value(static_cast<size_t>(1))
+            .scan<'u', size_t>();
+        program.add_argument("-q", "--qdepth")
+            .help("Queue depth or size of a ring in IOUring.")
+            .default_value(static_cast<size_t>(32768))
+            .scan<'u', size_t>();
+        program.add_argument("-z", "--cqdepth")
+            .help("Max size of the completion queue for IOUring.")
+            .default_value(static_cast<size_t>(1024))
             .scan<'u', size_t>();
         program.add_argument("-g", "--merge_gap")
             .help("Gap tolerance to merge non-contiguous offsets")
@@ -107,6 +111,8 @@ main(int argc, char **argv) {
         }
         // Load arguments into convenience variables
         uint32_t chunk_size = program.get<uint32_t>("-c");
+        size_t qdepth = program.get<size_t>("-q");
+        size_t cqdepth = program.get<size_t>("-z");
         std::string dtype = program.get<std::string>("--type");
         double err_tol = program.get<double>("--error");
         uint32_t level = program.get<uint32_t>("-l");
@@ -176,7 +182,6 @@ main(int argc, char **argv) {
                 }
             }
         }
-
         if (run1_all_files.size() > 0) {
             for (uint32_t i = 0; i < run1_all_files.size(); i++) {
                 if ((int)i % world_size == world_rank) {
@@ -200,6 +205,16 @@ main(int argc, char **argv) {
         for (uint32_t i = 0; i < run1_files.size(); i++) {
             printf("Rank %d: Run 1 File %d: %s\n", world_rank, i,
                    run1_files[i].c_str());
+        }
+
+        if (comparing_runs) {
+            if(ideal) {
+                logname += "." + std::to_string(world_rank) + ".ideal.csv";
+            } else {
+                logname += "." + std::to_string(world_rank) + ".compare.csv";
+            }
+        } else {
+            logname += "." + std::to_string(world_rank) + ".create.csv";
         }
 
         size_t elem_changed = 0;
@@ -232,7 +247,8 @@ main(int argc, char **argv) {
             get_file_size(run0_files[0], &meta_filesize);
             tree_size = static_cast<size_t>(meta_filesize);
         }
-        liburing_io_reader_t files_reader;
+        // liburing_io_reader_t files_reader;
+        liburing_io_reader_t files_reader(qdepth, cqdepth);
         state_diff::client_t<float> client_cur;
         client_cur.init(0, files_reader, data_size, err_tol, dtype[0],
                                                chunk_size, level, fuzzy_hash);
@@ -283,8 +299,9 @@ main(int argc, char **argv) {
                 // ================================================================
                 Timer::time_point beg_serialize = Timer::now();
                 Kokkos::Profiling::pushRegion("Serialize");
+                size_t gidx = idx * world_size + world_rank;
                 std::string outname = run0_files[idx] + std::string(".") +
-                                      std::to_string(idx) +
+                                      std::to_string(gidx) +
                                       std::string(".compare-tree");
                 {
                     std::ofstream ofs(outname, std::ios::binary);
@@ -409,21 +426,20 @@ main(int argc, char **argv) {
             // ========================================================================================
             // Write log
             // ========================================================================================
-            std::ofstream logfile;
-            logfile.precision(10);
+            // std::ofstream logfile;
+            // logfile.precision(10);
+            // logfile.open(logname, std::ofstream::out | std::ofstream::app);
             if (comparing_runs) {
-                if(ideal) {
-                    logname += "." + std::to_string(world_rank) + ".idealcompare.csv";
-                } else {
-                    logname += "." + std::to_string(world_rank) + ".compare.csv";
-                }
+                std::ofstream logfile;
+                logfile.precision(10);
                 logfile.open(logname, std::ofstream::out | std::ofstream::app);
                 if (logfile.tellp() == logfile.beg) {
-                    logfile << "File,Data filesize,Tree filesize,Chunk size,Error tolerance,Block size,"
+                    logfile << "Rank,File,Data filesize,Tree filesize,Chunk size,Error tolerance,Block size,"
                                 "Offset gap,Wasted read,IOP count,Elements different,Hashes different,"
                                 "Num comparisons,Num hash comparisons,Filtered hashes,Setup time,"
-                                "Deserialization time,Compare tree time,Compare direct time,Load time,Compute time,Wait time\n";
+                                "Deserialization time,Compare tree time,Compare direct time,Load time,Compute time,Wait time,Queue depth,CQueue depth\n";
                 }
+                logfile << world_rank << ",";
                 logfile << run1_files[idx] << ",";
                 logfile << data_size << ",";
                 logfile << tree_size << ",";
@@ -444,17 +460,19 @@ main(int argc, char **argv) {
                 logfile << compare_time2 << ",";
                 logfile << ld_cmp_timings[0] << ",";
                 logfile << ld_cmp_timings[1] << ",";
-                logfile << ld_cmp_timings[2] << std::endl;
+                logfile << ld_cmp_timings[2] << ",";
+                logfile << qdepth << ",";
+                logfile << cqdepth << std::endl;
                 logfile.close();
-
-            } else {
-                logname += "." + std::to_string(world_rank) + ".create.csv";
-                logfile.open(logname, std::ofstream::out | std::ofstream::app);
+            } 
+            /*
+            else {
                 if (logfile.tellp() == logfile.beg) {
-                    logfile << "File,Data filesize,Chunk size,Error tolerance,"
+                    logfile << "Rank,File,Data filesize,Chunk size,Error tolerance,"
                                 "Create blksize,Setup time,Construction time,Serialization time,"
                                 "Load time,Compute time\n";
                 }
+                logfile << world_rank << ",";
                 logfile << run0_files[idx] << ",";
                 logfile << data_size << ",";
                 logfile << chunk_size << ",";
@@ -467,6 +485,7 @@ main(int argc, char **argv) {
                 logfile << ld_cmp_timings[1] << std::endl;
                 logfile.close();
             }
+            */
         }
     }
     Kokkos::finalize();
