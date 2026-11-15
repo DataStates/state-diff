@@ -27,7 +27,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.KOKKOS_PREFIX }}
-          key: ${{ runner.os }}-kokkos-${{ env.KOKKOS_VERSION }}-openmp
+          key: ${{ runner.os }}-kokkos-${{ env.KOKKOS_VERSION }}-openmp-pic
 
       - name: Build Kokkos (OpenMP backend)
         if: steps.cache-kokkos.outputs.cache-hit != 'true'
@@ -35,7 +35,8 @@ jobs:
           git clone --depth 1 -b ${KOKKOS_VERSION} https://github.com/kokkos/kokkos.git kokkos-src
           cmake -S kokkos-src -B kokkos-build -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX="${KOKKOS_PREFIX}" \
-            -DKokkos_ENABLE_OPENMP=ON -DKokkos_ENABLE_SERIAL=ON
+            -DKokkos_ENABLE_OPENMP=ON -DKokkos_ENABLE_SERIAL=ON \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON
           cmake --build kokkos-build -j
           cmake --install kokkos-build
 
