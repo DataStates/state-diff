@@ -8,12 +8,12 @@ After building, the binaries are in `state-diff/_build/scripts/`.
 
 | Executable | Source | Description |
 |------------|--------|-------------|
-| `eval_statediff` | `eval_statediff.cpp` | End-to-end MPI benchmark: generates synthetic checkpoints, builds Merkle trees, and compares them using the full state-diff pipeline. |
+| `eval_statediff` | `eval_statediff.cpp` | End-to-end MPI benchmark: builds the Merkle trees of checkpoint files (create step), then compares the trees of two runs and validates the flagged chunks with direct I/O through scissor's Loader (compare step). |
 | `eval_direct` | `eval_direct.cpp` | Direct comparison benchmark: compares two checkpoint files using scissor's staged I/O loader without the Merkle tree layer. Useful for isolating I/O performance from tree traversal cost. |
-| `bench_load` | `bench_load_calls.cpp` | Microbenchmark for scissor's `Loader`: measures batched load throughput for a single reader across varying chunk sizes and batch sizes. |
-| `bench_load_2rdrs` | `bench_load_calls_2rdrs.cpp` | Like `bench_load` but drives two concurrent readers (e.g. liburing + posix) to compare backend throughput head-to-head. |
-| `bench_load_genoft` | `bench_load_calls_genoft.cpp` | Like `bench_load` but generates random sparse offset patterns to stress the aggregator's coalescing logic at different contiguity gap values. |
-| `bench_compute` | `bench_compare_kernel.cpp` | Microbenchmark for the Kokkos comparison kernel: measures hash comparison throughput on the CPU independent of I/O. |
+| `bench_load` | `bench_load_calls.cpp` | io_uring read microbenchmark: reads N chunks at the same offsets of two files through one `scissor::LiburingReader` and logs the load time and the throughput of both files. |
+| `bench_load_2rdrs` | `bench_load_calls_2rdrs.cpp` | Like `bench_load` with one reader per file. |
+| `bench_load_genoft` | `bench_load_calls_genoft.cpp` | Like `bench_load` with generated sparse offsets coalesced with a given gap. |
+| `bench_compute` | `bench_compare_kernel.cpp` | Kokkos comparison-kernel microbenchmark: element-wise comparison of two buffers over a grid of chunk counts and chunk sizes, independent of I/O. |
 
 ## Benchmark workflow
 
@@ -22,18 +22,18 @@ After building, the binaries are in `state-diff/_build/scripts/`.
 ```bash
 cd state-diff/_build
 
-# Generate two 1 M-float checkpoints with 1% of values perturbed beyond 1e-4
-scripts/eval_statediff \
-    --data-len 1000000 -n 2 \
-    -e 0.0001 --num-changes 10000 \
-    --type float reproducibility_test \
-    --kokkos-num-threads=2
+# Two files of 1 M floats: test0.dat and test1.dat (10000 values perturbed)
+src/tools/data_generator --data-len 1000000 -n 2 -t float \
+    -e 0.001 --num-changes 10000 test --kokkos-num-threads=2
 
-# Compare using statediff-cli
-src/cli/statediff-cli \
-    reproducibility_test0.dat reproducibility_test1.dat \
-    --error 0.0001 --type float -c 4096 -s 1 \
-    --kokkos-num-threads=2
+# Create step: writes test0.dat.0.compare-tree and test1.dat.1.compare-tree
+scripts/eval_statediff -c 4096 --type float --error 0.0001 -r demo \
+    --run0 test0.dat test1.dat --kokkos-num-threads=2
+
+# Compare step: appends to demo.0.compare.csv
+scripts/eval_statediff -c 4096 --type float --error 0.0001 -r demo \
+    --run0 test0.dat.0.compare-tree --run1 test1.dat.1.compare-tree \
+    --run0-full test0.dat --run1-full test1.dat --kokkos-num-threads=2
 ```
 
 #### eval_statediff I/O flags
@@ -55,32 +55,28 @@ Each MPI rank creates one reader before the checkpoint loop
 ### 2. Direct I/O comparison (no Merkle tree)
 
 ```bash
-scripts/eval_direct \
-    --file0 reproducibility_test0.dat \
-    --file1 reproducibility_test1.dat \
-    --type float -c 4096
+scripts/eval_direct --run0 test0.dat --run1 test1.dat \
+    --type float --error 0.0001 -r direct
 ```
 
-### 3. Loader microbenchmark
+### 3. Read microbenchmarks
 
 ```bash
-# Single reader
-scripts/bench_load --file reproducibility_test0.dat -c 4096
+# <file0> <file1> <chunk size> <number of chunks> <log file> [--rand] [--interleaved]
+scripts/bench_load test0.dat test1.dat 4096 256 read.csv --rand --interleaved
 
-# Two readers
-scripts/bench_load_2rdrs \
-    --file0 reproducibility_test0.dat \
-    --file1 reproducibility_test1.dat \
-    -c 4096
+# <file0> <file1> <chunk size> <number of chunks> [--rand]
+scripts/bench_load_2rdrs test0.dat test1.dat 4096 256
 
-# Sparse offsets with varying gaps
-scripts/bench_load_genoft --file reproducibility_test0.dat -c 4096 --gap 4
+# <file0> <file1> <chunk size> <number of chunks> <gap>
+scripts/bench_load_genoft test0.dat test1.dat 4096 256 4
 ```
 
 ### 4. Compute kernel microbenchmark
 
 ```bash
-scripts/bench_compute --chunks 4096 --chunk-size 4096
+# Appends the timings to compute_benchmark.csv
+scripts/bench_compute --kokkos-num-threads=8
 ```
 
 ## Logging and environment variables
@@ -89,8 +85,8 @@ All executables inherit the shared JSONL logger.  Set `SCISSOR_LOG_LEVEL=PERF`
 to capture detailed per-batch timing emitted by scissor's Loader.
 
 ```bash
-SCISSOR_LOG_LEVEL=PERF SCISSOR_LOG_FILE=/tmp/bench_%r.jsonl \
-    scripts/bench_load --file reproducibility_test0.dat -c 4096
+SCISSOR_LOG_LEVEL=PERF SCISSOR_LOG_FILE=/tmp/eval_%r.jsonl \
+    scripts/eval_direct --run0 test0.dat --run1 test1.dat --type float
 ```
 
 Useful scissor tuning variables:

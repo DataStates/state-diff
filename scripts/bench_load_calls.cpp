@@ -13,6 +13,11 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <algorithm>
+#include <memory>
+
+struct FreeDeleter {
+    void operator()(void *p) const { free(p); }
+};
 
 std::vector<size_t> get_offsets(size_t total_chunks, size_t n_segs, bool sequential) {
     if(sequential) {
@@ -43,10 +48,14 @@ void benchmark_liburing_reads(std::string& fname0, std::string& fname1, size_t d
         benchmark_stream << "IOP,Chunk size (B),Total size (B),Load time (s),Compare time (s),Throughput (GiB/s)\n";
     }
 
-    // Create data buffer
-    std::vector<uint8_t> buffer_1(dsize), buffer_2(dsize);
-    posix_memalign((void**)&buffer_1, 4096, dsize);
-    posix_memalign((void**)&buffer_2, 4096, dsize);
+    // Create 4 KiB aligned data buffers (O_DIRECT)
+    std::unique_ptr<uint8_t, FreeDeleter> buffer_1, buffer_2;
+    for (auto *buffer : {&buffer_1, &buffer_2}) {
+        void *ptr = nullptr;
+        if (posix_memalign(&ptr, 4096, dsize) != 0)
+            throw std::runtime_error("Failed to allocate " + std::to_string(dsize) + " B buffer");
+        buffer->reset(static_cast<uint8_t*>(ptr));
+    }
 
     // Compute number of segments
     size_t n_segs = dsize / chunk_size;
@@ -59,9 +68,10 @@ void benchmark_liburing_reads(std::string& fname0, std::string& fname1, size_t d
         std::cerr << "cannot open files, error = " << std::strerror(errno) << std::endl;
         return;
     }
-    size_t fsize0 = lseek(fd0, 0, SEEK_END);
-    size_t fsize1 = lseek(fd1, 0, SEEK_END);
-    if (fsize0 < 0 || fsize1 < 0) { perror("lseek"); close(fd0); close(fd1); return; }
+    off_t end0 = lseek(fd0, 0, SEEK_END);
+    off_t end1 = lseek(fd1, 0, SEEK_END);
+    if (end0 < 0 || end1 < 0) { perror("lseek"); close(fd0); close(fd1); return; }
+    size_t fsize0 = end0, fsize1 = end1;
     if( fsize0 != fsize1) {
         std::cerr << "Mismatching file sizes " << std::strerror(errno) << std::endl;
         close(fd0); close(fd1);
@@ -94,22 +104,22 @@ void benchmark_liburing_reads(std::string& fname0, std::string& fname1, size_t d
             seg0.fd     = fd0;
             seg0.offset = off;
             seg0.size   = std::min(chunk_size, dsize - buf_off);
-            seg0.buffer = reinterpret_cast<uint8_t*>(buffer_1.data()) + buf_off;
+            seg0.buffer = buffer_1.get() + buf_off;
             segments[j] = seg0;
         }
-        for (size_t j = n_segs; j < n_reads; ++j) {
+        for (size_t j = 0; j < n_segs; ++j) {
             const size_t off = file_offsets[j] * chunk_size;
             const size_t buf_off  = j * chunk_size;
             if (off >= fsize1) 
                 break;
             // File 2
             scissor::Segment seg1;
-            seg1.id     = j;
+            seg1.id     = n_segs + j;
             seg1.fd     = fd1;
             seg1.offset = off;
             seg1.size   = std::min(chunk_size,  dsize - buf_off);
-            seg1.buffer = reinterpret_cast<uint8_t*>(buffer_2.data()) + buf_off;
-            segments[j] = seg1;
+            seg1.buffer = buffer_2.get() + buf_off;
+            segments[n_segs + j] = seg1;
         }
     } else {
         for (size_t j = 0; j < n_segs; ++j) {
@@ -124,7 +134,7 @@ void benchmark_liburing_reads(std::string& fname0, std::string& fname1, size_t d
             seg0.fd     = fd0;
             seg0.offset = off;
             seg0.size   = std::min(chunk_size, dsize - buf_off);
-            seg0.buffer = reinterpret_cast<uint8_t*>(buffer_1.data()) + buf_off;
+            seg0.buffer = buffer_1.get() + buf_off;
             segments[2*j] = seg0;
 
             // File 2
@@ -133,7 +143,7 @@ void benchmark_liburing_reads(std::string& fname0, std::string& fname1, size_t d
             seg1.fd     = fd1;
             seg1.offset = off;
             seg1.size   = std::min(chunk_size,  dsize - buf_off);
-            seg1.buffer = reinterpret_cast<uint8_t*>(buffer_2.data()) + buf_off;
+            seg1.buffer = buffer_2.get() + buf_off;
             segments[2*j + 1] = seg1;
         }
     }
@@ -149,8 +159,8 @@ void benchmark_liburing_reads(std::string& fname0, std::string& fname1, size_t d
 
     auto start_compare = std::chrono::high_resolution_clock::now();
     size_t n_floats = dsize / sizeof(float);
-    float* buf1 = reinterpret_cast<float*>(buffer_1.data());
-    float* buf2 = reinterpret_cast<float*>(buffer_2.data());
+    float* buf1 = reinterpret_cast<float*>(buffer_1.get());
+    float* buf2 = reinterpret_cast<float*>(buffer_2.get());
     size_t count = 0;
     for(size_t i = 0; i < n_floats; ++i) {
         if(buf1[i] != buf2[i])

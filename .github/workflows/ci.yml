@@ -1,47 +1,55 @@
-name: Build and Install Statediff with Spack
+name: CI
 
 on:
   push:
-    branches:
-      - rev-cereal
+    branches: [main]
   pull_request:
-    branches:
-      - rev-cereal
+    branches: [main]
+
+env:
+  KOKKOS_VERSION: 4.4.01
+  KOKKOS_PREFIX: ${{ github.workspace }}/kokkos-install
 
 jobs:
-  build:
+  build-and-test:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout state-diff repository
-        uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
-      - name: Install Spack
+      - name: Install build dependencies
         run: |
-          git clone https://github.com/spack/spack.git
-          export SPACK_ROOT=$(pwd)/spack
-          . $SPACK_ROOT/share/spack/setup-env.sh
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config git \
+            libssl-dev libopenmpi-dev openmpi-bin
 
-      - name: Cache Spack install directory
-        uses: actions/cache@v2
+      - name: Cache Kokkos
+        id: cache-kokkos
+        uses: actions/cache@v4
         with:
-          path: |
-            ~/.spack
-            $(spack location -i statediff)
-          key: ${{ runner.os }}-spack-${{ hashFiles('**/spack-repo') }}
-          restore-keys: |
-            ${{ runner.os }}-spack-
-      
-      - name: Add Spack repository
-        run: |
-          spack repo add ./spack-repo
+          path: ${{ env.KOKKOS_PREFIX }}
+          key: ${{ runner.os }}-kokkos-${{ env.KOKKOS_VERSION }}-openmp
 
-      - name: Install statediff with Spack (parallel)
+      - name: Build Kokkos (OpenMP backend)
+        if: steps.cache-kokkos.outputs.cache-hit != 'true'
         run: |
-          spack install statediff -j 4
+          git clone --depth 1 -b ${KOKKOS_VERSION} https://github.com/kokkos/kokkos.git kokkos-src
+          cmake -S kokkos-src -B kokkos-build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="${KOKKOS_PREFIX}" \
+            -DKokkos_ENABLE_OPENMP=ON -DKokkos_ENABLE_SERIAL=ON
+          cmake --build kokkos-build -j
+          cmake --install kokkos-build
 
-      - name: Run tests with 'make test'
-        run: |
-          cd $(spack location -i statediff)/build
-          make test
+      # No scissor install: CMake fetches scissor-io v0.0.1 (which builds liburing)
+      - name: Configure
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          -DKokkos_DIR="${KOKKOS_PREFIX}/lib/cmake/Kokkos"
 
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Test
+        env:
+          OMP_PROC_BIND: spread
+          OMP_PLACES: threads
+        run: ctest --test-dir build --output-on-failure

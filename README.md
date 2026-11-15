@@ -70,15 +70,6 @@ The compiled-in minimum log level is inherited from scissor-io
 (`SCISSOR_MIN_LOG_LEVEL`, exported by the `scissor::scissor` target. Set it when
 building scissor-io).
 
-### Automation with Spack
-
-```bash
-git clone -b scissor-io https://github.com/DataStates/state-diff
-cd state-diff
-spack repo add ./spack-repo
-spack install statediff
-```
-
 ## Unit testing
 
 Tests are located in `state-diff/test/`.  Run the full suite from the build
@@ -128,13 +119,13 @@ Options:
 ```bash
 cd state-diff/_build
 
-# Generate two checkpoints (1 M floats, 1% perturbed beyond 1e-4)
-scripts/eval_statediff --data-len 1000000 -n 2 -e 0.0001 \
-    --num-changes 10000 --type float reproducibility_test \
-    --kokkos-num-threads=2
+# Generate two files of 1 M floats: test0.dat (base) and test1.dat
+# (10000 values perturbed by 1e-3)
+src/tools/data_generator --data-len 1000000 -n 2 -t float \
+    -e 0.001 --num-changes 10000 test --kokkos-num-threads=2
 
-# Compare the checkpoints
-src/cli/statediff-cli reproducibility_test0.dat reproducibility_test1.dat \
+# Compare the files
+src/cli/statediff-cli test0.dat test1.dat \
     --error 0.0001 --type float -c 4096 -s 1 \
     --kokkos-num-threads=2
 ```
