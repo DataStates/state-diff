@@ -48,6 +48,7 @@ Each MPI rank creates one reader before the checkpoint loop
 | `-z, --cqdepth` | `1024` | Completions reaped per batch by the reader. Written to the `CQueue depth` CSV column. |
 | `--tuning` | `model` | `model`: scissor's Regressor picks offset gap and block size for `Kokkos::num_threads()` cores, `-g`/`-b` are ignored. `fixed`: use `-g` (gap in chunks, `0` = no coalescing) and `-b` (block = `b` x chunk size x threads) as given, single-threaded loader (profiling/breakdown runs). |
 | `--engine` | `scissor` | `scissor`: coalesced reads over io_uring. `iouring`: one read per chunk over io_uring. `mmap`: one read per chunk over mmap (`MADV_RANDOM`, 4 copy threads). The `iouring` and `mmap` baselines use offset gap 0, `fixed` tuning and a 1 GiB block size unless `-b` is given. |
+| `--dump-offsets` | (off) | Directory receiving, for each compared pair, the indices of the chunks flagged by the tree comparison, one per line in traversal order, in `<run0 data file name>_<chunk size>_<error>.txt` (error in short scientific notation, e.g. `1e-7`). |
 
 `Block size` and `Offset gap` in the compare CSV are the values actually used
 (the Regressor's pick in `model` mode).
@@ -75,8 +76,8 @@ scripts/bench_load_genoft test0.dat test1.dat 4096 256 4
 ### 4. Compute kernel microbenchmark
 
 ```bash
-# Appends the timings to compute_benchmark.csv
-scripts/bench_compute --kokkos-num-threads=8
+# [log file (default compute_benchmark.csv)] [max number of chunks (default 65536)]
+scripts/bench_compute compute.csv --kokkos-num-threads=8
 ```
 
 ## Logging and environment variables

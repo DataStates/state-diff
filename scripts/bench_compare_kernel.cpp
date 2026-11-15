@@ -11,9 +11,11 @@ main(int argc, char **argv) {
     using Duration = std::chrono::duration<double>;
     Kokkos::initialize(argc, argv);
     {
+        // Optional arguments (after the Kokkos ones are removed):
+        //   [log file (default compute_benchmark.csv)] [max number of chunks (default 65536)]
         size_t n_threads = Kokkos::num_threads();
         size_t min_worksize = n_threads;
-        size_t max_worksize = 65536;
+        size_t max_worksize = argc > 2 ? std::stoull(argv[2]) : 65536;
         size_t min_csize = 128;
         size_t max_csize = 131072;
         double error_tol = 0.001f;
@@ -22,7 +24,7 @@ main(int argc, char **argv) {
         
         std::ofstream logfile;
         logfile.precision(10);
-        std::string logname = "compute_benchmark.csv";
+        std::string logname = argc > 1 ? argv[1] : "compute_benchmark.csv";
         logfile.open(logname, std::ofstream::out | std::ofstream::app);
         if (logfile.tellp() == logfile.beg) {
             logfile << "Nthreads,Work size (B),Compute time (ms)\n";

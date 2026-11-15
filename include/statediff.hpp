@@ -22,6 +22,7 @@
 #include <cstddef>
 #include <functional>
 #include <iostream>
+#include <fstream>
 #include <vector>
 
 #define KB 1024
@@ -81,6 +82,9 @@ template <typename DataType> class client_t {
     size_t IOP_count = 0;
     int best_gap = 0;
     size_t best_batch_size = 0;
+    // File receiving the chunk indices flagged by the tree comparison
+    // (empty = not written)
+    std::string filtered_log_fname;
 
     // timers (setup, compare_tree, compare_direct, load_direct,
     // elementwise_compare, wait_direct)
@@ -117,6 +121,11 @@ template <typename DataType> class client_t {
                       TransferType compare_tier = DEFAULT_CACHE_TIER,
                       FileSrc file_src_loc = DEFAULT_FILE_SRC,
                       Tuning tuning = Tuning::Model);
+
+    // Write the indices of the chunks flagged by the following tree
+    // comparisons to fname, one per line in traversal order (before they are
+    // sorted for the direct comparison). An empty name disables it.
+    void set_filtered_log(const std::string &fname) { filtered_log_fname = fname; }
 
     // Internal implementations
     size_t compare_trees(const client_t &prev, Queue &working_queue,
@@ -285,6 +294,16 @@ client_t<DataType>::compare_with(int chkpt_id, const std::string& curr_fname,
                        "chkpt_id", chkpt_id, "curr_chkpt_id", curr_chkpt_id);
 
     compare_trees(prev, working_queue, diff_hash_vec, num_hash_comp);
+
+    if (!filtered_log_fname.empty()) {
+        size_t n_filtered = diff_hash_vec.size();
+        Kokkos::deep_copy(diff_hash_vec.vector_h, diff_hash_vec.vector_d);
+        std::ofstream filtered_log(filtered_log_fname);
+        if (!filtered_log)
+            throw std::runtime_error("statediff: cannot open " + filtered_log_fname);
+        for (size_t i = 0; i < n_filtered; i++)
+            filtered_log << diff_hash_vec.vector_h(i) << "\n";
+    }
 
     // Validate hash mismatches with direct comparison
     STATEDIFF_DEBUG("Number of different hashes after phase 1");

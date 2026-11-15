@@ -40,6 +40,22 @@ static void try_free_page_cache(const std::string &filename) {
     close(fd);
 }
 
+// Shortest scientific notation of a tolerance, e.g. 0.0000001 -> "1e-7"
+static std::string short_sci(double value) {
+    char buf[32];
+    for (int prec = 0; prec < 17; prec++) {
+        snprintf(buf, sizeof(buf), "%.*e", prec, value);
+        if (strtod(buf, nullptr) == value)
+            break;
+    }
+    std::string str(buf);
+    size_t epos = str.find('e');
+    std::string exponent = str.substr(epos + 1);
+    size_t digits = exponent.find_first_not_of("+-0");
+    return str.substr(0, epos) + "e" + (exponent[0] == '-' ? "-" : "") +
+           (digits == std::string::npos ? "0" : exponent.substr(digits));
+}
+
 int
 main(int argc, char **argv) {
     MPI_Init(&argc, &argv);
@@ -135,6 +151,11 @@ main(int argc, char **argv) {
         program.add_argument("-r", "--result-logname")
             .help("Filename for storing csv logs")
             .default_value(std::string("result_log"));
+        program.add_argument("--dump-offsets")
+            .help("Directory receiving, for each compared pair, the indices of the chunks "
+                  "flagged by the tree comparison (one per line, traversal order) in "
+                  "<run0 data file name>_<chunk size>_<error>.txt")
+            .default_value(std::string(""));
 
         // Parse and retrieve arguments
         try {
@@ -175,6 +196,7 @@ main(int argc, char **argv) {
         std::string logname = program.get<std::string>("--result-logname");
         bool ideal = program.get<bool>("--ideal");
         bool exec_compare = !(program.get<bool>("--data_only"));
+        std::string dump_dir = program.get<std::string>("--dump-offsets");
         printf("Chunk Size: %u\n", chunk_size);
         printf("Data Type:  %s\n", dtype.c_str());
         printf("Error Tol:  %g\n", err_tol);
@@ -429,6 +451,13 @@ main(int argc, char **argv) {
                 
                 TransferType transfer_type = static_cast<TransferType>(0); // file to host
                 FileSrc file_src_loc = static_cast<FileSrc>(file_loc); // 0-pfs, 1-ssd, 2-hyb 
+                if (!dump_dir.empty()) {
+                    std::string run0_name =
+                        std::filesystem::path(run0_full_files[idx]).filename().string();
+                    client_cur.set_filtered_log(dump_dir + "/" + run0_name + "_" +
+                                                std::to_string(chunk_size) + "_" +
+                                                short_sci(err_tol) + ".txt");
+                }
                 client_cur.compare_with(0, run1_full_files[idx], client_prev, run0_full_files[idx],
                                         offt_gap, blk_size, ideal, exec_compare, transfer_type, file_src_loc,
                                         tuning);
