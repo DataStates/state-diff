@@ -1,0 +1,43 @@
+Makefile.local
+
+# ── CMake build trees (build.py default naming) ─────────────────────────────
+_build*/
+_install*/
+
+# Common alternative build dir names
+build/
+build*/
+
+extern/
+*/external/*
+
+# Generated CMake files when run in-source
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+install_manifest.txt
+compile_commands.json
+
+# ── Compiled outputs ─────────────────────────────────────────────────────────
+*.a
+*.so
+*.so.*
+*.o
+*.lo
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+
+# ── Data / logs ──────────────────────────────────────────────────────────────
+*.dat
+*.csv
+*.log
+*.bkp*
+
+# ── Editor / OS ──────────────────────────────────────────────────────────────
+.DS_Store
+*.swp
+*.swo

@@ -1,0 +1,176 @@
+#include <Kokkos_Core.hpp>
+#include <chrono>
+#include <fstream>
+#include <iostream>
+#include <string>
+#include <vector>
+#include <scissor/io_reader.hpp>
+#include <scissor/readers.hpp>
+#include <sys/stat.h>
+
+static int get_file_size(const std::string& filename, off_t* size_out) {
+    struct stat file_stat;
+    if (stat(filename.c_str(), &file_stat) < 0) return -1;
+    if (!S_ISREG(file_stat.st_mode)) return -1;
+    *size_out = file_stat.st_size;
+    return 0;
+}
+
+std::vector<float>
+load_data_from_file(const std::string &filename, size_t start_offset) {
+    std::vector<float> data;
+    std::ifstream f;
+    f.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+    try {
+        f.open(filename, std::ifstream::binary);
+        if (!f.is_open())
+            throw std::runtime_error("Failed to open file");
+
+        f.seekg(0, f.end);
+        size_t file_size = f.tellg();
+        if (start_offset >= file_size)
+            throw std::runtime_error("Start offset exceeds file size");
+
+        size_t data_len = file_size - start_offset;
+        if (data_len % sizeof(float) != 0)
+            throw std::runtime_error("File size is not aligned to float size");
+
+        data.resize(data_len / sizeof(float));
+        f.seekg(start_offset, f.beg);
+        f.read(reinterpret_cast<char *>(data.data()), data_len);
+        f.close();
+    } catch (const std::exception &e) {
+        std::cerr << "Error loading file: " << e.what() << '\n';
+    }
+    return data;
+}
+
+void load_io_uring(std::string &filename) {
+	off_t filesize;
+	get_file_size(filename, &filesize);
+	size_t dsize = static_cast<size_t>(filesize);
+
+	std::vector<float> buffer(dsize/sizeof(float), 0);
+	int n_segs = 4;
+	std::vector<scissor::Segment> segments(n_segs);
+
+	int uring_fd = open(filename.c_str(), O_RDONLY);
+	if (uring_fd < 0) {
+		std::cerr << "Cannot open file: " << filename << "\n";
+		return;
+	}
+
+	scissor::LiburingReader reader;
+
+	int c_size = dsize / n_segs;
+
+	for(int i = 0; i < n_segs; i++) {
+		scissor::Segment seg{};
+		seg.id     = static_cast<size_t>(i);
+		seg.fd     = uring_fd;
+		seg.buffer = (uint8_t*)(buffer.data()+c_size*i);
+		seg.offset = c_size*i;
+		seg.size   = dsize;
+		segments[i] = seg;
+	}
+
+	auto start_load = std::chrono::high_resolution_clock::now();
+	reader.enqueue_reads(segments);
+	reader.wait_all();
+	auto end_load = std::chrono::high_resolution_clock::now();
+	close(uring_fd);
+	std::chrono::duration<double> load_time = end_load - start_load;
+	std::cout << "File loading throughput (uring) = " << (dsize/1024/1024/1024)/load_time.count() << " GB/s" << std::endl;
+}
+
+int
+main(int argc, char **argv) {
+
+    if (argc < 3) {
+        std::cerr << "Usage: " << argv[0] << " <run0 checkpoint> <run1 checkpoint>" << std::endl;
+        return 1;
+    }
+    std::string file_a = argv[1];
+    std::string file_b = argv[2];
+
+    load_io_uring(file_a);
+    load_io_uring(file_b);
+    exit(0);
+
+    auto start_load = std::chrono::high_resolution_clock::now();
+    std::vector<float> data_a = load_data_from_file(file_a, 0);
+    auto end_load = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> load_time = end_load - start_load;
+    std::vector<float> data_b = load_data_from_file(file_b, 0);
+    size_t data_size = data_a.size();
+    size_t data_len = data_size * sizeof(float);
+    std::cout << "File loading throughput = " << (data_len/1024/1024/1024)/load_time.count() << " GB/s" << std::endl;
+
+    if (data_size != data_b.size()) {
+        std::cerr << "Error: Input files have mismatched sizes\n";
+        return 1;
+    }
+
+    Kokkos::initialize(argc, argv);
+    {
+        const int start_chunk_size = 128;
+
+        Kokkos::View<float *, Kokkos::HostSpace,
+                     Kokkos::MemoryTraits<Kokkos::Unmanaged>>
+            data_a_h(data_a.data(), data_size);
+        Kokkos::View<float *, Kokkos::HostSpace,
+                     Kokkos::MemoryTraits<Kokkos::Unmanaged>>
+            data_b_h(data_b.data(), data_size);
+
+        auto start_copy = std::chrono::high_resolution_clock::now();
+        auto end_copy = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> copy_time = end_copy - start_copy;
+
+        float *data_a = (float *) data_a_h.data();
+        float *data_b = (float *) data_b_h.data();
+
+        std::fstream benchmark_stream("compare_timings.csv",
+                                      std::ios::out | std::ios::app);
+        if (!benchmark_stream.is_open()) {
+            std::cerr << "Failed to open benchmark log file\n";
+            Kokkos::finalize();
+            return 1;
+        }
+
+        if (benchmark_stream.tellp() == 0) {
+            benchmark_stream << "data size,chunk size,copy time,compare time\n";
+        }
+
+        for (size_t chunk_size = start_chunk_size; chunk_size <= data_len;
+             chunk_size *= 2) {
+            std::cout << "Params:: DataSize=" << data_len
+                      << ", ChunkSize=" << chunk_size << std::endl;
+
+            auto start_compare = std::chrono::high_resolution_clock::now();
+            int num_element = chunk_size / sizeof(float);
+            uint64_t num_mismatch = 0;
+            using PolicyType = Kokkos::RangePolicy<size_t,
+            	Kokkos::DefaultHostExecutionSpace>;
+            auto range_policy = PolicyType(0, num_element);
+            Kokkos::parallel_reduce(
+                "Count differences", range_policy,
+                KOKKOS_LAMBDA(size_t idx, size_t & update) {
+                    if (Kokkos::fabs(data_a[idx] - data_b[idx]) > 0.001) {
+                        update += 1;
+                    }
+                },
+                Kokkos::Sum<uint64_t>(num_mismatch));
+
+            auto end_compare = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> compare_time =
+                end_compare - start_compare;
+
+            benchmark_stream << data_len << "," << chunk_size << ","
+                             << copy_time.count() << "," << compare_time.count()
+                             << "\n";
+        }
+        benchmark_stream.close();
+    }
+    Kokkos::finalize();
+    return 0;
+}

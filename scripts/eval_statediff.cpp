@@ -1,0 +1,551 @@
+#include "mpi.h"
+#include "statediff.hpp"
+#include <scissor/readers.hpp>
+#include "stdio.h"
+#include <Kokkos_Core.hpp>
+#include <Kokkos_Random.hpp>
+#include <argparse/argparse.hpp>
+#include <cereal/archives/binary.hpp>
+#include <cerrno>
+#include <chrono>
+#include <cstring>
+#include <fcntl.h>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <memory>
+#include <string>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <vector>
+
+// ---------------------------------------------------------------------------
+// Local helpers (formerly in src/common/direct_io.hpp)
+// ---------------------------------------------------------------------------
+static int get_file_size(const std::string &filename, off_t *size_out) {
+    struct stat file_stat;
+    if (stat(filename.c_str(), &file_stat) < 0)
+        return -1;
+    if (!S_ISREG(file_stat.st_mode))
+        return -1;
+    *size_out = file_stat.st_size;
+    return 0;
+}
+
+static void try_free_page_cache(const std::string &filename) {
+    int fd = open(filename.c_str(), O_RDONLY);
+    if (fd == -1) return;
+    fsync(fd);
+    posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
+    close(fd);
+}
+
+int
+main(int argc, char **argv) {
+    MPI_Init(&argc, &argv);
+    using Timer = std::chrono::high_resolution_clock;
+    using Duration = std::chrono::duration<double>;
+    Kokkos::initialize(argc, argv);
+    {
+        printf("------------------------------------------------------\n");
+
+        // Setup argument parser
+        argparse::ArgumentParser program("statediff");
+        program.add_argument("-v", "--verbose")
+            .help("Compute differences between immutable data states")
+            .default_value(false)
+            .implicit_value(true);
+        program.add_argument("-c", "--chunk-size")
+            .required()
+            .help("Chunk size in bytes")
+            .scan<'u', uint32_t>();
+        program.add_argument("-t", "--type")
+            .required()
+            .help("Data type")
+            .default_value(std::string("float"))
+            .choices("byte", "float", "double");
+        program.add_argument("-b", "--block_size")
+            .help("For tree creation (in bytes) or for direct comparison (N x avail cores)")
+            .default_value(static_cast<size_t>(1))
+            .scan<'u', size_t>();
+        program.add_argument("--tuning")
+            .help("How the direct comparison picks offset gap and block size: "
+                  "'model' (performance model, -g/-b ignored) or "
+                  "'fixed' (use -g/-b as given, gap 0 = no coalescing)")
+            .default_value(std::string("model"))
+            .choices("model", "fixed");
+        program.add_argument("--engine")
+            .help("Engine for the direct comparison: 'scissor' (coalescing over io_uring), "
+                  "'iouring' (one read per chunk over io_uring) or "
+                  "'mmap' (one read per chunk over mmap). The baselines use "
+                  "offset gap 0 and a 1 GiB block size unless -b is given")
+            .default_value(std::string("scissor"))
+            .choices("scissor", "iouring", "mmap");
+        program.add_argument("-q", "--qdepth")
+            .help("Queue depth or size of a ring in IOUring.")
+            .default_value(static_cast<size_t>(32768))
+            .scan<'u', size_t>();
+        program.add_argument("-z", "--cqdepth")
+            .help("Max size of the completion queue for IOUring.")
+            .default_value(static_cast<size_t>(1024))
+            .scan<'u', size_t>();
+        program.add_argument("-g", "--merge_gap")
+            .help("Gap tolerance to merge non-contiguous offsets")
+            .default_value(static_cast<uint32_t>(0))
+            .scan<'u', uint32_t>();
+        program.add_argument("-e", "--error")
+            .help("Error tolerance for comparing floating-point data")
+            .default_value(static_cast<double>(0.0f))
+            .scan<'g', double>();
+        program.add_argument("-l", "--level")
+            .help("Level to start/stop processing the tree. Root is level 0.")
+            .default_value(static_cast<uint32_t>(13))
+            .scan<'u', uint32_t>();
+        program.add_argument("-i", "--ideal")
+            .help("benchmark ideal compute time, i.e., all data pre-loaded.")
+            .default_value(false)
+            .implicit_value(true);
+        program.add_argument("-d", "--data_only")
+            .help("benchmark data loading only without comparison in phase 2.")
+            .default_value(false)
+            .implicit_value(true);
+        program.add_argument("--run0")
+            .help("Checkpoint files for run 0")
+            .nargs(argparse::nargs_pattern::any)
+            .default_value(std::vector<std::string>());
+        program.add_argument("--run1")
+            .help("Checkpoint files for run 1")
+            .nargs(argparse::nargs_pattern::any)
+            .default_value(std::vector<std::string>());
+        program.add_argument("--run0-full")
+            .help("Full checkpoint files for run 0")
+            .nargs(argparse::nargs_pattern::any)
+            .default_value(std::vector<std::string>());
+        program.add_argument("--run1-full")
+            .help("Full checkpoint files for run 1")
+            .nargs(argparse::nargs_pattern::any)
+            .default_value(std::vector<std::string>());
+        program.add_argument("-s", "--file_src_loc")
+            .help("Location of files to process. 0 for PFS, 1 for SSD, 2 for hybrid")
+            .default_value(static_cast<uint32_t>(0))
+            .scan<'u', uint32_t>();
+        program.add_argument("-o", "--output-filename")
+            .help("Save tree data to file")
+            .default_value(std::string(""));
+        program.add_argument("-r", "--result-logname")
+            .help("Filename for storing csv logs")
+            .default_value(std::string("result_log"));
+
+        // Parse and retrieve arguments
+        try {
+            program.parse_args(argc, argv);
+        } catch (const std::exception &err) {
+            std::cerr << err.what() << std::endl;
+            std::cerr << program;
+            std::exit(1);
+        }
+        // Load arguments into convenience variables
+        uint32_t chunk_size = program.get<uint32_t>("-c");
+        size_t qdepth = program.get<size_t>("-q");
+        size_t cqdepth = program.get<size_t>("-z");
+        std::string dtype = program.get<std::string>("--type");
+        double err_tol = program.get<double>("--error");
+        uint32_t level = program.get<uint32_t>("-l");
+        size_t block_size = program.get<size_t>("-b");
+        uint32_t offt_gap = program.get<uint32_t>("-g");
+        state_diff::Tuning tuning = program.get<std::string>("--tuning") == "fixed"
+                                        ? state_diff::Tuning::Fixed
+                                        : state_diff::Tuning::Model;
+        std::string engine = program.get<std::string>("--engine");
+        bool baseline = (engine != "scissor");
+        if (baseline) {
+            // baselines: one read per chunk, no performance model
+            tuning = state_diff::Tuning::Fixed;
+            offt_gap = 0;
+        }
+        uint32_t file_loc = program.get<uint32_t>("-s");
+        auto run0_all_files = program.get<std::vector<std::string>>("--run0");
+        auto run1_all_files = program.get<std::vector<std::string>>("--run1");
+        auto run0_all_full_files =
+            program.get<std::vector<std::string>>("--run0-full");
+        auto run1_all_full_files =
+            program.get<std::vector<std::string>>("--run1-full");
+        std::string output_fname =
+            program.get<std::string>("--output-filename");
+        std::string logname = program.get<std::string>("--result-logname");
+        bool ideal = program.get<bool>("--ideal");
+        bool exec_compare = !(program.get<bool>("--data_only"));
+        printf("Chunk Size: %u\n", chunk_size);
+        printf("Data Type:  %s\n", dtype.c_str());
+        printf("Error Tol:  %g\n", err_tol);
+        printf("Start Level %u\n", level);
+
+        std::sort(run0_all_files.begin(), run0_all_files.end());
+        std::sort(run1_all_files.begin(), run1_all_files.end());
+        std::sort(run0_all_full_files.begin(), run0_all_full_files.end());
+        std::sort(run1_all_full_files.begin(), run1_all_full_files.end());
+
+        int world_rank = 0, world_size = 1;
+        MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+        MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+        if (world_rank == 0) {
+            if (run0_all_files.size() > 0) {
+                for (std::string str : run0_all_files) {
+                    printf("Run 0 File: %s\n", str.c_str());
+                }
+            }
+            if (run1_all_files.size() > 0) {
+                for (std::string str : run1_all_files) {
+                    printf("Run 1 File: %s\n", str.c_str());
+                }
+            }
+            if (run0_all_full_files.size() > 0) {
+                for (std::string str : run0_all_full_files) {
+                    printf("Run 0 Full File: %s\n", str.c_str());
+                }
+            }
+            if (run1_all_full_files.size() > 0) {
+                for (std::string str : run1_all_full_files) {
+                    printf("Run 1 Full File: %s\n", str.c_str());
+                }
+            }
+        }
+        std::string rank_str = "-" + std::to_string(world_rank) + "-";
+        std::vector<std::string> run0_files, run1_files, run0_full_files,
+            run1_full_files;
+        if (run0_all_files.size() > 0) {
+            for (uint32_t i = 0; i < run0_all_files.size(); i++) {
+                if ((int)i % world_size == world_rank) {
+                    run0_files.push_back(run0_all_files[i]);
+                    try_free_page_cache(run0_all_files[i]);
+                }
+            }
+            for (uint32_t i = 0; i < run0_all_full_files.size(); i++) {
+                if ((int)i % world_size == world_rank) {
+                    run0_full_files.push_back(run0_all_full_files[i]);
+                    try_free_page_cache(run0_all_full_files[i]);
+                }
+            }
+        }
+        if (run1_all_files.size() > 0) {
+            for (uint32_t i = 0; i < run1_all_files.size(); i++) {
+                if ((int)i % world_size == world_rank) {
+                    run1_files.push_back(run1_all_files[i]);
+                    try_free_page_cache(run1_all_files[i]);
+                }
+            }
+            for (uint32_t i = 0; i < run1_all_full_files.size(); i++) {
+                if ((int)i % world_size == world_rank) {
+                    run1_full_files.push_back(run1_all_full_files[i]);
+                    try_free_page_cache(run1_all_full_files[i]);
+                }
+            }
+        }
+        uint32_t num_file_per_run = run0_files.size();
+        bool comparing_runs = run1_files.size() == num_file_per_run;
+        for (uint32_t i = 0; i < run0_files.size(); i++) {
+            printf("Rank %d: Run 0 File %d: %s\n", world_rank, i,
+                   run0_files[i].c_str());
+        }
+        for (uint32_t i = 0; i < run1_files.size(); i++) {
+            printf("Rank %d: Run 1 File %d: %s\n", world_rank, i,
+                   run1_files[i].c_str());
+        }
+
+        if (comparing_runs) {
+            if(ideal) {
+                logname += "." + std::to_string(world_rank) + ".ideal.csv";
+            } else {
+                logname += "." + std::to_string(world_rank) + ".compare.csv";
+            }
+        } else {
+            logname += "." + std::to_string(world_rank) + ".create.csv";
+        }
+
+        size_t elem_changed = 0;
+        uint64_t changed_blocks = 0;
+        uint64_t filtered_blocks = 0;
+        uint64_t n_comparisons = 0;
+        uint64_t n_hash_comp = 0;
+        size_t wasted_bytes = 0, iop_count = 0;
+        int best_gap = 0;
+        size_t best_block_size = 0;
+
+        double setup_time = 0;
+        double serialize_time = 0;
+        double construction_time = 0;
+        double deserialize_time = 0;
+        double compare_time1 = 0;
+        double compare_time2 = 0;
+        std::vector<double> ld_cmp_timings = {0, 0, 0};
+
+        // Create statediff clients
+        bool fuzzy_hash = true;
+        size_t tree_size = 0;
+        std::string ref_file =
+            comparing_runs ? run1_full_files[0] : run0_files[0];
+        off_t filesize;
+        get_file_size(ref_file, &filesize);
+        size_t data_size = static_cast<size_t>(filesize);
+        if (comparing_runs) {
+            off_t meta_filesize;
+            get_file_size(run0_files[0], &meta_filesize);
+            tree_size = static_cast<size_t>(meta_filesize);
+        }
+        // One reader per process, shared by all clients and iterations
+        std::unique_ptr<scissor::IReader> files_reader;
+        if (engine == "mmap") {
+            files_reader = std::make_unique<scissor::MmapReader>(4);
+        } else {
+            files_reader = std::make_unique<scissor::LiburingReader>(qdepth, cqdepth);
+        }
+        STATEDIFF_INFO("reader created", "engine", engine, "qdepth", qdepth,
+                       "cqdepth", cqdepth);
+        state_diff::client_t<float> client_cur(0, *files_reader, data_size, err_tol,
+                                               dtype[0], chunk_size, level, fuzzy_hash);
+        state_diff::client_t<float> client_prev;
+
+        MPI_Barrier(MPI_COMM_WORLD);
+        // Iterate through files
+        for (uint32_t idx = 0; idx < num_file_per_run; idx++) {
+            std::cout << "Rank " << world_rank << ": Checkpoint " << idx
+                      << std::endl;
+            size_t blk_size = block_size;
+            if (!comparing_runs) {
+                // ================================================================
+                // Setup
+                // ================================================================
+                Timer::time_point beg_setup = Timer::now();
+                Kokkos::Profiling::pushRegion("Setup");
+                // liburing_io_reader_t reader_cur(run0_files[idx]);
+                Kokkos::Profiling::popRegion();
+                Timer::time_point end_setup = Timer::now();
+                setup_time =
+                    std::chrono::duration_cast<Duration>(end_setup - beg_setup)
+                        .count();
+                std::cout << "\tRank " << world_rank
+                          << ": Setup: " << setup_time << std::endl;
+
+                // ================================================================
+                // Create tree
+                // ================================================================
+                Timer::time_point beg_create = Timer::now();
+                Kokkos::Profiling::pushRegion("Create tree");
+                // client_cur.create(reader_cur, blk_size);
+                client_cur.create(run0_files[idx], blk_size);
+                Kokkos::Profiling::popRegion();
+                Timer::time_point end_create = Timer::now();
+                construction_time = std::chrono::duration_cast<Duration>(
+                                         end_create - beg_create)
+                                         .count();
+                std::cout << "\tRank " << world_rank
+                          << ": Create Tree: " << construction_time << std::endl;
+                std::vector<double> create_timings =
+                    client_cur.get_create_time();
+                ld_cmp_timings[0] = create_timings[3];
+                ld_cmp_timings[1] = create_timings[4];
+
+                // ================================================================
+                // Serialize
+                // ================================================================
+                Timer::time_point beg_serialize = Timer::now();
+                Kokkos::Profiling::pushRegion("Serialize");
+                size_t gidx = idx * world_size + world_rank;
+                std::string outname = run0_files[idx] + std::string(".") +
+                                      std::to_string(gidx) +
+                                      std::string(".compare-tree");
+                {
+                    std::ofstream ofs(outname, std::ios::binary);
+                    cereal::BinaryOutputArchive oa(ofs);
+                    oa(client_cur);
+                    ofs.close();
+                }
+                Kokkos::Profiling::popRegion();
+                Timer::time_point end_serialize = Timer::now();
+                serialize_time = std::chrono::duration_cast<Duration>(
+                                     end_serialize - beg_serialize)
+                                     .count();
+                std::cout << "\tRank " << world_rank
+                          << ": Serialize: " << serialize_time << std::endl;
+            } else {
+                // ================================================================
+                // Setup
+                // ================================================================
+                Timer::time_point beg_setup = Timer::now();
+                Kokkos::Profiling::pushRegion("Setup");
+                // liburing_io_reader_t reader_prev(run0_full_files[idx]);
+                // liburing_io_reader_t reader_cur(run1_full_files[idx]);
+
+                // mmap_io_reader_t reader_prev(run0_full_files[idx]);
+                // mmap_io_reader_t reader_cur(run1_full_files[idx]);
+
+                // posix_io_reader_t reader_prev(run0_full_files[idx]);
+                // posix_io_reader_t reader_cur(run1_full_files[idx]);
+
+                Kokkos::Profiling::popRegion();
+                Timer::time_point end_setup = Timer::now();
+                setup_time =
+                    std::chrono::duration_cast<Duration>(end_setup - beg_setup)
+                        .count();
+                std::cout << "\tRank " << world_rank
+                          << ": Setup: " << setup_time << std::endl;
+
+                // ================================================================
+                // Deserialize
+                // ================================================================
+                Timer::time_point beg_deserialize = Timer::now();
+                Kokkos::Profiling::pushRegion("Deserialize");
+                {
+                    std::ifstream ifs(run0_files[idx], std::ios::binary);
+                    cereal::BinaryInputArchive ia(ifs);
+                    ia(client_prev);
+                    ifs.close();
+                }
+                {
+                    std::ifstream ifs(run1_files[idx], std::ios::binary);
+                    cereal::BinaryInputArchive ia(ifs);
+                    ia(client_cur);
+                    ifs.close();
+                }
+                Kokkos::Profiling::popRegion();
+                Timer::time_point end_deserialize = Timer::now();
+                deserialize_time = std::chrono::duration_cast<Duration>(
+                                       end_deserialize - beg_deserialize)
+                                       .count();
+                std::cout << "\tRank " << world_rank
+                          << ": Deserialize: " << deserialize_time << std::endl;
+
+                // ================================================================
+                // Compare
+                // ================================================================
+                Kokkos::Profiling::pushRegion("Compare phase");
+                size_t n_threads = Kokkos::num_threads();
+                if (baseline && !program.is_used("-b"))
+                    blk_size = 1ULL * 1024 * 1024 * 1024;
+                else
+                    blk_size *= chunk_size * n_threads;
+                // blk_size = 1ULL * 1024 * 1024 * 1024;
+                // blk_size = chunk_size * n_threads;
+                
+                TransferType transfer_type = static_cast<TransferType>(0); // file to host
+                FileSrc file_src_loc = static_cast<FileSrc>(file_loc); // 0-pfs, 1-ssd, 2-hyb 
+                client_cur.compare_with(0, run1_full_files[idx], client_prev, run0_full_files[idx],
+                                        offt_gap, blk_size, ideal, exec_compare, transfer_type, file_src_loc,
+                                        tuning);
+                compare_time1 = client_cur.get_tree_comparison_time();
+                compare_time2 = client_cur.get_data_compare_time();
+                wasted_bytes = client_cur.get_wastedbytes_count();
+                iop_count = client_cur.get_IOP_count();
+                auto ld_info = client_cur.get_loader_info();
+                best_gap = ld_info.first;
+                best_block_size = ld_info.second;
+                Kokkos::Profiling::popRegion();
+                std::cout << "\tRank " << world_rank
+                          << ": Compare Tree Phase 1: " << compare_time1
+                          << std::endl;
+
+                std::cout << "\tRank " << world_rank
+                          << ": Compare Tree Phase 2: " << compare_time2
+                          << std::endl;
+
+                std::vector<double> compare_time =
+                    client_cur.get_compare_time();
+                std::cout << "\t\tRank " << world_rank << ": Compare Time: "
+                          << std::reduce(compare_time.begin(),
+                                         compare_time.end())
+                          << std::endl;
+                ld_cmp_timings = client_cur.get_direct_compare_time();
+            }
+
+            // ========================================================================================
+            // Collect stats for logs
+            // ========================================================================================
+            n_comparisons = client_cur.get_num_comparisons();
+            n_hash_comp = client_cur.get_num_hash_comparisons();
+            elem_changed = client_cur.get_num_changes();
+            filtered_blocks = client_cur.get_filtered_blocks();
+            changed_blocks = client_cur.get_validated_diffs();
+            printf("Rank %d: Number of different elements %zu\n", world_rank,
+                   elem_changed);
+            printf("Rank %d: Number of comparisons %lu\n", world_rank,
+                   n_comparisons);
+            printf("Rank %d: Number of hash comparisons %lu\n", world_rank,
+                   n_hash_comp);
+            printf("Rank %d: Number of different hashes (Phase 1) %zu\n",
+                   world_rank, filtered_blocks);
+            printf("Rank %d: Number of different hashes (Phase 2) %zu\n\n",
+                   world_rank, changed_blocks);
+
+            Kokkos::fence();
+
+            // ========================================================================================
+            // Write log
+            // ========================================================================================
+            // std::ofstream logfile;
+            // logfile.precision(10);
+            // logfile.open(logname, std::ofstream::out | std::ofstream::app);
+            if (comparing_runs) {
+                std::ofstream logfile;
+                logfile.precision(10);
+                logfile.open(logname, std::ofstream::out | std::ofstream::app);
+                if (logfile.tellp() == logfile.beg) {
+                    logfile << "Rank,File,Data filesize,Tree filesize,Chunk size,Error tolerance,Block size,"
+                                "Offset gap,Wasted read,IOP count,Elements different,Hashes different,"
+                                "Num comparisons,Num hash comparisons,Filtered hashes,Setup time,"
+                                "Deserialization time,Compare tree time,Compare direct time,Load time,Compute time,Wait time,Queue depth,CQueue depth\n";
+                }
+                logfile << world_rank << ",";
+                logfile << run1_files[idx] << ",";
+                logfile << data_size << ",";
+                logfile << tree_size << ",";
+                logfile << chunk_size << ",";
+                logfile << err_tol << ",";
+                logfile << best_block_size << ",";
+                logfile << best_gap << ",";
+                logfile << wasted_bytes << ",";
+                logfile << iop_count << ",";
+                logfile << elem_changed << ",";
+                logfile << changed_blocks << ",";
+                logfile << n_comparisons << ",";
+                logfile << n_hash_comp << ",";
+                logfile << filtered_blocks << ",";
+                logfile << setup_time << ",";
+                logfile << deserialize_time << ",";
+                logfile << compare_time1 << ",";
+                logfile << compare_time2 << ",";
+                logfile << ld_cmp_timings[0] << ",";
+                logfile << ld_cmp_timings[1] << ",";
+                logfile << ld_cmp_timings[2] << ",";
+                // queue depths do not apply to the mmap engine
+                logfile << (engine == "mmap" ? 0 : qdepth) << ",";
+                logfile << (engine == "mmap" ? 0 : cqdepth) << std::endl;
+                logfile.close();
+            } 
+            /*
+            else {
+                if (logfile.tellp() == logfile.beg) {
+                    logfile << "Rank,File,Data filesize,Chunk size,Error tolerance,"
+                                "Create blksize,Setup time,Construction time,Serialization time,"
+                                "Load time,Compute time\n";
+                }
+                logfile << world_rank << ",";
+                logfile << run0_files[idx] << ",";
+                logfile << data_size << ",";
+                logfile << chunk_size << ",";
+                logfile << err_tol << ",";
+                logfile << block_size << ",";
+                logfile << setup_time << ",";
+                logfile << construction_time << ",";
+                logfile << serialize_time << ",";
+                logfile << ld_cmp_timings[0] << ",";
+                logfile << ld_cmp_timings[1] << std::endl;
+                logfile.close();
+            }
+            */
+        }
+    }
+    Kokkos::finalize();
+    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Finalize();
+    return 0;
+}
